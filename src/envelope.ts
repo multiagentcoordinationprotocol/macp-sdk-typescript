@@ -58,6 +58,15 @@ export function inferOutcomePositive(action: string): boolean {
   return true;
 }
 
+/**
+ * Build a {@link CommitmentRef} pointing at a prior accepted commitment, for
+ * use as `buildCommitmentPayload({ supersedes })` (cross-session supersession,
+ * RFC-MACP-0001 §7.3). Parity with python-sdk `build_commitment_ref`.
+ */
+export function buildCommitmentRef(input: { sessionId: string; commitmentHash: string }): CommitmentRef {
+  return { sessionId: input.sessionId, commitmentHash: input.commitmentHash };
+}
+
 export function buildCommitmentPayload(input: {
   action: string;
   authorityScope: string;

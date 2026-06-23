@@ -3,6 +3,7 @@ import {
   buildEnvelope,
   buildSessionStartPayload,
   buildCommitmentPayload,
+  buildCommitmentRef,
   buildSignalPayload,
   buildProgressPayload,
   newSessionId,
@@ -147,6 +148,24 @@ describe('envelope builders', () => {
         supersedes: { sessionId: 'prior-session', commitmentHash: 'abc123' },
       });
       expect(payload.supersedes).toEqual({ sessionId: 'prior-session', commitmentHash: 'abc123' });
+    });
+
+    it('accepts a CommitmentRef built by buildCommitmentRef', () => {
+      const ref = buildCommitmentRef({ sessionId: 'prior-session', commitmentHash: 'abc123' });
+      const payload = buildCommitmentPayload({
+        action: 'deploy',
+        authorityScope: 'ops',
+        reason: 'revised',
+        supersedes: ref,
+      });
+      expect(payload.supersedes).toEqual(ref);
+    });
+  });
+
+  describe('buildCommitmentRef', () => {
+    it('builds a CommitmentRef from sessionId + commitmentHash', () => {
+      const ref = buildCommitmentRef({ sessionId: 's1', commitmentHash: 'hash-1' });
+      expect(ref).toEqual({ sessionId: 's1', commitmentHash: 'hash-1' });
     });
   });
 

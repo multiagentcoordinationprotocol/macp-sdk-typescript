@@ -31,6 +31,18 @@ supersession. Plan: `plans/macp-proto-0.1.3-suspend-cancel-supersede.md`.
   `EVENT_TYPE_RESUMED`, `EVENT_TYPE_CANCELLED`. `SessionLifecycleWatcher`
   surfaces them unchanged; exhaustive `switch (event.eventType)` blocks now
   type-check against the widened union.
+- **`buildCommitmentRef({ sessionId, commitmentHash })`** in `src/envelope.ts`
+  — convenience builder for a `CommitmentRef` to pass as
+  `buildCommitmentPayload({ supersedes })`. Parity with python-sdk
+  `build_commitment_ref`.
+- **Session lifecycle predicates** in `src/watchers.ts` —
+  `isSessionCreated` / `isSessionResolved` / `isSessionExpired` /
+  `isSessionCancelled` / `isSessionSuspended` / `isSessionResumed` /
+  `isTerminalSessionLifecycleEvent`, plus the
+  `TERMINAL_SESSION_LIFECYCLE_EVENT_TYPES` constant. They accept either a
+  `SessionLifecycleEvent` or a bare `SessionLifecycleEventType`, mirror
+  python-sdk's `SessionLifecycle` properties, and treat `RESOLVED` / `EXPIRED`
+  / `CANCELLED` as terminal.
 
 ### Changed
 
@@ -38,6 +50,10 @@ supersession. Plan: `plans/macp-proto-0.1.3-suspend-cancel-supersede.md`.
   `SESSION_STATE_EXPIRED`). The terminal cancellation state is distinct from
   TTL/policy expiry so consumers can tell an explicit cancel apart from an
   expiry. No change to the `cancelSession` call signature.
+- **Policy `require_vote_quorum` parity**: `serializeCommitment` now emits
+  `require_vote_quorum` for **every** mode's commitment block (quorum /
+  proposal / task / handoff), not just decision, so policy JSON is
+  byte-identical to python-sdk's `_commitment_dict` across all modes.
 - **Dependency**: bumped `@multiagentcoordinationprotocol/proto` to `^0.1.3`.
 
 ## [0.3.0] - 2026-04-21
