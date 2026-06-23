@@ -22,13 +22,31 @@ export interface MacpErrorShape {
   details?: Buffer;
 }
 
+/**
+ * Lifecycle state of a session. Mirrors the `SessionState` enum in
+ * `macp/v1/envelope.proto`.
+ *
+ * `SESSION_STATE_SUSPENDED` is a non-terminal pause (TTL is banked while
+ * suspended and restored on resume); `SESSION_STATE_CANCELLED` is the terminal
+ * state for an explicit `CancelSession` — distinct from `SESSION_STATE_EXPIRED`
+ * (TTL / deterministic runtime policy) so consumers can tell explicit
+ * cancellation from expiry.
+ */
+export type SessionState =
+  | 'SESSION_STATE_UNSPECIFIED'
+  | 'SESSION_STATE_OPEN'
+  | 'SESSION_STATE_RESOLVED'
+  | 'SESSION_STATE_EXPIRED'
+  | 'SESSION_STATE_SUSPENDED'
+  | 'SESSION_STATE_CANCELLED';
+
 export interface Ack {
   ok?: boolean;
   duplicate?: boolean;
   messageId?: string;
   sessionId?: string;
   acceptedAtUnixMs?: string;
-  sessionState?: string;
+  sessionState?: SessionState;
   error?: MacpErrorShape;
 }
 
@@ -41,7 +59,7 @@ export interface ParticipantActivity {
 export interface SessionMetadata {
   sessionId?: string;
   mode?: string;
-  state?: string;
+  state?: SessionState;
   startedAtUnixMs?: string;
   expiresAtUnixMs?: string;
   modeVersion?: string;
@@ -110,6 +128,16 @@ export interface SessionStartPayload {
   roots?: Root[];
 }
 
+/**
+ * Reference to a specific accepted commitment, used for cross-session
+ * supersession (RFC-MACP-0001 §7.3). Mirrors `macp.v1.CommitmentRef`.
+ */
+export interface CommitmentRef {
+  sessionId: string;
+  /** Content hash of the superseded `CommitmentPayload`. */
+  commitmentHash: string;
+}
+
 export interface CommitmentPayload {
   commitmentId: string;
   action: string;
@@ -119,6 +147,13 @@ export interface CommitmentPayload {
   policyVersion?: string;
   configurationVersion: string;
   outcomePositive?: boolean;
+  /**
+   * Cross-session supersession (RFC-MACP-0001 §7.3): when present, this
+   * commitment supersedes a prior commitment identified by
+   * `{sessionId, commitmentHash}`. The superseding commitment lives in a NEW
+   * session — a RESOLVED session accepts no further messages.
+   */
+  supersedes?: CommitmentRef;
 }
 
 export interface SignalPayload {
@@ -308,7 +343,10 @@ export type SessionLifecycleEventType =
   | 'EVENT_TYPE_UNSPECIFIED'
   | 'EVENT_TYPE_CREATED'
   | 'EVENT_TYPE_RESOLVED'
-  | 'EVENT_TYPE_EXPIRED';
+  | 'EVENT_TYPE_EXPIRED'
+  | 'EVENT_TYPE_SUSPENDED'
+  | 'EVENT_TYPE_RESUMED'
+  | 'EVENT_TYPE_CANCELLED';
 
 export interface SessionLifecycleEvent {
   eventType: SessionLifecycleEventType;

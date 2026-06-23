@@ -147,6 +147,23 @@ export abstract class BaseSession<P extends BaseProjection> {
     return this.client.cancelSession(this.sessionId, reason, { auth: auth ?? this.auth });
   }
 
+  /**
+   * Pause this session via `SuspendSession` (proto 0.1.3+). Non-terminal: TTL
+   * is banked and messages are rejected until {@link resume}. See
+   * {@link MacpClient.suspendSession}.
+   */
+  suspend(reason = '', auth?: AuthConfig): Promise<Ack> {
+    return this.client.suspendSession(this.sessionId, reason, { auth: auth ?? this.auth });
+  }
+
+  /**
+   * Resume this suspended session via `ResumeSession` (proto 0.1.3+),
+   * restoring OPEN and the banked TTL. See {@link MacpClient.resumeSession}.
+   */
+  resume(reason = '', auth?: AuthConfig): Promise<Ack> {
+    return this.client.resumeSession(this.sessionId, reason, { auth: auth ?? this.auth });
+  }
+
   openStream(auth?: AuthConfig): MacpStream {
     return this.client.openStream({ auth: auth ?? this.auth });
   }

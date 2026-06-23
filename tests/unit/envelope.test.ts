@@ -129,6 +129,25 @@ describe('envelope builders', () => {
       });
       expect(payload.outcomePositive).toBe(true);
     });
+
+    it('omits supersedes by default', () => {
+      const payload = buildCommitmentPayload({
+        action: 'deploy',
+        authorityScope: 'ops',
+        reason: 'approved',
+      });
+      expect(payload.supersedes).toBeUndefined();
+    });
+
+    it('attaches a CommitmentRef when supersedes is provided', () => {
+      const payload = buildCommitmentPayload({
+        action: 'deploy',
+        authorityScope: 'ops',
+        reason: 'revised',
+        supersedes: { sessionId: 'prior-session', commitmentHash: 'abc123' },
+      });
+      expect(payload.supersedes).toEqual({ sessionId: 'prior-session', commitmentHash: 'abc123' });
+    });
   });
 
   describe('inferOutcomePositive', () => {

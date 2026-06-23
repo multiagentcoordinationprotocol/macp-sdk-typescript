@@ -323,4 +323,32 @@ describe('SessionLifecycleWatcher', () => {
 
     expect(seen).toEqual(['EVENT_TYPE_CREATED', 'EVENT_TYPE_EXPIRED']);
   });
+
+  it('surfaces the proto 0.1.3 suspend/resume/cancel event types verbatim', async () => {
+    const stream = new FakeReadableStream();
+    const watcher = new SessionLifecycleWatcher(makeClientWith('watchSessions', stream));
+    const seen: string[] = [];
+
+    const promise = watcher.watch((event) => {
+      seen.push(event.eventType);
+    });
+
+    stream.emitData({
+      event: { eventType: 'EVENT_TYPE_SUSPENDED', session: { sessionId: 's1' }, observedAtUnixMs: '1' },
+    });
+    stream.emitData({
+      event: { eventType: 'EVENT_TYPE_RESUMED', session: { sessionId: 's1' }, observedAtUnixMs: '2' },
+    });
+    stream.emitData({
+      event: {
+        eventType: 'EVENT_TYPE_CANCELLED',
+        session: { sessionId: 's1', state: 'SESSION_STATE_CANCELLED' },
+        observedAtUnixMs: '3',
+      },
+    });
+    stream.emitEnd();
+    await promise;
+
+    expect(seen).toEqual(['EVENT_TYPE_SUSPENDED', 'EVENT_TYPE_RESUMED', 'EVENT_TYPE_CANCELLED']);
+  });
 });

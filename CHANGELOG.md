@@ -4,6 +4,42 @@ All notable changes to `macp-sdk-typescript` are documented here. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the
 project uses [Semantic Versioning](https://semver.org/).
 
+## [0.4.0] - 2026-06-22
+
+Adopts `@multiagentcoordinationprotocol/proto` 0.1.3 — session
+suspend/resume, explicit cancellation, and cross-session commitment
+supersession. Plan: `plans/macp-proto-0.1.3-suspend-cancel-supersede.md`.
+
+### Added
+
+- **`MacpClient.suspendSession(sessionId, reason, options?)` /
+  `resumeSession(...)`** — control-plane RPCs for the new non-terminal
+  `SUSPENDED` state. Suspension banks the session's remaining TTL and
+  causes the runtime to reject messages until resume restores `OPEN`.
+  Mirrors `cancelSession`'s generic-invoke pattern and NACK handling.
+- **`suspend()` / `resume()` on every session helper** (`DecisionSession`,
+  `ProposalSession`, `TaskSession`, `HandoffSession`, `QuorumSession`, and
+  `BaseSession`) — delegate to the new client RPCs with `raiseOnNack: true`.
+- **`SessionState` string-union type** (`src/types.ts`) — mirrors the proto
+  `SessionState` enum and now types `Ack.sessionState` and
+  `SessionMetadata.state`. Adds `SESSION_STATE_SUSPENDED` and
+  `SESSION_STATE_CANCELLED`.
+- **`CommitmentRef` type + `supersedes?` on `CommitmentPayload`** — supports
+  cross-session commitment supersession (RFC-MACP-0001 §7.3).
+  `buildCommitmentPayload({ ..., supersedes })` attaches it; absent by default.
+- **Three new `SessionLifecycleEventType` values** — `EVENT_TYPE_SUSPENDED`,
+  `EVENT_TYPE_RESUMED`, `EVENT_TYPE_CANCELLED`. `SessionLifecycleWatcher`
+  surfaces them unchanged; exhaustive `switch (event.eventType)` blocks now
+  type-check against the widened union.
+
+### Changed
+
+- **`cancelSession` now resolves to `SESSION_STATE_CANCELLED`** (was
+  `SESSION_STATE_EXPIRED`). The terminal cancellation state is distinct from
+  TTL/policy expiry so consumers can tell an explicit cancel apart from an
+  expiry. No change to the `cancelSession` call signature.
+- **Dependency**: bumped `@multiagentcoordinationprotocol/proto` to `^0.1.3`.
+
 ## [0.3.0] - 2026-04-21
 
 Parity release — brings TypeScript SDK to full feature parity with

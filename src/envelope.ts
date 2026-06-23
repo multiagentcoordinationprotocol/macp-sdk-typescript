@@ -1,6 +1,14 @@
 import { randomUUID } from 'node:crypto';
 import { DEFAULT_CONFIGURATION_VERSION, DEFAULT_MODE_VERSION, DEFAULT_POLICY_VERSION, MACP_VERSION } from './constants';
-import type { CommitmentPayload, Envelope, ProgressPayload, Root, SessionStartPayload, SignalPayload } from './types';
+import type {
+  CommitmentPayload,
+  CommitmentRef,
+  Envelope,
+  ProgressPayload,
+  Root,
+  SessionStartPayload,
+  SignalPayload,
+} from './types';
 
 export function newSessionId(): string {
   return randomUUID();
@@ -59,8 +67,14 @@ export function buildCommitmentPayload(input: {
   configurationVersion?: string;
   policyVersion?: string;
   outcomePositive?: boolean;
+  /**
+   * Cross-session supersession (RFC-MACP-0001 §7.3): reference to the prior
+   * commitment this one supersedes. Distinct from proposal-mode
+   * `supersedesProposalId`. Absent by default. Backward-compatible.
+   */
+  supersedes?: CommitmentRef;
 }): CommitmentPayload {
-  return {
+  const payload: CommitmentPayload = {
     commitmentId: input.commitmentId ?? newCommitmentId(),
     action: input.action,
     authorityScope: input.authorityScope,
@@ -70,6 +84,8 @@ export function buildCommitmentPayload(input: {
     policyVersion: input.policyVersion ?? DEFAULT_POLICY_VERSION,
     outcomePositive: input.outcomePositive ?? inferOutcomePositive(input.action),
   };
+  if (input.supersedes) payload.supersedes = input.supersedes;
+  return payload;
 }
 
 export function buildRoot(uri: string, name = ''): Root {

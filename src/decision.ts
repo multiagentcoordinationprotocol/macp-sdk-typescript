@@ -202,6 +202,28 @@ export class DecisionSession {
     });
   }
 
+  /**
+   * Pause this session via `SuspendSession` (proto 0.1.3+). Non-terminal: the
+   * runtime banks remaining TTL and rejects messages until {@link resume}.
+   */
+  async suspend(reason = '', auth?: AuthConfig): Promise<Ack> {
+    return this.client.suspendSession(this.sessionId, reason, {
+      auth: auth ?? this.auth,
+      raiseOnNack: true,
+    });
+  }
+
+  /**
+   * Resume this suspended session via `ResumeSession` (proto 0.1.3+),
+   * restoring `SESSION_STATE_OPEN` and the banked TTL.
+   */
+  async resume(reason = '', auth?: AuthConfig): Promise<Ack> {
+    return this.client.resumeSession(this.sessionId, reason, {
+      auth: auth ?? this.auth,
+      raiseOnNack: true,
+    });
+  }
+
   openStream(auth?: AuthConfig): MacpStream {
     return this.client.openStream({ auth: auth ?? this.auth });
   }
