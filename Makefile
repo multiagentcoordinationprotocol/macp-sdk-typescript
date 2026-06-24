@@ -42,7 +42,13 @@ verify-fixtures:
 	for f in $(SPEC_CONFORMANCE_DIR)/*.json; do \
 		b=$$(basename "$$f"); \
 		if ! diff -q "$$f" "tests/conformance/$$b" >/dev/null 2>&1; then \
-			echo "  DRIFT: tests/conformance/$$b differs from canonical"; drift=1; \
+			echo "  DRIFT: tests/conformance/$$b differs from (or is missing vs) canonical"; drift=1; \
+		fi; \
+	done; \
+	for f in tests/conformance/*.json; do \
+		b=$$(basename "$$f"); \
+		if [ ! -f "$(SPEC_CONFORMANCE_DIR)/$$b" ]; then \
+			echo "  EXTRA: tests/conformance/$$b has no canonical source"; drift=1; \
 		fi; \
 	done; \
 	if [ $$drift -ne 0 ]; then \

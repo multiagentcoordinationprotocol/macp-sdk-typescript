@@ -84,6 +84,9 @@ const BYTES_FIELDS = new Set(['context', 'supportingData', 'details', 'input', '
 function normalizePayload(payload: Record<string, unknown>): Record<string, unknown> {
   const result: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(payload)) {
+    // Skip repeated/list-valued fields — the projections under test don't assert
+    // on them; mirrors the python harness's `isinstance(v, list): continue`.
+    if (Array.isArray(value)) continue;
     const camelKey = key.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
     result[camelKey] = BYTES_FIELDS.has(camelKey) && typeof value === 'string' ? Buffer.from(value, 'utf8') : value;
   }
@@ -137,9 +140,9 @@ describe('conformance: projection replay', () => {
       const transcript = (projection as unknown as { transcript: unknown[] }).transcript;
       expect(transcript.length).toBe(acceptedMessages.length);
 
-      // Commitment presence is driven by the terminal state: RESOLVED ⇒ committed.
-      const isResolved = fixture.expected_final_state === 'Resolved';
-      if (isResolved || fixture.expect_resolution_present || fixture.expected_resolution) {
+      // Commitment presence is driven solely by the terminal state:
+      // RESOLVED ⇒ committed. Identical rule to the python harness.
+      if (fixture.expected_final_state === 'Resolved') {
         expect(projection.commitment).toBeDefined();
       } else {
         expect(projection.commitment).toBeUndefined();
