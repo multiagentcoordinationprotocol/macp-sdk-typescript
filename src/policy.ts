@@ -101,6 +101,9 @@ function serializeCommitment(commitment?: CommitmentRules): Record<string, unkno
   return {
     authority: commitment?.authority ?? 'initiator_only',
     designated_roles: commitment?.designatedRoles ?? [],
+    // Parity with python-sdk `_commitment_dict`: emitted for every mode, not
+    // just decision, so policy JSON is byte-identical across SDKs.
+    require_vote_quorum: commitment?.requireVoteQuorum ?? false,
   };
 }
 
@@ -124,11 +127,7 @@ export function buildDecisionPolicy(
       minimum_confidence: rules.evaluation?.minimumConfidence ?? 0,
       required_before_voting: rules.evaluation?.requiredBeforeVoting ?? false,
     },
-    commitment: {
-      authority: rules.commitment?.authority ?? 'initiator_only',
-      designated_roles: rules.commitment?.designatedRoles ?? [],
-      require_vote_quorum: rules.commitment?.requireVoteQuorum ?? false,
-    },
+    commitment: serializeCommitment(rules.commitment),
   };
   return {
     policyId,

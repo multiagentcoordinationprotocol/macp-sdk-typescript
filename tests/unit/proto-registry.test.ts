@@ -115,6 +115,42 @@ describe('ProtoRegistry', () => {
     }
   });
 
+  describe('Commitment supersession (proto 0.1.3)', () => {
+    it('roundtrips a CommitmentPayload with a supersedes CommitmentRef', () => {
+      const payload = {
+        commitmentId: 'c1',
+        action: 'decision.approved',
+        authorityScope: 'session',
+        reason: 'revised',
+        modeVersion: '1.0.0',
+        configurationVersion: 'config.default',
+        policyVersion: 'policy.default',
+        outcomePositive: true,
+        supersedes: { sessionId: 'prior-session', commitmentHash: 'abc123' },
+      };
+      const encoded = registry.encodeKnownPayload('', 'Commitment', payload);
+      const decoded = registry.decodeKnownPayload('', 'Commitment', encoded);
+      expect(decoded).toHaveProperty('supersedes', { sessionId: 'prior-session', commitmentHash: 'abc123' });
+      expect(decoded).toHaveProperty('action', 'decision.approved');
+    });
+
+    it('omits supersedes when absent', () => {
+      const payload = {
+        commitmentId: 'c2',
+        action: 'task.completed',
+        authorityScope: 'session',
+        reason: 'done',
+        modeVersion: '1.0.0',
+        configurationVersion: 'config.default',
+        policyVersion: 'policy.default',
+        outcomePositive: true,
+      };
+      const encoded = registry.encodeKnownPayload('', 'Commitment', payload);
+      const decoded = registry.decodeKnownPayload('', 'Commitment', encoded);
+      expect(decoded).not.toHaveProperty('supersedes');
+    });
+  });
+
   describe('JSON fallback', () => {
     it('encodes multi-round Contribute as JSON', () => {
       const payload = { round: 1, content: 'hello' };

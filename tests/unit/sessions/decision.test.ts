@@ -92,4 +92,26 @@ describe('DecisionSession — projection roundtrip', () => {
     expect(session.projection.isCommitted).toBe(true);
     expect(session.projection.phase).toBe('Committed');
   });
+
+  it('suspend() delegates to client.suspendSession with the session id', async () => {
+    const client = makeClient();
+    const session = new DecisionSession(client);
+    const spy = vi
+      .spyOn(client, 'suspendSession')
+      .mockResolvedValue({ ok: true, sessionState: 'SESSION_STATE_SUSPENDED' });
+
+    const ack = await session.suspend('pausing');
+    expect(ack.sessionState).toBe('SESSION_STATE_SUSPENDED');
+    expect(spy).toHaveBeenCalledWith(session.sessionId, 'pausing', expect.objectContaining({ raiseOnNack: true }));
+  });
+
+  it('resume() delegates to client.resumeSession with the session id', async () => {
+    const client = makeClient();
+    const session = new DecisionSession(client);
+    const spy = vi.spyOn(client, 'resumeSession').mockResolvedValue({ ok: true, sessionState: 'SESSION_STATE_OPEN' });
+
+    const ack = await session.resume('back');
+    expect(ack.sessionState).toBe('SESSION_STATE_OPEN');
+    expect(spy).toHaveBeenCalledWith(session.sessionId, 'back', expect.objectContaining({ raiseOnNack: true }));
+  });
 });

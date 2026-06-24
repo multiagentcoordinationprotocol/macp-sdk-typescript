@@ -277,6 +277,69 @@ describe('MacpClient.listSessions', () => {
   });
 });
 
+// ── Session lifecycle control RPCs (proto 0.1.3) ────────────────────
+//
+// CancelSession now terminates as CANCELLED (was EXPIRED); SuspendSession /
+// ResumeSession are the new non-terminal pause/restore pair. All three are
+// control-plane unary RPCs that return an Ack; the SDK raises on a NACK
+// unless raiseOnNack is false.
+
+describe('MacpClient session lifecycle control', () => {
+  function stubRpc(client: MacpClient, name: string, ack: Record<string, unknown>) {
+    const grpcClient = (client as unknown as { client: Record<string, unknown> }).client;
+    const calls: unknown[] = [];
+    grpcClient[name] = (req: unknown, _meta: unknown, _opts: unknown, cb?: (err: null, res: unknown) => void) => {
+      // unary() passes (req, metadata, {deadline}, cb) when both metadata and
+      // deadline are present, else (req, metadata, cb). Auth is always set here,
+      // so the callback is the 3rd or 4th positional arg.
+      const callback = (typeof _opts === 'function' ? _opts : cb) as (err: null, res: unknown) => void;
+      calls.push(req);
+      callback(null, { ack });
+    };
+    return calls;
+  }
+
+  it('cancelSession surfaces CANCELLED in the Ack', async () => {
+    const client = makeClient();
+    const calls = stubRpc(client, 'CancelSession', { ok: true, sessionState: 'SESSION_STATE_CANCELLED' });
+    const ack = await client.cancelSession('s1', 'done');
+    expect(ack.ok).toBe(true);
+    expect(ack.sessionState).toBe('SESSION_STATE_CANCELLED');
+    expect(calls[0]).toMatchObject({ sessionId: 's1', reason: 'done' });
+  });
+
+  it('suspendSession surfaces SUSPENDED in the Ack', async () => {
+    const client = makeClient();
+    const calls = stubRpc(client, 'SuspendSession', { ok: true, sessionState: 'SESSION_STATE_SUSPENDED' });
+    const ack = await client.suspendSession('s1', 'pausing');
+    expect(ack.ok).toBe(true);
+    expect(ack.sessionState).toBe('SESSION_STATE_SUSPENDED');
+    expect(calls[0]).toMatchObject({ sessionId: 's1', reason: 'pausing' });
+  });
+
+  it('resumeSession surfaces OPEN in the Ack', async () => {
+    const client = makeClient();
+    const calls = stubRpc(client, 'ResumeSession', { ok: true, sessionState: 'SESSION_STATE_OPEN' });
+    const ack = await client.resumeSession('s1', 'back');
+    expect(ack.ok).toBe(true);
+    expect(ack.sessionState).toBe('SESSION_STATE_OPEN');
+    expect(calls[0]).toMatchObject({ sessionId: 's1', reason: 'back' });
+  });
+
+  it('suspendSession raises on a NACK', async () => {
+    const client = makeClient();
+    stubRpc(client, 'SuspendSession', { ok: false, error: { code: 'FORBIDDEN', message: 'not initiator' } });
+    await expect(client.suspendSession('s1', 'pausing')).rejects.toThrow();
+  });
+
+  it('suspendSession honours raiseOnNack: false', async () => {
+    const client = makeClient();
+    stubRpc(client, 'SuspendSession', { ok: false, error: { code: 'FORBIDDEN', message: 'not initiator' } });
+    const ack = await client.suspendSession('s1', 'pausing', { raiseOnNack: false });
+    expect(ack.ok).toBe(false);
+  });
+});
+
 // ── newSessionId export ─────────────────────────────────────────────
 //
 // TS-3: `newSessionId` must be reachable from the top-level entry point so

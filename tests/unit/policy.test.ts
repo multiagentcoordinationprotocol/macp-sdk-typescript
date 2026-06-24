@@ -123,6 +123,7 @@ describe('policy builders', () => {
       expect(rules.commitment).toEqual({
         authority: 'initiator_only',
         designated_roles: [],
+        require_vote_quorum: false,
       });
     });
 
@@ -165,6 +166,7 @@ describe('policy builders', () => {
       expect(rules.commitment).toEqual({
         authority: 'designated_role',
         designated_roles: ['lead'],
+        require_vote_quorum: false,
       });
     });
   });
@@ -183,6 +185,7 @@ describe('policy builders', () => {
       expect(rules.commitment).toEqual({
         authority: 'initiator_only',
         designated_roles: [],
+        require_vote_quorum: false,
       });
     });
 
@@ -220,6 +223,7 @@ describe('policy builders', () => {
       expect(rules.commitment).toEqual({
         authority: 'initiator_only',
         designated_roles: [],
+        require_vote_quorum: false,
       });
     });
 
@@ -247,6 +251,7 @@ describe('policy builders', () => {
       expect(rules.commitment).toEqual({
         authority: 'initiator_only',
         designated_roles: [],
+        require_vote_quorum: false,
       });
     });
 
@@ -268,6 +273,7 @@ describe('policy builders', () => {
       expect(rules.commitment).toEqual({
         authority: 'any_participant',
         designated_roles: [],
+        require_vote_quorum: false,
       });
     });
   });

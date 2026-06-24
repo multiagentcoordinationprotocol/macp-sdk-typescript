@@ -588,7 +588,7 @@ describe('Quorum mode — reject and abstain', () => {
 // ── Session cancellation ─────────────────────────────────────────────
 
 describe('Session cancellation', () => {
-  it('cancels an active session', async () => {
+  it('cancels an active session and reports CANCELLED', async () => {
     const session = new DecisionSession(client, { auth: agentAlice });
     await session.start({
       intent: 'Temp session',
@@ -599,6 +599,64 @@ describe('Session cancellation', () => {
 
     const ack = await session.cancel('No longer needed');
     expect(ack.ok).toBe(true);
+    // proto 0.1.3: explicit cancellation surfaces as CANCELLED (was EXPIRED).
+    expect(ack.sessionState).toBe('SESSION_STATE_CANCELLED');
+
+    const { metadata } = await session.metadata();
+    expect(metadata.state).toBe('SESSION_STATE_CANCELLED');
+  });
+});
+
+// ── Session suspend / resume (proto 0.1.3) ───────────────────────────
+//
+// SuspendSession pauses a session non-terminally: TTL is banked, messages are
+// rejected while suspended, and ResumeSession restores OPEN. Symmetric with
+// CancelSession — a Core control-plane RPC restricted to the initiator.
+
+describe('Session suspend / resume', () => {
+  it('suspends then resumes an active session', async () => {
+    const session = new DecisionSession(client, { auth: agentAlice });
+    await session.start({
+      intent: 'Suspendable session',
+      participants: ['alice'],
+      ttlMs: 60_000,
+      sender: 'alice',
+    });
+
+    const suspendAck = await session.suspend('Pausing work');
+    expect(suspendAck.ok).toBe(true);
+    expect(suspendAck.sessionState).toBe('SESSION_STATE_SUSPENDED');
+
+    const suspended = await session.metadata();
+    expect(suspended.metadata.state).toBe('SESSION_STATE_SUSPENDED');
+
+    const resumeAck = await session.resume('Back to work');
+    expect(resumeAck.ok).toBe(true);
+    expect(resumeAck.sessionState).toBe('SESSION_STATE_OPEN');
+
+    const resumed = await session.metadata();
+    expect(resumed.metadata.state).toBe('SESSION_STATE_OPEN');
+
+    await session.cancel('cleanup');
+  });
+
+  it('rejects messages sent to a suspended session', async () => {
+    const session = new DecisionSession(client, { auth: agentAlice });
+    await session.start({
+      intent: 'Suspended reject test',
+      participants: ['alice'],
+      ttlMs: 60_000,
+      sender: 'alice',
+    });
+
+    await session.suspend('Pausing');
+
+    // A mode message to a suspended session must be NACKed by the runtime.
+    await expect(
+      session.propose({ proposalId: 'p1', option: 'deploy', rationale: 'while paused', sender: 'alice' }),
+    ).rejects.toThrow();
+
+    await session.cancel('cleanup');
   });
 });
 

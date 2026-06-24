@@ -74,12 +74,21 @@ function resolvePayloadType(payloadType: string): { mode: string; messageType: s
   return { mode: modeMap[modeShort] ?? '', messageType };
 }
 
-// Normalize fixture payload field names from snake_case to camelCase for ProtoRegistry
+// Proto `bytes` fields (camelCase). Fixtures are JSON, so these arrive as plain
+// strings and must be UTF-8 encoded to a Buffer before protobuf encoding —
+// mirrors the python harness's descriptor-driven str→bytes coercion.
+const BYTES_FIELDS = new Set(['context', 'supportingData', 'details', 'input', 'output', 'partialOutput', 'data']);
+
+// Normalize fixture payload field names from snake_case to camelCase for
+// ProtoRegistry, coercing string values destined for `bytes` fields to Buffer.
 function normalizePayload(payload: Record<string, unknown>): Record<string, unknown> {
   const result: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(payload)) {
+    // Skip repeated/list-valued fields — the projections under test don't assert
+    // on them; mirrors the python harness's `isinstance(v, list): continue`.
+    if (Array.isArray(value)) continue;
     const camelKey = key.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
-    result[camelKey] = value;
+    result[camelKey] = BYTES_FIELDS.has(camelKey) && typeof value === 'string' ? Buffer.from(value, 'utf8') : value;
   }
   return result;
 }
@@ -97,11 +106,10 @@ describe('conformance: projection replay', () => {
     const fixtureName = path.basename(file, '.json');
     const fixture: Fixture = JSON.parse(fs.readFileSync(path.join(FIXTURE_DIR, file), 'utf8'));
 
-    // Skip multi_round — no projection class for extension modes
+    // Skip multi_round — no projection class for extension modes. Reject-path
+    // fixtures ARE replayed (their accepted prefix) so the projection state is
+    // asserted in lockstep with the python harness.
     if (fixture.mode === MODE_MULTI_ROUND) continue;
-
-    // Skip reject-path fixtures — they test runtime rejection, not projection replay
-    if (fixtureName.includes('reject_paths')) continue;
 
     const projectionFactory = MODE_PROJECTIONS[fixture.mode];
     if (!projectionFactory) continue;
@@ -132,12 +140,15 @@ describe('conformance: projection replay', () => {
       const transcript = (projection as unknown as { transcript: unknown[] }).transcript;
       expect(transcript.length).toBe(acceptedMessages.length);
 
-      // Verify commitment is present if fixture expects resolution
-      if (fixture.expect_resolution_present || fixture.expected_resolution) {
+      // Commitment presence is driven solely by the terminal state:
+      // RESOLVED ⇒ committed. Identical rule to the python harness.
+      if (fixture.expected_final_state === 'Resolved') {
         expect(projection.commitment).toBeDefined();
+      } else {
+        expect(projection.commitment).toBeUndefined();
       }
 
-      // Verify commitment fields match expected resolution
+      // Verify every scalar field of expected_resolution (incl. outcome_positive)
       if (fixture.expected_resolution && projection.commitment) {
         const commitment = projection.commitment as Record<string, unknown>;
         for (const [key, expectedValue] of Object.entries(fixture.expected_resolution)) {
@@ -149,6 +160,19 @@ describe('conformance: projection replay', () => {
       // Verify phase matches expected mode state
       if (fixture.expected_mode_state?.phase) {
         expect(projection.phase).toBe(fixture.expected_mode_state.phase);
+      }
+
+      // Verify recorded votes match expected_mode_state.votes (decision mode)
+      const expectedVotes = fixture.expected_mode_state?.votes as
+        | Record<string, Record<string, { vote: string }>>
+        | undefined;
+      if (expectedVotes) {
+        const votes = (projection as unknown as { votes: Map<string, Map<string, { vote: string }>> }).votes;
+        for (const [proposalId, bySender] of Object.entries(expectedVotes)) {
+          for (const [sender, record] of Object.entries(bySender)) {
+            expect(votes.get(proposalId)?.get(sender)?.vote).toBe(record.vote);
+          }
+        }
       }
     });
   }

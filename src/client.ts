@@ -340,6 +340,13 @@ export class MacpClient {
     return this.unary('GetSession', { sessionId }, auth, options?.deadlineMs) as Promise<{ metadata: SessionMetadata }>;
   }
 
+  /**
+   * Terminate a session via the `CancelSession` control-plane RPC.
+   *
+   * As of proto 0.1.3 the resulting `Ack.sessionState` is
+   * `SESSION_STATE_CANCELLED` (previously `SESSION_STATE_EXPIRED`) — distinct
+   * from TTL/policy expiry so consumers can tell explicit cancellation apart.
+   */
   async cancelSession(
     sessionId: string,
     reason: string,
@@ -351,6 +358,57 @@ export class MacpClient {
     const response = await this.unary<Record<string, string>, { ack: Ack }>(
       'CancelSession',
       request,
+      auth,
+      options?.deadlineMs,
+    );
+    const ack = response.ack;
+    if (options?.raiseOnNack !== false && !ack?.ok) throw new MacpAckError(ack ?? {});
+    return ack;
+  }
+
+  /**
+   * Pause a session via the `SuspendSession` control-plane RPC (proto 0.1.3+).
+   *
+   * Suspension is non-terminal: the resulting `Ack.sessionState` is
+   * `SESSION_STATE_SUSPENDED`, the session's remaining TTL is banked, and
+   * messages sent to a suspended session are rejected until {@link resumeSession}
+   * restores it to `SESSION_STATE_OPEN`. Restricted to the initiator and
+   * policy-delegated roles, mirroring {@link cancelSession}.
+   */
+  async suspendSession(
+    sessionId: string,
+    reason: string,
+    options?: { auth?: AuthConfig; deadlineMs?: number; raiseOnNack?: boolean },
+  ): Promise<Ack> {
+    const auth = this.requireAuth(options?.auth);
+    const response = await this.unary<Record<string, string>, { ack: Ack }>(
+      'SuspendSession',
+      { sessionId, reason },
+      auth,
+      options?.deadlineMs,
+    );
+    const ack = response.ack;
+    if (options?.raiseOnNack !== false && !ack?.ok) throw new MacpAckError(ack ?? {});
+    return ack;
+  }
+
+  /**
+   * Resume a suspended session via the `ResumeSession` control-plane RPC
+   * (proto 0.1.3+).
+   *
+   * Restores `SESSION_STATE_OPEN` and adds the banked TTL back to the session's
+   * absolute deadline. Restricted to the initiator and policy-delegated roles,
+   * mirroring {@link suspendSession}.
+   */
+  async resumeSession(
+    sessionId: string,
+    reason: string,
+    options?: { auth?: AuthConfig; deadlineMs?: number; raiseOnNack?: boolean },
+  ): Promise<Ack> {
+    const auth = this.requireAuth(options?.auth);
+    const response = await this.unary<Record<string, string>, { ack: Ack }>(
+      'ResumeSession',
+      { sessionId, reason },
       auth,
       options?.deadlineMs,
     );

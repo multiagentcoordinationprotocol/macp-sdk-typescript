@@ -7,7 +7,16 @@ import {
   RootsWatcher,
   SessionLifecycleWatcher,
   SignalWatcher,
+  TERMINAL_SESSION_LIFECYCLE_EVENT_TYPES,
+  isSessionCancelled,
+  isSessionCreated,
+  isSessionExpired,
+  isSessionResolved,
+  isSessionResumed,
+  isSessionSuspended,
+  isTerminalSessionLifecycleEvent,
 } from '../../src/watchers';
+import type { SessionLifecycleEvent } from '../../src/types';
 
 /**
  * Fake gRPC readable stream: an EventEmitter with a .cancel() method.
@@ -322,5 +331,68 @@ describe('SessionLifecycleWatcher', () => {
     await promise;
 
     expect(seen).toEqual(['EVENT_TYPE_CREATED', 'EVENT_TYPE_EXPIRED']);
+  });
+
+  it('surfaces the proto 0.1.3 suspend/resume/cancel event types verbatim', async () => {
+    const stream = new FakeReadableStream();
+    const watcher = new SessionLifecycleWatcher(makeClientWith('watchSessions', stream));
+    const seen: string[] = [];
+
+    const promise = watcher.watch((event) => {
+      seen.push(event.eventType);
+    });
+
+    stream.emitData({
+      event: { eventType: 'EVENT_TYPE_SUSPENDED', session: { sessionId: 's1' }, observedAtUnixMs: '1' },
+    });
+    stream.emitData({
+      event: { eventType: 'EVENT_TYPE_RESUMED', session: { sessionId: 's1' }, observedAtUnixMs: '2' },
+    });
+    stream.emitData({
+      event: {
+        eventType: 'EVENT_TYPE_CANCELLED',
+        session: { sessionId: 's1', state: 'SESSION_STATE_CANCELLED' },
+        observedAtUnixMs: '3',
+      },
+    });
+    stream.emitEnd();
+    await promise;
+
+    expect(seen).toEqual(['EVENT_TYPE_SUSPENDED', 'EVENT_TYPE_RESUMED', 'EVENT_TYPE_CANCELLED']);
+  });
+});
+
+// ── Lifecycle event predicates (parity with python-sdk SessionLifecycle) ──
+
+describe('session lifecycle predicates', () => {
+  const event = (eventType: SessionLifecycleEvent['eventType']): SessionLifecycleEvent => ({
+    eventType,
+    session: { sessionId: 's1' },
+    observedAtUnixMs: '1',
+  });
+
+  it('classifies each event type by both event object and bare type', () => {
+    expect(isSessionCreated('EVENT_TYPE_CREATED')).toBe(true);
+    expect(isSessionCreated(event('EVENT_TYPE_CREATED'))).toBe(true);
+    expect(isSessionResolved(event('EVENT_TYPE_RESOLVED'))).toBe(true);
+    expect(isSessionExpired(event('EVENT_TYPE_EXPIRED'))).toBe(true);
+    expect(isSessionCancelled(event('EVENT_TYPE_CANCELLED'))).toBe(true);
+    expect(isSessionSuspended(event('EVENT_TYPE_SUSPENDED'))).toBe(true);
+    expect(isSessionResumed(event('EVENT_TYPE_RESUMED'))).toBe(true);
+    // negative case
+    expect(isSessionCreated('EVENT_TYPE_RESOLVED')).toBe(false);
+  });
+
+  it('treats RESOLVED, EXPIRED, and CANCELLED as terminal — and CANCELLED in particular', () => {
+    expect(isTerminalSessionLifecycleEvent('EVENT_TYPE_RESOLVED')).toBe(true);
+    expect(isTerminalSessionLifecycleEvent('EVENT_TYPE_EXPIRED')).toBe(true);
+    expect(isTerminalSessionLifecycleEvent(event('EVENT_TYPE_CANCELLED'))).toBe(true);
+    expect(TERMINAL_SESSION_LIFECYCLE_EVENT_TYPES).toContain('EVENT_TYPE_CANCELLED');
+  });
+
+  it('treats CREATED, SUSPENDED, and RESUMED as non-terminal', () => {
+    expect(isTerminalSessionLifecycleEvent('EVENT_TYPE_CREATED')).toBe(false);
+    expect(isTerminalSessionLifecycleEvent('EVENT_TYPE_SUSPENDED')).toBe(false);
+    expect(isTerminalSessionLifecycleEvent('EVENT_TYPE_RESUMED')).toBe(false);
   });
 });

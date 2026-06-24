@@ -64,7 +64,7 @@ client.close();
 
 The SDK uses a **three-layer** design:
 
-- **Low-level transport** (`MacpClient`): typed wrappers around every `MACPRuntimeService` RPC — `initialize`, `send`, `openStream`, `getSession`, `cancelSession`, `listSessions`, `getManifest`, `listModes`, `listRoots`, `listExtModes`, `registerExtMode`, `unregisterExtMode`, `promoteMode`, the policy RPCs (`register`/`unregister`/`get`/`listPolicies`), plus streaming watchers (`ModeRegistryWatcher`, `RootsWatcher`, `SignalWatcher`, `PolicyWatcher`, `SessionLifecycleWatcher`).
+- **Low-level transport** (`MacpClient`): typed wrappers around every `MACPRuntimeService` RPC — `initialize`, `send`, `openStream`, `getSession`, `cancelSession`, `suspendSession`, `resumeSession`, `listSessions`, `getManifest`, `listModes`, `listRoots`, `listExtModes`, `registerExtMode`, `unregisterExtMode`, `promoteMode`, the policy RPCs (`register`/`unregister`/`get`/`listPolicies`), plus streaming watchers (`ModeRegistryWatcher`, `RootsWatcher`, `SignalWatcher`, `PolicyWatcher`, `SessionLifecycleWatcher`).
 - **High-level session helpers**: one class per coordination mode (`DecisionSession`, `ProposalSession`, `TaskSession`, `HandoffSession`, `QuorumSession`) — wraps `MacpClient`, builds envelopes, encodes payloads, and maintains a local state projection.
 - **Agent framework** (`src/agent/`): event-driven `Participant` with strategy-based handlers, bootstrap runner (`fromBootstrap`), gRPC/HTTP transports, and the optional cancel-callback HTTP server.
 
