@@ -49,13 +49,13 @@
       "payload_type": "Commitment",
       "payload": {
         "commitment_id": "c1",
+        "outcome_positive": true,
         "action": "proposal.accepted",
         "authority_scope": "test",
         "reason": "done",
         "mode_version": "1.0.0",
-        "policy_version": "policy.default",
-        "configuration_version": "cfg-1",
-        "outcome_positive": true
+        "policy_version": "",
+        "configuration_version": "cfg-1"
       },
       "expect": "accept"
     }
