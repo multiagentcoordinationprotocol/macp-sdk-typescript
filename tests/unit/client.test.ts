@@ -350,7 +350,7 @@ describe('newSessionId public export', () => {
     const mod = await import('../../src/index');
     expect(typeof mod.newSessionId).toBe('function');
     const id = mod.newSessionId();
-    // UUID v4 shape — matches runtime validator in runtime/src/session.rs.
+    // UUID v4 shape — matches runtime validator in macp-runtime/src/session.rs.
     expect(id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
   });
 
