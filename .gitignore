@@ -8,7 +8,6 @@ dist/
 *.tgz
 coverage/
 .nyc_output/
-docs/
 .claude/
 CLAUDE.md
 plans/
