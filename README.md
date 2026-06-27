@@ -414,7 +414,7 @@ Run the full SDK against a live MACP runtime:
 
 ```bash
 # Build and start the runtime
-docker build -t macp-runtime ../runtime/
+docker build -t macp-runtime ../macp-runtime/
 docker run -d --name macp-runtime-test -p 50051:50051 \
   -e MACP_BIND_ADDR=0.0.0.0:50051 -e MACP_ALLOW_INSECURE=1 \
   -e MACP_ALLOW_DEV_SENDER_HEADER=1 -e MACP_MEMORY_ONLY=1 macp-runtime
