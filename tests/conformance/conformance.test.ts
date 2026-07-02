@@ -47,6 +47,11 @@ type ProjectionLike = {
   commitment?: Record<string, unknown>;
 };
 
+// Shape of expected_mode_state.votes (decision mode). Named alias so the `as`
+// cast below stays on one line — different prettier 3.x versions wrap an inline
+// union differently, and CI installs the latest at build time.
+type ExpectedVotes = Record<string, Record<string, { vote: string }>>;
+
 const MODE_PROJECTIONS: Record<string, () => ProjectionLike> = {
   [MODE_DECISION]: () => new DecisionProjection() as unknown as ProjectionLike,
   [MODE_PROPOSAL]: () => new ProposalProjection() as unknown as ProjectionLike,
@@ -164,9 +169,7 @@ describe('conformance: projection replay', () => {
       }
 
       // Verify recorded votes match expected_mode_state.votes (decision mode)
-      const expectedVotes = fixture.expected_mode_state?.votes as
-        | Record<string, Record<string, { vote: string }>>
-        | undefined;
+      const expectedVotes = fixture.expected_mode_state?.votes as ExpectedVotes | undefined;
       if (expectedVotes) {
         const votes = (projection as unknown as { votes: Map<string, Map<string, { vote: string }>> }).votes;
         for (const [proposalId, bySender] of Object.entries(expectedVotes)) {
