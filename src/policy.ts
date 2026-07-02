@@ -9,6 +9,14 @@ export interface CommitmentRules {
   designatedRoles?: string[];
   /** Decision-specific: require quorum before commit. Ignored for other modes. */
   requireVoteQuorum?: boolean;
+  /**
+   * RFC-MACP-0012 schema_version 2, Decision mode only: when `true`, a
+   * reject-majority resolves the session with a committed *negative* outcome
+   * (`outcome_positive = false`) instead of denying commitment. Emitted only by
+   * `buildDecisionPolicy`, so the still-v1 quorum/proposal/task/handoff
+   * commitment schemas are unaffected. Default `false` preserves v1 behavior.
+   */
+  allowDeclineOverApproval?: boolean;
 }
 
 export interface VotingRules {
@@ -21,6 +29,13 @@ export interface VotingRules {
 export interface ObjectionHandlingRules {
   criticalSeverityVetoes?: boolean;
   vetoThreshold?: number;
+  /**
+   * RFC-MACP-0012 schema_version 2: action taken when a critical objection would
+   * block commitment. `deny` rejects the commitment (legacy default),
+   * `finalize_decline` resolves the session as a negative outcome, `hold` leaves
+   * the session open. Default `deny` preserves v1 behavior.
+   */
+  criticalObjectionAction?: 'deny' | 'finalize_decline' | 'hold';
 }
 
 export interface EvaluationRules {
@@ -112,6 +127,13 @@ export function buildDecisionPolicy(
   description: string,
   rules: DecisionPolicyRulesInput,
 ): PolicyDescriptor {
+  // Decision-only: extend the shared v1 commitment rules with the schema_version 2
+  // decline-over-approval switch, appended after the shared keys so it does not
+  // leak into the still-v1 quorum/proposal/task/handoff commitment blocks
+  // (parity with python-sdk `_commitment_dict` + `build_decision_policy`).
+  const commitmentSection = serializeCommitment(rules.commitment);
+  commitmentSection.allow_decline_over_approval = rules.commitment?.allowDeclineOverApproval ?? false;
+
   const rulesJson: Record<string, unknown> = {
     voting: {
       algorithm: rules.voting?.algorithm ?? 'none',
@@ -122,19 +144,20 @@ export function buildDecisionPolicy(
     objection_handling: {
       critical_severity_vetoes: rules.objectionHandling?.criticalSeverityVetoes ?? false,
       veto_threshold: rules.objectionHandling?.vetoThreshold ?? 1,
+      critical_objection_action: rules.objectionHandling?.criticalObjectionAction ?? 'deny',
     },
     evaluation: {
       minimum_confidence: rules.evaluation?.minimumConfidence ?? 0,
       required_before_voting: rules.evaluation?.requiredBeforeVoting ?? false,
     },
-    commitment: serializeCommitment(rules.commitment),
+    commitment: commitmentSection,
   };
   return {
     policyId,
     mode: 'macp.mode.decision.v1',
     description,
     rules: JSON.stringify(rulesJson),
-    schemaVersion: 1,
+    schemaVersion: 2,
   };
 }
 

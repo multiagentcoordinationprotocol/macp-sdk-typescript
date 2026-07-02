@@ -18,7 +18,8 @@ describe('policy builders', () => {
       expect(descriptor.policyId).toBe('policy.test');
       expect(descriptor.mode).toBe('macp.mode.decision.v1');
       expect(descriptor.description).toBe('Test policy');
-      expect(descriptor.schemaVersion).toBe(1);
+      // RFC-MACP-0012 schema_version 2 (additive Decision decline-gating fields).
+      expect(descriptor.schemaVersion).toBe(2);
     });
 
     it('includes default voting rules', () => {
@@ -56,6 +57,24 @@ describe('policy builders', () => {
       expect(rules.objection_handling).toEqual({
         critical_severity_vetoes: false,
         veto_threshold: 2,
+        critical_objection_action: 'deny',
+      });
+    });
+
+    it('includes custom critical_objection_action (schema_version 2)', () => {
+      const rules = parseRules(
+        buildDecisionPolicy('p1', 'desc', {
+          objectionHandling: {
+            criticalSeverityVetoes: true,
+            vetoThreshold: 1,
+            criticalObjectionAction: 'finalize_decline',
+          },
+        }),
+      );
+      expect(rules.objection_handling).toEqual({
+        critical_severity_vetoes: true,
+        veto_threshold: 1,
+        critical_objection_action: 'finalize_decline',
       });
     });
 
@@ -85,6 +104,21 @@ describe('policy builders', () => {
         authority: 'designated_role',
         designated_roles: ['admin'],
         require_vote_quorum: true,
+        allow_decline_over_approval: false,
+      });
+    });
+
+    it('includes custom allow_decline_over_approval (schema_version 2)', () => {
+      const rules = parseRules(
+        buildDecisionPolicy('p1', 'desc', {
+          commitment: { authority: 'initiator_only', allowDeclineOverApproval: true },
+        }),
+      );
+      expect(rules.commitment).toEqual({
+        authority: 'initiator_only',
+        designated_roles: [],
+        require_vote_quorum: false,
+        allow_decline_over_approval: true,
       });
     });
 
@@ -93,6 +127,7 @@ describe('policy builders', () => {
       expect(rules.objection_handling).toEqual({
         critical_severity_vetoes: false,
         veto_threshold: 1,
+        critical_objection_action: 'deny',
       });
     });
 
@@ -102,6 +137,7 @@ describe('policy builders', () => {
         authority: 'initiator_only',
         designated_roles: [],
         require_vote_quorum: false,
+        allow_decline_over_approval: false,
       });
     });
   });
@@ -166,6 +202,19 @@ describe('policy builders', () => {
       expect(rules.commitment).toEqual({
         authority: 'designated_role',
         designated_roles: ['lead'],
+        require_vote_quorum: false,
+      });
+    });
+
+    it('stays schema_version 1 and drops the Decision-only allow_decline_over_approval field', () => {
+      const descriptor = buildQuorumPolicy('q1', 'desc', {
+        commitment: { allowDeclineOverApproval: true },
+      });
+      expect(descriptor.schemaVersion).toBe(1);
+      const rules = parseRules(descriptor);
+      expect(rules.commitment).toEqual({
+        authority: 'initiator_only',
+        designated_roles: [],
         require_vote_quorum: false,
       });
     });
