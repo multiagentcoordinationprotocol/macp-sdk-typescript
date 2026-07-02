@@ -193,4 +193,65 @@ describe('DecisionProjection', () => {
     const totals = projection.voteTotals();
     expect(totals['p1']).toBe(1);
   });
+
+  // Negative (decline) committed outcomes. A Decision reject-majority resolved
+  // under a bound policy carries a Commitment with an explicit
+  // `outcome_positive: false`. These assert the value survives the real
+  // encode -> decode round-trip (protobufjs preserves an explicitly-set false
+  // even under `toObject({ defaults: false })`) and that `isPositiveOutcome`
+  // uses `??` (not `||`) so an explicit false is not defaulted back to true.
+  it('projects an explicit negative Commitment (outcome_positive: false) as a negative outcome', () => {
+    projection.applyEnvelope(
+      makeEnvelope('Commitment', {
+        commitmentId: 'c1',
+        action: 'decision.declined',
+        authorityScope: 'test',
+        reason: 'reject majority',
+        outcomePositive: false, // explicit false — must survive encode->decode
+        modeVersion: '1.0.0',
+        policyVersion: '',
+        configurationVersion: 'cfg-1',
+      }),
+      registry,
+    );
+
+    expect(projection.isCommitted).toBe(true);
+    expect(projection.commitment?.outcomePositive).toBe(false); // not undefined
+    expect(projection.isPositiveOutcome).toBe(false); // not defaulted to true
+  });
+
+  it('projects an explicit positive Commitment (outcome_positive: true) as a positive outcome', () => {
+    projection.applyEnvelope(
+      makeEnvelope('Commitment', {
+        commitmentId: 'c1',
+        action: 'decision.approved',
+        authorityScope: 'test',
+        reason: 'approve majority',
+        outcomePositive: true,
+        modeVersion: '1.0.0',
+        configurationVersion: 'cfg-1',
+      }),
+      registry,
+    );
+
+    expect(projection.commitment?.outcomePositive).toBe(true);
+    expect(projection.isPositiveOutcome).toBe(true);
+  });
+
+  it('defaults an omitted outcome_positive to a positive outcome (legacy fallback)', () => {
+    projection.applyEnvelope(
+      makeEnvelope('Commitment', {
+        commitmentId: 'c1',
+        action: 'decision.approved',
+        authorityScope: 'test',
+        reason: 'approved',
+        modeVersion: '1.0.0',
+        configurationVersion: 'cfg-1',
+      }),
+      registry,
+    );
+
+    expect(projection.commitment?.outcomePositive).toBeUndefined(); // absent on the wire
+    expect(projection.isPositiveOutcome).toBe(true); // legacy default preserved
+  });
 });

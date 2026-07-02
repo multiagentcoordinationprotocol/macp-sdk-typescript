@@ -31,6 +31,7 @@ interface Fixture {
   participants: string[];
   mode_version: string;
   configuration_version: string;
+  policy?: Record<string, unknown>;
   policy_version: string;
   ttl_ms: number;
   messages: FixtureMessage[];
