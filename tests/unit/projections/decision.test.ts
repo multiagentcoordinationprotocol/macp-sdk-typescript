@@ -195,11 +195,11 @@ describe('DecisionProjection', () => {
   });
 
   // Negative (decline) committed outcomes. A Decision reject-majority resolved
-  // under a bound policy carries a Commitment with an explicit
-  // `outcome_positive: false`. These assert the value survives the real
-  // encode -> decode round-trip (protobufjs preserves an explicitly-set false
-  // even under `toObject({ defaults: false })`) and that `isPositiveOutcome`
-  // uses `??` (not `||`) so an explicit false is not defaulted back to true.
+  // under a bound policy carries a Commitment with `outcome_positive: false`.
+  // proto3 does not put a default-valued bool on the wire, so the decoder
+  // (`ProtoRegistry.decodeMessage`) materializes absent bools back to `false` —
+  // mirroring Python protobuf, where a schema bool is always present. These lock
+  // in that a negative outcome is never silently read as positive.
   it('projects an explicit negative Commitment (outcome_positive: false) as a negative outcome', () => {
     projection.applyEnvelope(
       makeEnvelope('Commitment', {
@@ -238,20 +238,23 @@ describe('DecisionProjection', () => {
     expect(projection.isPositiveOutcome).toBe(true);
   });
 
-  it('defaults an omitted outcome_positive to a positive outcome (legacy fallback)', () => {
+  it('materializes an omitted outcome_positive to false (proto3 default, matches Python)', () => {
     projection.applyEnvelope(
       makeEnvelope('Commitment', {
         commitmentId: 'c1',
-        action: 'decision.approved',
+        action: 'decision.rejected',
         authorityScope: 'test',
-        reason: 'approved',
+        reason: 'no explicit outcome_positive set',
         modeVersion: '1.0.0',
         configurationVersion: 'cfg-1',
       }),
       registry,
     );
 
-    expect(projection.commitment?.outcomePositive).toBeUndefined(); // absent on the wire
-    expect(projection.isPositiveOutcome).toBe(true); // legacy default preserved
+    // proto3 omits a default bool on the wire; the decoder restores it to false
+    // (the field exists in the schema) rather than leaving it undefined, so
+    // isPositiveOutcome reflects the real proto default instead of guessing true.
+    expect(projection.commitment?.outcomePositive).toBe(false);
+    expect(projection.isPositiveOutcome).toBe(false);
   });
 });

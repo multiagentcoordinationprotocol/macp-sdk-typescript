@@ -89,12 +89,25 @@ export class ProtoRegistry {
   decodeMessage(typeName: string, payload: Buffer): Record<string, unknown> {
     const type = this.lookupType(typeName);
     const decoded = type.decode(payload);
-    return type.toObject(decoded, {
+    const obj = type.toObject(decoded, {
       longs: String,
       enums: String,
       bytes: Buffer,
       defaults: false,
     }) as Record<string, unknown>;
+    // proto3 omits default-valued scalars on the wire; protobufjs (>=8.6) drops
+    // them again on decode with `defaults:false`. For a `bool` that means an
+    // explicit `false` — e.g. `Commitment.outcome_positive` on a negative
+    // (decline) outcome — decodes as *absent*, indistinguishable from unset and
+    // silently mis-read as positive. Materialize proto3 bool defaults so the
+    // read-model always sees the real boolean, mirroring Python protobuf where a
+    // schema bool field is always present.
+    for (const field of type.fieldsArray) {
+      if (field.type === 'bool' && !field.repeated && obj[field.name] === undefined) {
+        obj[field.name] = false;
+      }
+    }
+    return obj;
   }
 
   encodeKnownPayload(mode: string, messageType: string, value: Record<string, unknown>): Buffer {
