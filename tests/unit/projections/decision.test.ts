@@ -193,4 +193,68 @@ describe('DecisionProjection', () => {
     const totals = projection.voteTotals();
     expect(totals['p1']).toBe(1);
   });
+
+  // Negative (decline) committed outcomes. A Decision reject-majority resolved
+  // under a bound policy carries a Commitment with `outcome_positive: false`.
+  // proto3 does not put a default-valued bool on the wire, so the decoder
+  // (`ProtoRegistry.decodeMessage`) materializes absent bools back to `false` —
+  // mirroring Python protobuf, where a schema bool is always present. These lock
+  // in that a negative outcome is never silently read as positive.
+  it('projects an explicit negative Commitment (outcome_positive: false) as a negative outcome', () => {
+    projection.applyEnvelope(
+      makeEnvelope('Commitment', {
+        commitmentId: 'c1',
+        action: 'decision.declined',
+        authorityScope: 'test',
+        reason: 'reject majority',
+        outcomePositive: false, // explicit false — must survive encode->decode
+        modeVersion: '1.0.0',
+        policyVersion: '',
+        configurationVersion: 'cfg-1',
+      }),
+      registry,
+    );
+
+    expect(projection.isCommitted).toBe(true);
+    expect(projection.commitment?.outcomePositive).toBe(false); // not undefined
+    expect(projection.isPositiveOutcome).toBe(false); // not defaulted to true
+  });
+
+  it('projects an explicit positive Commitment (outcome_positive: true) as a positive outcome', () => {
+    projection.applyEnvelope(
+      makeEnvelope('Commitment', {
+        commitmentId: 'c1',
+        action: 'decision.approved',
+        authorityScope: 'test',
+        reason: 'approve majority',
+        outcomePositive: true,
+        modeVersion: '1.0.0',
+        configurationVersion: 'cfg-1',
+      }),
+      registry,
+    );
+
+    expect(projection.commitment?.outcomePositive).toBe(true);
+    expect(projection.isPositiveOutcome).toBe(true);
+  });
+
+  it('materializes an omitted outcome_positive to false (proto3 default, matches Python)', () => {
+    projection.applyEnvelope(
+      makeEnvelope('Commitment', {
+        commitmentId: 'c1',
+        action: 'decision.rejected',
+        authorityScope: 'test',
+        reason: 'no explicit outcome_positive set',
+        modeVersion: '1.0.0',
+        configurationVersion: 'cfg-1',
+      }),
+      registry,
+    );
+
+    // proto3 omits a default bool on the wire; the decoder restores it to false
+    // (the field exists in the schema) rather than leaving it undefined, so
+    // isPositiveOutcome reflects the real proto default instead of guessing true.
+    expect(projection.commitment?.outcomePositive).toBe(false);
+    expect(projection.isPositiveOutcome).toBe(false);
+  });
 });
