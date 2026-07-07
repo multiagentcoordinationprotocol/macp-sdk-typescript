@@ -4,6 +4,83 @@ All notable changes to `macp-sdk-typescript` are documented here. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the
 project uses [Semantic Versioning](https://semver.org/).
 
+## [0.5.0] - 2026-07-06
+
+Absorbs `macp-runtime` 0.5.0 and `@multiagentcoordinationprotocol/proto` 0.1.6
+(resolves to ≥ 0.1.6; content identical through 0.1.8). Plan:
+`plans/absorb-runtime-v0.5.0.md`.
+
+**Requires `macp-runtime` ≥ 0.5.0** for: protobuf `Contribute` encoding, the
+empty-`policy_version` commitment echo, the external task orchestrator, and the
+bearer-only dev-auth flow (the runtime no longer reads `x-macp-agent-id`, and
+refuses to start with no auth unless `MACP_ALLOW_INSECURE=1`). Pin `0.4.x` to
+talk to an older runtime.
+
+### Added
+
+- **`SessionStartPayload.maxSuspendMs`** (proto ≥ 0.1.5) — per-session cap on
+  cumulative suspended time before a `SUSPENDED` session `EXPIRE`s (RFC-MACP-0001
+  §7.5). Threaded through `buildSessionStartPayload`, every mode session's
+  `start()`, the `Participant` initiator config, and the bootstrap runner
+  (`session_start.max_suspend_ms`). `0`/absent = runtime default (7 days);
+  negatives are rejected client-side.
+- **`HandoffAcceptPayload.implicit` decode support** (proto ≥ 0.1.6) — surfaced
+  read-only on `HandoffRecord.implicit` and `HandoffProjection.isImplicitlyAccepted()`
+  for the runtime-emitted synthetic accept (RFC-MACP-0010 §5.1). Client-submitted
+  `implicit` is stripped before encoding so it can never reach the wire.
+- **`ListSessions` pagination** (proto ≥ 0.1.6) — new
+  `MacpClient.listSessionsPage({ pageSize, pageToken })` returning
+  `{ sessions, nextPageToken }`; `listSessions()` now transparently auto-paginates
+  so it still returns the complete listing.
+- **`ext.multi_round.v1` `Contribute` uses canonical protobuf** — encodes as
+  `ContributePayload`; decode tries legacy JSON (`{"value":"..."}`) first for
+  byte-identical replay of pre-proto histories.
+- **`MacpTransportError.code`** — carries the gRPC status name
+  (`RESOURCE_EXHAUSTED`, `FAILED_PRECONDITION`, `UNAUTHENTICATED`, …) surfaced on
+  unary calls, `MacpStream`, and watch streams, so consumers can distinguish
+  watch-stream lag (reconnect) from auth failure (don't) and passive-subscribe
+  resume below a compacted base.
+- **`GrpcTransportAdapter.lastSequence`** — the 1-based accepted-envelope ordinal
+  of the last delivered envelope, a resume cursor for `sendSubscribe`.
+
+### Changed
+
+- **Dev auth is bearer-only.** `Auth.devAgent(agentId)` now sends
+  `Authorization: Bearer <agentId>` (was the `x-macp-agent-id` header). The
+  runtime's dev fallback authenticates any bearer value as its sender, so
+  behavior is transparent for existing callers — but the wire header changed.
+  Integration/runbook: drop `MACP_ALLOW_DEV_SENDER_HEADER=1`, keep the now-mandatory
+  `MACP_ALLOW_INSECURE=1`.
+- **`MacpClient.watchSignals` requires auth** (runtime 0.5.0) — routed through
+  `requireAuth`, so a missing credential fails fast client-side instead of as a
+  stream `UNAUTHENTICATED`. Breaking for anyone watching signals without auth.
+- **`buildQuorumPolicy` validates percentage thresholds.** A `percentage`
+  `threshold.value` must be an integer 0–100 (the approval bar =
+  `ceil(value/100 × participants)`); a fractional value like `0.75` (previously a
+  silent ~1% bar) now throws `MacpSessionError`. Bug-surfacing by design.
+- **`registerExtMode` pre-validates descriptors** — throws if
+  `terminalMessageTypes` lacks `'Commitment'` (mirrors the runtime, which rejects
+  such descriptors).
+- **Canonical conformance fixtures + harness.** Vendored fixtures byte-synced to
+  the spec canonical pack (fully-qualified `payload_type`, `expected_error_code`,
+  `schema.json`); the harness parses FQ names only, with a format guard rejecting
+  legacy shorthand.
+- **`SessionStartPayload` bodies now emit `maxSuspendMs`** (`0` when unset).
+
+### Removed
+
+- **`AuthConfig.agentId`** and the `x-macp-agent-id` metadata path — no supported
+  runtime reads the header. Use `Auth.devAgent` / `Auth.bearer`.
+- **`SessionLifecycleWatcher.events()` / `nextEvent()`** — deprecated aliases;
+  use `changes()` / `nextChange()`.
+- **`MacpClient._watchModeRegistry` / `_watchRoots` / `_watchSignals` /
+  `_watchPolicies`** — deprecated underscored aliases; use the un-prefixed
+  `watch*` methods.
+
+### Fixed
+
+- `MacpClient.clientVersion` default was a stale `'0.3.0'`; now `'0.5.0'`.
+
 ## [0.4.0] - 2026-06-22
 
 Adopts `@multiagentcoordinationprotocol/proto` 0.1.3 — session

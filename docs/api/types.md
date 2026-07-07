@@ -139,10 +139,15 @@ interface SessionStartPayload {
   configurationVersion: string;
   policyVersion?: string;
   ttlMs: number;
+  maxSuspendMs?: number | string;  // proto ≥ 0.1.5; 0/absent = runtime default (7 days); negatives rejected
   context?: Buffer;
   roots?: Root[];
 }
 ```
+
+`maxSuspendMs` binds a per-session cap on cumulative suspended time before a
+`SUSPENDED` session `EXPIRE`s (RFC-MACP-0001 §7.5). Accepts a `number` on input;
+decodes as a string (int64). `0` or absent selects the runtime default.
 
 ### `CommitmentPayload`
 
@@ -213,7 +218,7 @@ interface SignalPayload {
 
 - `HandoffOfferPayload` — `{ handoffId, targetParticipant, scope, reason? }`
 - `HandoffContextPayload` — `{ handoffId, contentType, context? }`
-- `HandoffAcceptPayload` — `{ handoffId, acceptedBy, reason? }`
+- `HandoffAcceptPayload` — `{ handoffId, acceptedBy, reason?, implicit? }` — `implicit` (proto ≥ 0.1.6) is **decode-only**: `true` on the runtime-emitted synthetic accept (RFC-MACP-0010 §5.1). Clients MUST NOT set it; `acceptHandoff` strips it before sending.
 - `HandoffDeclinePayload` — `{ handoffId, declinedBy, reason? }`
 
 ### Quorum Mode

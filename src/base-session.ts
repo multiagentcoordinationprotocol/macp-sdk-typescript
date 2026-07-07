@@ -10,7 +10,7 @@ import {
 } from './envelope';
 import { logger } from './logging';
 import type { BaseProjection } from './projections/base';
-import { validateParticipantCount, validateSessionId } from './validation';
+import { validateMaxSuspendMs, validateParticipantCount, validateSessionId } from './validation';
 import type { Ack, Envelope, Root, SessionMetadata } from './types';
 
 export interface BaseSessionOptions {
@@ -81,6 +81,7 @@ export abstract class BaseSession<P extends BaseProjection> {
     intent: string;
     participants: string[];
     ttlMs: number;
+    maxSuspendMs?: number;
     contextId?: string;
     extensions?: Record<string, Buffer>;
     roots?: Root[];
@@ -88,10 +89,12 @@ export abstract class BaseSession<P extends BaseProjection> {
     auth?: AuthConfig;
   }): Promise<Ack> {
     validateParticipantCount(input.participants.length);
+    if (input.maxSuspendMs !== undefined) validateMaxSuspendMs(input.maxSuspendMs);
     const payload = buildSessionStartPayload({
       intent: input.intent,
       participants: input.participants,
       ttlMs: input.ttlMs,
+      maxSuspendMs: input.maxSuspendMs,
       contextId: input.contextId,
       extensions: input.extensions,
       roots: input.roots,

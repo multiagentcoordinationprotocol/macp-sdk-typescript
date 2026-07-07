@@ -1,3 +1,4 @@
+import { MacpSessionError } from './errors';
 import type { PolicyDescriptor } from './types';
 
 // ── Named policy rule types ─────────────────────────────────────────
@@ -21,7 +22,18 @@ export interface CommitmentRules {
 
 export interface VotingRules {
   algorithm?: 'none' | 'majority' | 'supermajority' | 'unanimous' | 'weighted' | 'plurality';
+  /**
+   * Vote-share fraction on a **0–1 scale** (e.g. `0.5` = simple majority). This
+   * is a DIFFERENT field from the quorum `percentage` below — do not confuse
+   * the scales.
+   */
   threshold?: number;
+  /**
+   * Participation quorum. For `type: 'percentage'`, `value` is an **integer
+   * 0–100** (the runtime evaluates it on the same 0–100 scale as the quorum
+   * mode's threshold), NOT a 0–1 fraction. For `type: 'count'`, an absolute
+   * participant count.
+   */
   quorum?: { type: 'count' | 'percentage'; value: number };
   weights?: Record<string, number>;
 }
@@ -45,6 +57,15 @@ export interface EvaluationRules {
 
 export interface QuorumThreshold {
   type: 'n_of_m' | 'percentage' | 'weighted';
+  /**
+   * The approval bar (RFC-MACP-0012 §4.2) — how many APPROVE commitments the
+   * request needs, NOT a participation quorum. Scale depends on `type`:
+   * - `n_of_m` / `weighted`: an absolute count (or weight sum).
+   * - `percentage`: an **integer 0–100**; the runtime computes the bar as
+   *   `ceil(value / 100 × participants)`. So `75` means "≥ 75% of participants
+   *   must approve", NOT `0.75`. `buildQuorumPolicy` validates this range and
+   *   throws on a non-integer or out-of-[0,100] value.
+   */
   value: number;
 }
 
@@ -166,6 +187,16 @@ export function buildQuorumPolicy(
   description: string,
   rules: QuorumPolicyRulesInput,
 ): PolicyDescriptor {
+  if (rules.threshold?.type === 'percentage') {
+    const v = rules.threshold.value;
+    if (!Number.isInteger(v) || v < 0 || v > 100) {
+      throw new MacpSessionError(
+        `quorum percentage threshold must be an integer in [0, 100] (e.g. 75 for 75%), got ${v}. ` +
+          'The runtime computes the approval bar as ceil(value/100 × participants); a fractional value ' +
+          'like 0.75 would round to a ~1% bar.',
+      );
+    }
+  }
   const rulesJson: Record<string, unknown> = {
     threshold: {
       type: rules.threshold?.type ?? 'n_of_m',

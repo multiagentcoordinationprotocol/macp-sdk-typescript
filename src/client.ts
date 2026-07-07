@@ -11,7 +11,7 @@ import * as grpc from '@grpc/grpc-js';
 import * as protoLoader from '@grpc/proto-loader';
 import { assertSenderMatchesIdentity, authSender, type AuthConfig, metadataFromAuth } from './auth';
 import { buildEnvelope, buildProgressPayload, buildSignalPayload } from './envelope';
-import { MacpAckError, MacpSdkError, MacpTimeoutError, MacpTransportError } from './errors';
+import { MacpAckError, MacpSdkError, MacpSessionError, MacpTimeoutError, MacpTransportError } from './errors';
 import { ProtoRegistry } from './proto-registry';
 import { validateSignalType } from './validation';
 import type {
@@ -94,6 +94,17 @@ class AsyncQueue<T> {
   }
 }
 
+/**
+ * Map a gRPC `ServiceError.code` (numeric `grpc.status`) to its status name
+ * (e.g. `8` → `'RESOURCE_EXHAUSTED'`). Returns `undefined` for non-numeric or
+ * unknown codes. Used to populate {@link MacpTransportError.code}.
+ */
+export function grpcStatusName(code: unknown): string | undefined {
+  if (typeof code !== 'number') return undefined;
+  const name = (grpc.status as Record<number, string>)[code];
+  return typeof name === 'string' ? name : undefined;
+}
+
 const TIMEOUT = Symbol('stream-read-timeout');
 
 const STREAM_END = Symbol('stream-end');
@@ -119,7 +130,7 @@ export class MacpStream {
       }
     });
     call.on('error', (error: grpc.ServiceError) => {
-      this.queue.push(new MacpTransportError(error.details || error.message));
+      this.queue.push(new MacpTransportError(error.details || error.message, grpcStatusName(error.code)));
     });
     call.on('end', () => {
       this.queue.push(STREAM_END);
@@ -141,9 +152,19 @@ export class MacpStream {
   }
 
   /**
-   * RFC-MACP-0006-A1: Send a subscribe-only frame to receive session history
-   * + live broadcast. The runtime replays accepted envelopes from
-   * `afterSequence` onwards, then continues with live broadcast.
+   * RFC-MACP-0006 §3.2: Send a subscribe-only frame to receive session history
+   * + live broadcast. The runtime replays accepted envelopes strictly after
+   * `afterSequence`, then continues with live broadcast.
+   *
+   * `afterSequence` is the **1-based accepted-envelope ordinal**, exclusive:
+   * `0` (default) replays from the very start; `k` replays envelopes with
+   * ordinal `> k`. Clients derive the ordinal by counting delivered envelopes
+   * (the Nth accepted envelope has ordinal N) — see
+   * `IncomingMessage.seq`, which is exactly this ordinal under the new contract.
+   * Ordinals are stable across log compaction and runtime restart. Resuming
+   * below a compacted base returns `FAILED_PRECONDITION` (inspectable via
+   * `MacpTransportError.code`) rather than silently skipping history (runtime
+   * ≥ 0.5.0; older runtimes compared inclusively against a raw log index).
    */
   sendSubscribe(sessionId: string, afterSequence = 0): Promise<void> {
     if (this.closed) return Promise.reject(new MacpSdkError('stream is already closed'));
@@ -222,7 +243,7 @@ export class MacpClient {
     }
     this.defaultDeadlineMs = options.defaultDeadlineMs;
     this.clientName = options.clientName ?? 'macp-sdk-typescript';
-    this.clientVersion = options.clientVersion ?? '0.3.0';
+    this.clientVersion = options.clientVersion ?? '0.5.0';
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { protoDir: defaultProtoDir } = require('@multiagentcoordinationprotocol/proto');
     const protoDir = options.protoDir ?? defaultProtoDir;
@@ -274,7 +295,7 @@ export class MacpClient {
   ): Promise<TResponse> {
     return new Promise<TResponse>((resolve, reject) => {
       const callback = (error: grpc.ServiceError | null, response: TResponse) => {
-        if (error) reject(new MacpTransportError(error.details || error.message));
+        if (error) reject(new MacpTransportError(error.details || error.message, grpcStatusName(error.code)));
         else resolve(response);
       };
       const deadline = this.deadline(deadlineMs);
@@ -433,10 +454,30 @@ export class MacpClient {
     return this.unary('ListRoots', {}, undefined, deadlineMs) as Promise<{ roots: Root[] }>;
   }
 
+  /**
+   * Register an extension-mode descriptor (runtime 0.5.0 guardrails,
+   * change-review A5):
+   * - the descriptor MUST declare `Commitment` among `terminalMessageTypes` —
+   *   an ext mode without a terminal `Commitment` can never resolve, so the
+   *   runtime rejects it. This method fails fast client-side to match.
+   * - a later {@link promoteMode} into the reserved `macp.mode.*` namespace is
+   *   rejected by the runtime.
+   * - a SessionStart with an empty `mode_version` binds the registered
+   *   descriptor's `modeVersion`; a subsequent Commitment must echo that bound
+   *   version (echoing `""` no longer matches vacuously). `BaseSession`
+   *   defaults `modeVersion` to `'1.0.0'`, so set the descriptor's version to
+   *   match, or override the session's `modeVersion`.
+   */
   async registerExtMode(
     descriptor: ModeDescriptor,
     options?: { auth?: AuthConfig; deadlineMs?: number },
   ): Promise<{ ok: boolean; error?: string }> {
+    if (!descriptor.terminalMessageTypes?.includes('Commitment')) {
+      throw new MacpSessionError(
+        `ext-mode descriptor '${descriptor.mode}' must declare 'Commitment' in terminalMessageTypes; ` +
+          'a mode without a terminal Commitment can never resolve and the runtime rejects it.',
+      );
+    }
     const auth = this.requireAuth(options?.auth);
     return this.unary('RegisterExtMode', { modeDescriptor: descriptor }, auth, options?.deadlineMs) as Promise<{
       ok: boolean;
@@ -512,15 +553,59 @@ export class MacpClient {
     return res.descriptors || [];
   }
 
-  async listSessions(options?: { auth?: AuthConfig; deadlineMs?: number }): Promise<SessionMetadata[]> {
+  /**
+   * Fetch a single page of sessions (proto ≥ 0.1.6). `pageSize: 0` (or absent)
+   * lets the server choose the page size; the server MAY cap it. Callers MUST
+   * NOT assume the listing is complete unless `nextPageToken` is empty. Pass a
+   * returned non-empty `nextPageToken` back as `pageToken` to fetch the next
+   * page; a stale token yields `INVALID_ARGUMENT`.
+   */
+  async listSessionsPage(options?: {
+    pageSize?: number;
+    pageToken?: string;
+    auth?: AuthConfig;
+    deadlineMs?: number;
+  }): Promise<{ sessions: SessionMetadata[]; nextPageToken: string }> {
     const auth = this.requireAuth(options?.auth);
-    const res = await this.unary<Record<string, never>, { sessions?: SessionMetadata[] }>(
+    const res = await this.unary<
+      { pageSize: number; pageToken: string },
+      { sessions?: SessionMetadata[]; nextPageToken?: string }
+    >(
       'ListSessions',
-      {},
+      { pageSize: options?.pageSize ?? 0, pageToken: options?.pageToken ?? '' },
       auth,
       options?.deadlineMs,
     );
-    return res.sessions || [];
+    return { sessions: res.sessions ?? [], nextPageToken: res.nextPageToken ?? '' };
+  }
+
+  /**
+   * Enumerate ALL sessions, transparently walking pages until the runtime
+   * returns an empty `nextPageToken`. Preserves the "complete list" semantics
+   * this method has always documented, even against runtimes that cap page
+   * sizes (proto ≥ 0.1.6). For manual page control, use {@link listSessionsPage}.
+   */
+  async listSessions(options?: {
+    auth?: AuthConfig;
+    deadlineMs?: number;
+    pageSize?: number;
+  }): Promise<SessionMetadata[]> {
+    const all: SessionMetadata[] = [];
+    let pageToken = '';
+    // Bound the walk defensively so a misbehaving runtime that never returns an
+    // empty token cannot spin forever.
+    for (let page = 0; page < 100_000; page++) {
+      const res = await this.listSessionsPage({
+        pageSize: options?.pageSize,
+        pageToken,
+        auth: options?.auth,
+        deadlineMs: options?.deadlineMs,
+      });
+      all.push(...res.sessions);
+      if (!res.nextPageToken) return all;
+      pageToken = res.nextPageToken;
+    }
+    return all;
   }
 
   watchSessions(auth?: AuthConfig): grpc.ClientReadableStream<any> {
@@ -531,11 +616,6 @@ export class MacpClient {
   watchPolicies(auth?: AuthConfig): grpc.ClientReadableStream<any> {
     const metadata = this.metadata(auth);
     return metadata ? (this.client as any).WatchPolicies({}, metadata) : (this.client as any).WatchPolicies({});
-  }
-
-  /** @deprecated Use {@link watchPolicies}. Scheduled for removal in 0.4.0. */
-  _watchPolicies(auth?: AuthConfig): grpc.ClientReadableStream<any> {
-    return this.watchPolicies(auth);
   }
 
   openStream(options?: { auth?: AuthConfig }): MacpStream {
@@ -555,28 +635,15 @@ export class MacpClient {
     return metadata ? (this.client as any).WatchRoots({}, metadata) : (this.client as any).WatchRoots({});
   }
 
-  watchSignals(auth?: AuthConfig): grpc.ClientReadableStream<any> {
-    const metadata = this.metadata(auth);
-    return metadata ? (this.client as any).WatchSignals({}, metadata) : (this.client as any).WatchSignals({});
-  }
-
   /**
-   * @deprecated Use {@link watchModeRegistry}, {@link watchRoots},
-   * {@link watchSignals}. Scheduled for removal in 0.4.0 — the underscored
-   * aliases were kept while `src/watchers.ts` migrated.
+   * Subscribe to the ambient signal plane. Requires auth as of runtime 0.5.0 —
+   * routed through {@link requireAuth} so a missing credential fails fast with a
+   * clear client-side error instead of a stream `UNAUTHENTICATED`.
    */
-  _watchModeRegistry(auth?: AuthConfig): grpc.ClientReadableStream<any> {
-    return this.watchModeRegistry(auth);
-  }
-
-  /** @deprecated Use {@link watchRoots}. Scheduled for removal in 0.4.0. */
-  _watchRoots(auth?: AuthConfig): grpc.ClientReadableStream<any> {
-    return this.watchRoots(auth);
-  }
-
-  /** @deprecated Use {@link watchSignals}. Scheduled for removal in 0.4.0. */
-  _watchSignals(auth?: AuthConfig): grpc.ClientReadableStream<any> {
-    return this.watchSignals(auth);
+  watchSignals(auth?: AuthConfig): grpc.ClientReadableStream<any> {
+    const selected = this.requireAuth(auth);
+    const metadata = metadataFromAuth(selected);
+    return (this.client as any).WatchSignals({}, metadata);
   }
 
   async sendSignal(options: {

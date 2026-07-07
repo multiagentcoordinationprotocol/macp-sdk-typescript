@@ -67,6 +67,14 @@ export function validateTtlMs(ttlMs: number): void {
   }
 }
 
+export function validateMaxSuspendMs(maxSuspendMs: number): void {
+  // 0 = "use runtime default"; only negatives are rejected (matches the
+  // runtime, which rejects negative max_suspend_ms at SessionStart).
+  if (!Number.isFinite(maxSuspendMs) || maxSuspendMs < 0) {
+    throw new MacpSessionError(`max_suspend_ms must be >= 0 (0 = runtime default), got ${maxSuspendMs}`);
+  }
+}
+
 export function validateParticipants(participants: string[]): void {
   if (!participants.length) {
     throw new MacpSessionError('participants must be non-empty');
@@ -91,12 +99,14 @@ export function validateSessionStart(input: {
   intent: string;
   participants: string[];
   ttlMs: number;
+  maxSuspendMs?: number;
   modeVersion: string;
   configurationVersion: string;
 }): void {
   validateRequiredField('intent', input.intent);
   validateParticipants(input.participants);
   validateTtlMs(input.ttlMs);
+  if (input.maxSuspendMs !== undefined) validateMaxSuspendMs(input.maxSuspendMs);
   validateRequiredField('modeVersion', input.modeVersion);
   validateRequiredField('configurationVersion', input.configurationVersion);
 }

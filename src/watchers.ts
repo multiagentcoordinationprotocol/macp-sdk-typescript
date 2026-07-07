@@ -1,7 +1,7 @@
 import type * as grpc from '@grpc/grpc-js';
 import type { AuthConfig } from './auth';
-import type { MacpClient } from './client';
-import { logger } from './logging';
+import { grpcStatusName, type MacpClient } from './client';
+import { MacpTransportError } from './errors';
 import type {
   Envelope,
   PolicyDescriptor,
@@ -59,7 +59,14 @@ function serverStreamToAsyncGenerator<T>(stream: grpc.ClientReadableStream<T>): 
     }
   });
   stream.on('error', (error: Error) => {
-    queue.push({ error });
+    // Wrap the raw gRPC ServiceError into a coded MacpTransportError so
+    // consumers can branch on `.code`: consumer lag terminates a watch stream
+    // with RESOURCE_EXHAUSTED (reconnect + re-sync), an unauthenticated
+    // WatchSignals with UNAUTHENTICATED (fix auth, do NOT reconnect).
+    const code = grpcStatusName((error as grpc.ServiceError).code);
+    const serviceErr = error as grpc.ServiceError;
+    const wrapped = new MacpTransportError(serviceErr.details || error.message, code);
+    queue.push({ error: wrapped });
     if (resolve) {
       resolve();
       resolve = null;
@@ -165,6 +172,16 @@ export class RootsWatcher {
   }
 }
 
+/**
+ * Watches the ambient signal plane. **Requires auth** as of runtime 0.5.0: if
+ * no credential is configured on the watcher or the client, iterating
+ * {@link SignalWatcher.signals} throws immediately (via `client.watchSignals`).
+ *
+ * Consumer lag terminates the stream with a coded `MacpTransportError`
+ * (`code === 'RESOURCE_EXHAUSTED'`); the correct response is to reconnect.
+ * A missing/invalid credential surfaces as `code === 'UNAUTHENTICATED'` — fix
+ * auth, do not reconnect.
+ */
 export class SignalWatcher {
   private readonly client: MacpClient;
   private readonly auth?: AuthConfig;
@@ -237,11 +254,15 @@ export class PolicyWatcher {
   }
 }
 
+/**
+ * Watches session lifecycle events (`WatchSessions`). Consumer lag terminates
+ * the stream with a coded `MacpTransportError` (`code === 'RESOURCE_EXHAUSTED'`);
+ * the correct response is to reconnect and re-sync current state via
+ * {@link MacpClient.listSessions}, since events emitted during the gap are lost.
+ */
 export class SessionLifecycleWatcher {
   private readonly client: MacpClient;
   private readonly auth?: AuthConfig;
-  private deprecatedEventsWarned = false;
-  private deprecatedNextEventWarned = false;
 
   constructor(client: MacpClient, options?: { auth?: AuthConfig }) {
     this.client = client;
@@ -271,29 +292,5 @@ export class SessionLifecycleWatcher {
     await gen.return(undefined as never);
     if (result.done) throw new Error('stream ended before receiving a session lifecycle event');
     return result.value;
-  }
-
-  /**
-   * @deprecated Use {@link changes} — renamed for parity with python-sdk's
-   * `SessionLifecycleWatcher.changes()` and the uniform `changes()` name
-   * used by all other watchers in both SDKs. Will be removed in 0.5.0.
-   */
-  async *events(signal?: AbortSignal): AsyncGenerator<SessionLifecycleEvent, void, void> {
-    if (!this.deprecatedEventsWarned) {
-      this.deprecatedEventsWarned = true;
-      logger.warn('[deprecated] SessionLifecycleWatcher.events() — use changes() instead');
-    }
-    yield* this.changes(signal);
-  }
-
-  /**
-   * @deprecated Use {@link nextChange}. Will be removed in 0.5.0.
-   */
-  async nextEvent(): Promise<SessionLifecycleEvent> {
-    if (!this.deprecatedNextEventWarned) {
-      this.deprecatedNextEventWarned = true;
-      logger.warn('[deprecated] SessionLifecycleWatcher.nextEvent() — use nextChange() instead');
-    }
-    return this.nextChange();
   }
 }

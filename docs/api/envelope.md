@@ -41,6 +41,7 @@ const payload = buildSessionStartPayload({
   intent: 'decide something',        // required
   participants: ['alice', 'bob'],     // required
   ttlMs: 60_000,                     // required
+  maxSuspendMs: 3_600_000,           // optional; 0/absent = runtime default (7 days). proto ≥ 0.1.5
   modeVersion: '1.0.0',              // default: DEFAULT_MODE_VERSION
   configurationVersion: 'config.default', // default
   policyVersion: 'policy.default',    // default
@@ -48,6 +49,18 @@ const payload = buildSessionStartPayload({
   roots: [{ uri: '...', name: '...' }], // default: []
 });
 ```
+
+`maxSuspendMs` binds a per-session cap on cumulative suspended time before a
+SUSPENDED session transitions to EXPIRED (RFC-MACP-0001 §7.5). `0` or absent
+selects the runtime's configured default; negative values are rejected. The
+runtime records the resolved cap so replay is deterministic. Every mode
+session's `start()` accepts `maxSuspendMs` too and threads it here.
+
+`buildCommitmentPayload` note: a Commitment with an **empty** `policyVersion`
+matches the session's bound policy on runtime ≥ 0.5.0 (a non-empty value must
+equal the resolved policy id exactly). The mode session helpers echo the bound
+value automatically; the standalone builder keeps the `'policy.default'` default
+for backward compatibility (pass `policyVersion: ''` to opt into empty-echo).
 
 ## `buildCommitmentPayload(input)`
 

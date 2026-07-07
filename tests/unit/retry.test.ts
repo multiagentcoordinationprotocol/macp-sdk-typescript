@@ -119,7 +119,7 @@ describe('retrySend', () => {
   it('passes auth option to client.send', async () => {
     const client = makeMockClient([makeAck(true)]);
     const envelope = makeEnvelope();
-    const auth = { agentId: 'test-agent' };
+    const auth = { bearerToken: 'test-agent', senderHint: 'test-agent' };
 
     await retrySend(client, envelope, { auth });
 

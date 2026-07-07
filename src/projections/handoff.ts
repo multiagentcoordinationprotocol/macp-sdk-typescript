@@ -12,6 +12,12 @@ export interface HandoffRecord {
   contextContentType?: string;
   acceptedBy?: string;
   declinedBy?: string;
+  /**
+   * `true` when the accept that resolved this handoff was a runtime-emitted
+   * synthetic implicit accept (RFC-MACP-0010 §5.1, proto ≥ 0.1.6). `false` for
+   * an explicit target accept. Only meaningful once `status === 'accepted'`.
+   */
+  implicit?: boolean;
 }
 
 export class HandoffProjection {
@@ -53,11 +59,15 @@ export class HandoffProjection {
         break;
       }
       case 'HandoffAccept': {
-        const record = payload as { handoffId: string; acceptedBy: string };
+        const record = payload as { handoffId: string; acceptedBy: string; implicit?: boolean };
         const handoff = this.handoffs.get(record.handoffId);
         if (handoff) {
           handoff.status = 'accepted';
           handoff.acceptedBy = record.acceptedBy;
+          // proto3 bool defaults are materialized to `false` on decode
+          // (proto-registry), so this is always a real boolean once proto 0.1.6
+          // is loaded — `true` marks a runtime synthetic implicit accept.
+          handoff.implicit = record.implicit ?? false;
         }
         this.phase = 'Accepted';
         break;
@@ -104,6 +114,16 @@ export class HandoffProjection {
 
   isDeclined(handoffId: string): boolean {
     return this.handoffs.get(handoffId)?.status === 'declined';
+  }
+
+  /**
+   * `true` when the handoff was resolved by a runtime-emitted synthetic implicit
+   * accept (RFC-MACP-0010 §5.1) rather than an explicit target accept. Returns
+   * `false` for explicitly-accepted or not-yet-accepted handoffs.
+   */
+  isImplicitlyAccepted(handoffId: string): boolean {
+    const handoff = this.handoffs.get(handoffId);
+    return handoff?.status === 'accepted' && handoff.implicit === true;
   }
 
   pendingHandoffs(): HandoffRecord[] {

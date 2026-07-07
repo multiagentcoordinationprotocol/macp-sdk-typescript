@@ -31,6 +31,7 @@ interface SessionOptions {
   intent: string;                                    // session purpose
   participants: string[];                            // participant identifiers
   ttlMs: number;                                     // time-to-live in milliseconds
+  maxSuspendMs?: number;                             // proto ≥ 0.1.5; max cumulative suspend (0 = runtime default)
   context?: Buffer | string | Record<string, unknown>; // optional bound context
   roots?: { uri: string; name?: string }[];          // optional coordination roots
   sender?: string;                                   // optional sender override

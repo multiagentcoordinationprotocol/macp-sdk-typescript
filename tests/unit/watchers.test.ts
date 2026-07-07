@@ -72,6 +72,18 @@ describe('ModeRegistryWatcher', () => {
     await expect(next).rejects.toThrow('boom');
   });
 
+  it('wraps a coded gRPC ServiceError into a MacpTransportError carrying the status name', async () => {
+    const stream = new FakeReadableStream();
+    const watcher = new ModeRegistryWatcher(makeClientWith('watchModeRegistry', stream));
+
+    const iter = watcher.changes();
+    const next = iter.next();
+    // grpc.status.RESOURCE_EXHAUSTED === 8 — consumer-lag signal on a watch stream.
+    const svcErr = Object.assign(new Error('8 RESOURCE_EXHAUSTED'), { code: 8, details: 'lagging consumer' });
+    stream.emitError(svcErr);
+    await expect(next).rejects.toMatchObject({ name: 'MacpTransportError', code: 'RESOURCE_EXHAUSTED' });
+  });
+
   it('cancels the underlying stream when the AbortSignal fires', async () => {
     const stream = new FakeReadableStream();
     const watcher = new ModeRegistryWatcher(makeClientWith('watchModeRegistry', stream));
@@ -277,39 +289,6 @@ describe('SessionLifecycleWatcher', () => {
 
     stream.emitEnd();
     await pending;
-  });
-
-  it('exposes deprecated events()/nextEvent() aliases for one release', async () => {
-    const stream = new FakeReadableStream();
-    const watcher = new SessionLifecycleWatcher(makeClientWith('watchSessions', stream));
-
-    const iter = watcher.events();
-    const pending = iter.next();
-    stream.emitData({
-      event: {
-        eventType: 'EVENT_TYPE_CREATED',
-        session: { sessionId: 's3' },
-        observedAtUnixMs: '300',
-      },
-    });
-    const first = await pending;
-    expect(first.value).toMatchObject({ eventType: 'EVENT_TYPE_CREATED', session: { sessionId: 's3' } });
-
-    // nextEvent is also kept as a deprecated alias.
-    const stream2 = new FakeReadableStream();
-    const watcher2 = new SessionLifecycleWatcher(makeClientWith('watchSessions', stream2));
-    const pendingAlias = watcher2.nextEvent();
-    stream2.emitData({
-      event: {
-        eventType: 'EVENT_TYPE_RESOLVED',
-        session: { sessionId: 's4' },
-        observedAtUnixMs: '400',
-      },
-    });
-    await expect(pendingAlias).resolves.toMatchObject({
-      eventType: 'EVENT_TYPE_RESOLVED',
-      session: { sessionId: 's4' },
-    });
   });
 
   it('watch() drives the handler for each event', async () => {

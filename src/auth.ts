@@ -3,7 +3,6 @@ import { MacpIdentityMismatchError } from './errors';
 
 export interface AuthConfig {
   bearerToken?: string;
-  agentId?: string;
   senderHint?: string;
   /**
    * The authenticated sender this credential represents. When present, the SDK
@@ -28,13 +27,19 @@ export type BearerAuthOptions =
 
 export const Auth = {
   /**
-   * Dev-mode agent identity. Uses the `x-macp-agent-id` header — only accepted
-   * by runtimes started with `MACP_ALLOW_DEV_SENDER_HEADER=1`. Not for
-   * production. Does not set {@link AuthConfig.expectedSender}; dev flows stay
-   * permissive so tests can reuse a single credential across senders.
+   * Dev-mode agent identity (bearer-only, runtime ≥ 0.5.0). Sends
+   * `Authorization: Bearer <agentId>`; the runtime's dev fallback authenticates
+   * any bearer value as the sender of that value, so `Auth.devAgent('alice')`
+   * authenticates as sender `alice`. Requires the runtime to be started with
+   * `MACP_ALLOW_INSECURE=1` (it refuses to start with no auth configured
+   * otherwise). Not for production — use {@link Auth.bearer}.
+   *
+   * The legacy `x-macp-agent-id` header was removed in 0.5.0: no supported
+   * runtime reads it. Does not set {@link AuthConfig.expectedSender}; dev flows
+   * stay permissive so tests can reuse a single credential across senders.
    */
   devAgent(agentId: string): AuthConfig {
-    return { agentId, senderHint: agentId };
+    return { bearerToken: agentId, senderHint: agentId };
   },
   /**
    * Production bearer-token credential. Pass `{ expectedSender }` to have the
@@ -60,17 +65,14 @@ export const Auth = {
 };
 
 export function validateAuth(auth: AuthConfig): void {
-  if (!auth.bearerToken && !auth.agentId) {
-    throw new Error('either bearerToken or agentId is required');
-  }
-  if (auth.bearerToken && auth.agentId) {
-    throw new Error('choose either bearerToken or agentId, not both');
+  if (!auth.bearerToken) {
+    throw new Error('bearerToken is required');
   }
 }
 
 export function authSender(auth?: AuthConfig): string | undefined {
   if (!auth) return undefined;
-  return auth.expectedSender ?? auth.senderHint ?? auth.agentId;
+  return auth.expectedSender ?? auth.senderHint;
 }
 
 /**
@@ -89,7 +91,6 @@ export function assertSenderMatchesIdentity(auth: AuthConfig | undefined, sender
 export function metadataFromAuth(auth: AuthConfig): grpc.Metadata {
   validateAuth(auth);
   const metadata = new grpc.Metadata();
-  if (auth.bearerToken) metadata.set('authorization', `Bearer ${auth.bearerToken}`);
-  if (auth.agentId) metadata.set('x-macp-agent-id', auth.agentId);
+  metadata.set('authorization', `Bearer ${auth.bearerToken}`);
   return metadata;
 }

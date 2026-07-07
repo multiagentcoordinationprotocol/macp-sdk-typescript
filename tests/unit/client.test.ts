@@ -1,12 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Auth } from '../../src/auth';
-import { MacpClient, MacpStream } from '../../src/client';
+import { MacpClient, MacpStream, grpcStatusName } from '../../src/client';
 import { DecisionSession } from '../../src/decision';
 import { HandoffSession } from '../../src/handoff';
 import { ProposalSession } from '../../src/proposal';
 import { QuorumSession } from '../../src/quorum';
 import { TaskSession } from '../../src/task';
-import { MacpIdentityMismatchError, MacpSdkError } from '../../src/errors';
+import { MacpIdentityMismatchError, MacpSdkError, MacpTransportError } from '../../src/errors';
 
 /**
  * Build a real MacpClient without any wire activity. Constructor binds a gRPC
@@ -274,6 +274,119 @@ describe('MacpClient.listSessions', () => {
 
     const result = await client.listSessions();
     expect(result).toEqual([]);
+  });
+
+  it('listSessionsPage returns one page and its next token', async () => {
+    const client = makeClient();
+    const grpcClient = (client as unknown as { client: Record<string, unknown> }).client;
+    grpcClient.ListSessions = (
+      req: { pageSize: number; pageToken: string },
+      _meta: unknown,
+      cb: (err: null, res: unknown) => void,
+    ) => {
+      expect(req.pageSize).toBe(2);
+      expect(req.pageToken).toBe('');
+      cb(null, { sessions: [{ sessionId: 's1' }, { sessionId: 's2' }], nextPageToken: 'tok-1' });
+    };
+
+    const page = await client.listSessionsPage({ pageSize: 2 });
+    expect(page.sessions.map((s) => s.sessionId)).toEqual(['s1', 's2']);
+    expect(page.nextPageToken).toBe('tok-1');
+  });
+
+  it('surfaces the gRPC status name on a unary transport error', async () => {
+    const client = makeClient();
+    const grpcClient = (client as unknown as { client: Record<string, unknown> }).client;
+    grpcClient.ListSessions = (_req: unknown, _meta: unknown, cb: (err: unknown) => void) => {
+      // grpc.status.FAILED_PRECONDITION === 9
+      cb({ code: 9, details: 'stale page token', message: '9 FAILED_PRECONDITION' });
+    };
+    await expect(client.listSessionsPage()).rejects.toBeInstanceOf(MacpTransportError);
+    await expect(client.listSessionsPage()).rejects.toMatchObject({ code: 'FAILED_PRECONDITION' });
+  });
+
+  it('listSessions auto-paginates until the next token is empty', async () => {
+    const client = makeClient();
+    const pages: Record<string, { sessions: { sessionId: string }[]; nextPageToken: string }> = {
+      '': { sessions: [{ sessionId: 's1' }, { sessionId: 's2' }], nextPageToken: 'tok-1' },
+      'tok-1': { sessions: [{ sessionId: 's3' }], nextPageToken: 'tok-2' },
+      'tok-2': { sessions: [{ sessionId: 's4' }], nextPageToken: '' },
+    };
+    const seenTokens: string[] = [];
+    const grpcClient = (client as unknown as { client: Record<string, unknown> }).client;
+    grpcClient.ListSessions = (
+      req: { pageSize: number; pageToken: string },
+      _meta: unknown,
+      cb: (err: null, res: unknown) => void,
+    ) => {
+      seenTokens.push(req.pageToken);
+      cb(null, pages[req.pageToken]);
+    };
+
+    const result = await client.listSessions({ pageSize: 2 });
+    expect(result.map((s) => s.sessionId)).toEqual(['s1', 's2', 's3', 's4']);
+    expect(seenTokens).toEqual(['', 'tok-1', 'tok-2']);
+  });
+});
+
+// ── grpcStatusName helper ───────────────────────────────────────────
+
+describe('grpcStatusName', () => {
+  it('maps a numeric gRPC status code to its name', () => {
+    expect(grpcStatusName(8)).toBe('RESOURCE_EXHAUSTED');
+    expect(grpcStatusName(16)).toBe('UNAUTHENTICATED');
+    expect(grpcStatusName(9)).toBe('FAILED_PRECONDITION');
+  });
+
+  it('returns undefined for non-numeric or unknown codes', () => {
+    expect(grpcStatusName('8')).toBeUndefined();
+    expect(grpcStatusName(undefined)).toBeUndefined();
+    expect(grpcStatusName(99999)).toBeUndefined();
+  });
+});
+
+// ── Ext-mode registration guardrail (runtime 0.5.0) ─────────────────
+
+describe('MacpClient.registerExtMode guardrails', () => {
+  it('rejects a descriptor lacking a terminal Commitment before hitting the wire', async () => {
+    const client = makeClient();
+    let called = false;
+    const grpcClient = (client as unknown as { client: Record<string, unknown> }).client;
+    grpcClient.RegisterExtMode = () => {
+      called = true;
+    };
+    await expect(
+      client.registerExtMode({
+        mode: 'ext.test.v1',
+        modeVersion: '1.0.0',
+        description: 'x',
+        messageTypes: ['SessionStart', 'Contribute', 'Commitment'],
+        terminalMessageTypes: [],
+      }),
+    ).rejects.toThrow(/Commitment/);
+    expect(called).toBe(false);
+  });
+});
+
+// ── WatchSignals auth requirement (runtime 0.5.0) ───────────────────
+
+describe('MacpClient.watchSignals', () => {
+  it('throws a clear client-side error when no auth is configured', () => {
+    const client = new MacpClient({ address: '127.0.0.1:50051', secure: false, allowInsecure: true });
+    expect(() => client.watchSignals()).toThrow(MacpSdkError);
+    expect(() => client.watchSignals()).toThrow(/requires auth/);
+  });
+
+  it('subscribes with metadata when auth is present', () => {
+    const client = makeClient();
+    const grpcClient = (client as unknown as { client: Record<string, unknown> }).client;
+    let called = false;
+    grpcClient.WatchSignals = (_req: unknown, _meta: unknown) => {
+      called = true;
+      return {} as unknown;
+    };
+    client.watchSignals();
+    expect(called).toBe(true);
   });
 });
 

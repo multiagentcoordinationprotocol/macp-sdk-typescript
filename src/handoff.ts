@@ -66,12 +66,14 @@ export class HandoffSession {
     contextId?: string;
     extensions?: Record<string, Buffer>;
     roots?: { uri: string; name?: string }[];
+    maxSuspendMs?: number;
     sender?: string;
   }): Promise<Ack> {
     validateSessionStart({
       intent: input.intent,
       participants: input.participants,
       ttlMs: input.ttlMs,
+      maxSuspendMs: input.maxSuspendMs,
       modeVersion: this.modeVersion,
       configurationVersion: this.configurationVersion,
     });
@@ -79,6 +81,7 @@ export class HandoffSession {
       intent: input.intent,
       participants: input.participants,
       ttlMs: input.ttlMs,
+      maxSuspendMs: input.maxSuspendMs,
       contextId: input.contextId,
       extensions: input.extensions,
       roots: input.roots,
@@ -124,12 +127,18 @@ export class HandoffSession {
 
   async acceptHandoff(input: HandoffAcceptPayload & { sender?: string; auth?: AuthConfig }): Promise<Ack> {
     validateRequiredField('handoffId', input.handoffId);
+    // `implicit` is a runtime-emitted-only flag (RFC-MACP-0010 §5.1); the
+    // runtime rejects client-submitted accepts with implicit=true. Strip it so
+    // a caller can never produce a rejected envelope, regardless of what they
+    // pass — belt and braces with the JSDoc "read-only" contract on the type.
+    const rest: Record<string, unknown> = { ...input };
+    delete rest.implicit;
     const envelope = buildEnvelope({
       mode: MODE_HANDOFF,
       messageType: 'HandoffAccept',
       sessionId: this.sessionId,
       sender: this.senderFor(input.sender, input.auth),
-      payload: this.client.protoRegistry.encodeKnownPayload(MODE_HANDOFF, 'HandoffAccept', toProtoPayload(input)),
+      payload: this.client.protoRegistry.encodeKnownPayload(MODE_HANDOFF, 'HandoffAccept', rest),
     });
     return this.sendAndTrack(envelope, input.auth);
   }

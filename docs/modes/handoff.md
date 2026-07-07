@@ -112,11 +112,25 @@ await session.decline({
 ### Query Helpers
 
 ```typescript
-session.projection.getHandoff('h1');        // full HandoffRecord
-session.projection.isAccepted('h1');        // true after HandoffAccept
-session.projection.isDeclined('h1');        // true after HandoffDecline
-session.projection.pendingHandoffs();       // handoffs in offered/context_sent status
+session.projection.getHandoff('h1');            // full HandoffRecord (incl. `implicit`)
+session.projection.isAccepted('h1');            // true after HandoffAccept
+session.projection.isImplicitlyAccepted('h1');  // true only for a runtime synthetic implicit accept
+session.projection.isDeclined('h1');            // true after HandoffDecline
+session.projection.pendingHandoffs();           // handoffs in offered/context_sent status
 ```
+
+### Implicit accepts (RFC-MACP-0010 §5.1, proto ≥ 0.1.6)
+
+When a handoff policy sets `implicit_accept_timeout_ms`, the runtime may emit a
+**synthetic** accept once the timeout elapses (`message_id` =
+`implicit-accept:<handoff_id>`, `implicit = true`). The projection surfaces this
+via `HandoffRecord.implicit` / `isImplicitlyAccepted(handoffId)`.
+
+This flag is **read-only / decode-only**: clients MUST NOT submit an accept with
+`implicit = true` — the runtime rejects it. `HandoffSession.acceptHandoff`
+strips the field before encoding, so a caller can never produce a rejected
+envelope. (Runtime 0.5.0 ships the proto field and contract; the emitting timer
+lands in a later runtime release — SDK decode support future-proofs consumers.)
 
 ## RFC Validation Rules
 

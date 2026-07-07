@@ -66,12 +66,14 @@ export class QuorumSession {
     contextId?: string;
     extensions?: Record<string, Buffer>;
     roots?: { uri: string; name?: string }[];
+    maxSuspendMs?: number;
     sender?: string;
   }): Promise<Ack> {
     validateSessionStart({
       intent: input.intent,
       participants: input.participants,
       ttlMs: input.ttlMs,
+      maxSuspendMs: input.maxSuspendMs,
       modeVersion: this.modeVersion,
       configurationVersion: this.configurationVersion,
     });
@@ -79,6 +81,7 @@ export class QuorumSession {
       intent: input.intent,
       participants: input.participants,
       ttlMs: input.ttlMs,
+      maxSuspendMs: input.maxSuspendMs,
       contextId: input.contextId,
       extensions: input.extensions,
       roots: input.roots,

@@ -24,6 +24,8 @@ export interface BootstrapPayload {
       intent: string;
       participants: string[];
       ttl_ms: number;
+      // Per-session max-suspend cap (ms, proto ≥ 0.1.5). 0/absent = runtime default.
+      max_suspend_ms?: number;
       mode_version?: string;
       configuration_version?: string;
       policy_version?: string;
@@ -98,6 +100,7 @@ export function fromBootstrap(bootstrapPath?: string): Participant {
         intent: ss.intent,
         participants: ss.participants,
         ttlMs: ss.ttl_ms,
+        maxSuspendMs: ss.max_suspend_ms,
         contextId: ss.context_id,
         extensions: encodeExtensions(ss.extensions),
         roots: ss.roots,

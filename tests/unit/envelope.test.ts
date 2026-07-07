@@ -76,6 +76,16 @@ describe('envelope builders', () => {
       expect(payload.configurationVersion).toBe('custom');
       expect(payload.policyVersion).toBe('policy.v2');
     });
+
+    it('defaults maxSuspendMs to 0 (runtime default) when omitted', () => {
+      const payload = buildSessionStartPayload({ intent: 'x', participants: ['a'], ttlMs: 1000 });
+      expect(payload.maxSuspendMs).toBe(0);
+    });
+
+    it('passes an explicit maxSuspendMs through', () => {
+      const payload = buildSessionStartPayload({ intent: 'x', participants: ['a'], ttlMs: 1000, maxSuspendMs: 5000 });
+      expect(payload.maxSuspendMs).toBe(5000);
+    });
   });
 
   describe('buildCommitmentPayload', () => {

@@ -78,6 +78,24 @@ describe('HandoffSession — projection roundtrip', () => {
     expect(session.projection.isAccepted('h1')).toBe(true);
   });
 
+  it('acceptHandoff() strips a client-supplied implicit=true before encoding', () => {
+    // The runtime rejects client-submitted accepts with implicit=true; the SDK
+    // must never let one reach the wire. Encode the payload the session builds
+    // and assert the `implicit` field is absent.
+    const client = makeClient();
+    const encodeSpy = vi.spyOn(client.protoRegistry, 'encodeKnownPayload');
+    const session = new HandoffSession(client);
+    vi.spyOn(client, 'send').mockResolvedValue({ ok: true });
+
+    // @ts-expect-error — `implicit` is intentionally not on the public input type;
+    // this simulates a caller forcing it through.
+    void session.acceptHandoff({ handoffId: 'h1', acceptedBy: 'bob', implicit: true });
+
+    const acceptCall = encodeSpy.mock.calls.find((c) => c[1] === 'HandoffAccept');
+    expect(acceptCall).toBeDefined();
+    expect(acceptCall?.[2]).not.toHaveProperty('implicit');
+  });
+
   it('decline() flips isDeclined()', async () => {
     const client = makeClient();
     const session = new HandoffSession(client);

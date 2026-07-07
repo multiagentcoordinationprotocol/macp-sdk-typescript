@@ -9,6 +9,10 @@ const CORE_MAP: Record<string, string> = {
   Progress: 'macp.v1.ProgressPayload',
 };
 
+// The one mapping whose historical payloads may be legacy JSON. Runtime replays
+// pre-proto histories byte-identically, so decode must accept both encodings.
+const MULTI_ROUND_CONTRIBUTE = 'macp.modes.multi_round.v1.ContributePayload';
+
 const MODE_MAP: Record<string, Record<string, string>> = {
   [MODE_DECISION]: {
     Proposal: 'macp.modes.decision.v1.ProposalPayload',
@@ -44,7 +48,10 @@ const MODE_MAP: Record<string, Record<string, string>> = {
     Abstain: 'macp.modes.quorum.v1.AbstainPayload',
   },
   [MODE_MULTI_ROUND]: {
-    Contribute: '__json__',
+    // Canonical protobuf as of proto 0.1.4 / runtime 0.5.0. Encode is always
+    // protobuf; decode tries legacy JSON (`{"value":"..."}`) first, then
+    // protobuf — see `MULTI_ROUND_CONTRIBUTE` handling in decodeKnownPayload.
+    Contribute: MULTI_ROUND_CONTRIBUTE,
   },
 };
 
@@ -57,6 +64,7 @@ const PROTO_FILES = [
   'macp/modes/task/v1/task.proto',
   'macp/modes/handoff/v1/handoff.proto',
   'macp/modes/quorum/v1/quorum.proto',
+  'macp/modes/multi_round/v1/multi_round.proto',
 ];
 
 export class ProtoRegistry {
@@ -121,7 +129,31 @@ export class ProtoRegistry {
     const typeName = this.getKnownTypeName(mode, messageType);
     if (!typeName) return this.tryDecodeUtf8(payload);
     if (typeName === '__json__') return this.tryDecodeUtf8(payload);
+    if (typeName === MULTI_ROUND_CONTRIBUTE) return this.decodeMultiRoundContribute(payload);
     return this.decodeMessage(typeName, payload);
+  }
+
+  /**
+   * Decode an `ext.multi_round.v1` `Contribute` payload, accepting both wire
+   * formats: legacy JSON (`{"value":"..."}`, still replayed verbatim from
+   * pre-proto histories) and canonical protobuf (`ContributePayload`). JSON is
+   * tried first — mirroring the runtime's permanent decode order — and the two
+   * encodings are disjoint on their first byte (`{` = 0x7b vs proto field-1
+   * tag 0x0A), so a canonical proto payload never mis-parses as JSON and vice
+   * versa. Both normalize to `{ value: string }`.
+   */
+  private decodeMultiRoundContribute(payload: Buffer): Record<string, unknown> | undefined {
+    if (!payload.length) return this.decodeMessage(MULTI_ROUND_CONTRIBUTE, payload);
+    if (payload[0] === 0x7b) {
+      // Leading `{` — legacy JSON. Parse and normalize to { value }.
+      try {
+        const parsed = JSON.parse(payload.toString('utf8')) as Record<string, unknown>;
+        return { value: typeof parsed.value === 'string' ? parsed.value : String(parsed.value ?? '') };
+      } catch {
+        // Not valid JSON despite the leading brace — fall through to protobuf.
+      }
+    }
+    return this.decodeMessage(MULTI_ROUND_CONTRIBUTE, payload);
   }
 
   private lookupType(typeName: string): protobuf.Type {

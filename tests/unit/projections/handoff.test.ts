@@ -67,6 +67,45 @@ describe('HandoffProjection', () => {
     expect(projection.phase).toBe('Accepted');
   });
 
+  it('marks an explicit accept as not implicit', () => {
+    projection.applyEnvelope(
+      makeEnvelope('HandoffOffer', { handoffId: 'h1', targetParticipant: 'bob', scope: 'frontend' }),
+      registry,
+    );
+    projection.applyEnvelope(makeEnvelope('HandoffAccept', { handoffId: 'h1', acceptedBy: 'bob' }, 'bob'), registry);
+    expect(projection.getHandoff('h1')?.implicit).toBe(false);
+    expect(projection.isImplicitlyAccepted('h1')).toBe(false);
+  });
+
+  it('carries the implicit flag from a runtime-emitted synthetic accept', () => {
+    // Future-proofing for RFC-MACP-0010 §5.1: the runtime timer will emit a
+    // synthetic accept where sender = target participant, messageId =
+    // `implicit-accept:<handoff_id>`, and implicit = true. Projections are
+    // sender-agnostic, so this replays cleanly today even though v0.5.0 does
+    // not yet emit it.
+    projection.applyEnvelope(
+      makeEnvelope('HandoffOffer', { handoffId: 'h1', targetParticipant: 'bob', scope: 'frontend' }),
+      registry,
+    );
+    const synthetic = buildEnvelope({
+      mode: MODE_HANDOFF,
+      messageType: 'HandoffAccept',
+      sessionId: 'test-session',
+      sender: 'bob',
+      messageId: 'implicit-accept:h1',
+      payload: registry.encodeKnownPayload(MODE_HANDOFF, 'HandoffAccept', {
+        handoffId: 'h1',
+        acceptedBy: 'bob',
+        implicit: true,
+      }),
+    });
+    projection.applyEnvelope(synthetic, registry);
+    expect(projection.isAccepted('h1')).toBe(true);
+    expect(projection.getHandoff('h1')?.acceptedBy).toBe('bob');
+    expect(projection.getHandoff('h1')?.implicit).toBe(true);
+    expect(projection.isImplicitlyAccepted('h1')).toBe(true);
+  });
+
   it('tracks decline', () => {
     projection.applyEnvelope(
       makeEnvelope('HandoffOffer', { handoffId: 'h1', targetParticipant: 'bob', scope: 'frontend' }),

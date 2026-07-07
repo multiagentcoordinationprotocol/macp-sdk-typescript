@@ -6,6 +6,7 @@ import {
   buildTaskPolicy,
   buildHandoffPolicy,
 } from '../../src/policy';
+import { MacpSessionError } from '../../src/errors';
 
 function parseRules(descriptor: { rules: string }): Record<string, unknown> {
   return JSON.parse(descriptor.rules);
@@ -163,13 +164,35 @@ describe('policy builders', () => {
       });
     });
 
-    it('includes custom threshold', () => {
+    it('includes a percentage threshold on the 0–100 integer scale', () => {
+      // The runtime reads `percentage` as an integer 0–100 (approval bar =
+      // ceil(value/100 × participants)). `75` means 75%, not 0.75.
       const rules = parseRules(
         buildQuorumPolicy('q1', 'desc', {
-          threshold: { type: 'percentage', value: 0.75 },
+          threshold: { type: 'percentage', value: 75 },
         }),
       );
-      expect(rules.threshold).toEqual({ type: 'percentage', value: 0.75 });
+      expect(rules.threshold).toEqual({ type: 'percentage', value: 75 });
+    });
+
+    it('accepts the 0 and 100 percentage boundaries', () => {
+      expect(() => buildQuorumPolicy('q1', 'd', { threshold: { type: 'percentage', value: 0 } })).not.toThrow();
+      expect(() => buildQuorumPolicy('q1', 'd', { threshold: { type: 'percentage', value: 100 } })).not.toThrow();
+    });
+
+    it('throws on a fractional percentage threshold (0.75 → ~1% bar bug)', () => {
+      expect(() => buildQuorumPolicy('q1', 'd', { threshold: { type: 'percentage', value: 0.75 } })).toThrow(
+        MacpSessionError,
+      );
+    });
+
+    it('throws on an out-of-range percentage threshold', () => {
+      expect(() => buildQuorumPolicy('q1', 'd', { threshold: { type: 'percentage', value: 101 } })).toThrow(
+        MacpSessionError,
+      );
+      expect(() => buildQuorumPolicy('q1', 'd', { threshold: { type: 'percentage', value: -1 } })).toThrow(
+        MacpSessionError,
+      );
     });
 
     it('includes custom abstention rules', () => {

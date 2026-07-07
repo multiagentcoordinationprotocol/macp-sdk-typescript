@@ -27,8 +27,8 @@ Creates a `PolicyDescriptor` targeting `macp.mode.decision.v1`.
 interface DecisionPolicyRulesInput {
   voting?: {
     algorithm?: 'none' | 'majority' | 'supermajority' | 'unanimous' | 'weighted' | 'plurality';
-    threshold?: number;                             // 0-1, default: 0
-    quorum?: { type: 'count' | 'percentage'; value: number };
+    threshold?: number;                             // vote-share fraction, 0-1, default: 0
+    quorum?: { type: 'count' | 'percentage'; value: number };  // percentage = integer 0–100, NOT 0–1
     weights?: Record<string, number>;               // participant_id → weight
   };
   objectionHandling?: {
@@ -51,11 +51,17 @@ interface DecisionPolicyRulesInput {
 
 Creates a `PolicyDescriptor` targeting `macp.mode.quorum.v1` (RFC-MACP-0012 §4.2).
 
+> **`threshold.value` is the approval bar, not a participation quorum.** For
+> `type: 'percentage'` it is an **integer 0–100** — the runtime computes the bar
+> as `ceil(value / 100 × participants)`. `75` means "≥ 75% must approve"; a
+> fractional value like `0.75` rounds to a ~1% bar and is therefore **rejected**
+> (`MacpSessionError`). Use `n_of_m`/`weighted` for absolute counts.
+
 ```typescript
 interface QuorumPolicyRulesInput {
   threshold?: {
     type: 'n_of_m' | 'percentage' | 'weighted';     // default: 'n_of_m'
-    value: number;                                    // default: 0
+    value: number;                                    // approval bar; default: 0
   };
   abstention?: {
     countsTowardQuorum?: boolean;                     // default: false

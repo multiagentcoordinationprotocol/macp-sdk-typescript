@@ -4,7 +4,7 @@
  * Prerequisites:
  *   docker run -d --name macp-runtime-test -p 50051:50051 \
  *     -e MACP_BIND_ADDR=0.0.0.0:50051 -e MACP_ALLOW_INSECURE=1 \
- *     -e MACP_ALLOW_DEV_SENDER_HEADER=1 -e MACP_MEMORY_ONLY=1 macp-runtime
+ *     -e MACP_MEMORY_ONLY=1 macp-runtime
  *
  * For the Bearer-token sections, also set `MACP_AUTH_TOKENS_JSON` on the
  * runtime so alice/bob have real identities — see tests/integration/README.md.

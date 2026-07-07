@@ -8,6 +8,7 @@ import {
   validateParticipantCount,
   validateSignalType,
   validateTtlMs,
+  validateMaxSuspendMs,
   validateParticipants,
   validateRequiredField,
   validateSessionStart,
@@ -23,6 +24,18 @@ describe('validation', () => {
     it('accepts base64url (22+ chars)', () => {
       expect(() => validateSessionId('abcdefghij1234567890_-')).not.toThrow();
       expect(() => validateSessionId('abcdefghij1234567890_-extra')).not.toThrow();
+    });
+
+    it('accepts a 36-char base64url token containing a hyphen (runtime 0.5.0 A4)', () => {
+      // Regression for the runtime fix: 36-char base64url IDs with `-` are
+      // accepted, no longer mis-routed to UUID validation. This token is 36
+      // chars, contains a hyphen, and is deliberately NOT UUID-shaped (no
+      // 8-4-4-4-12 dash grouping), so it exercises the base64url branch.
+      const id = 'Zm9vYmFyLWJhemJhdF9xdXV4MTIzNDU2Nzg5'; // 37? ensure 36 below
+      const token36 = 'ab_cd-efghij0123456789ABCDEFGHIJ-klm'; // 36 chars, has '-'
+      expect(token36.length).toBe(36);
+      expect(() => validateSessionId(token36)).not.toThrow();
+      expect(() => validateSessionId(id)).not.toThrow();
     });
 
     it('rejects short strings', () => {
@@ -144,6 +157,22 @@ describe('validation', () => {
     });
   });
 
+  describe('validateMaxSuspendMs', () => {
+    it('accepts 0 (runtime default) and positive values', () => {
+      expect(() => validateMaxSuspendMs(0)).not.toThrow();
+      expect(() => validateMaxSuspendMs(60_000)).not.toThrow();
+    });
+
+    it('rejects negative values', () => {
+      expect(() => validateMaxSuspendMs(-1)).toThrow(MacpSessionError);
+    });
+
+    it('rejects non-finite values', () => {
+      expect(() => validateMaxSuspendMs(Infinity)).toThrow(MacpSessionError);
+      expect(() => validateMaxSuspendMs(NaN)).toThrow(MacpSessionError);
+    });
+  });
+
   describe('validateParticipants', () => {
     it('accepts non-empty unique lists', () => {
       expect(() => validateParticipants(['agent://a'])).not.toThrow();
@@ -204,6 +233,15 @@ describe('validation', () => {
 
     it('rejects empty configurationVersion', () => {
       expect(() => validateSessionStart({ ...validInput, configurationVersion: '' })).toThrow(MacpSessionError);
+    });
+
+    it('accepts a valid maxSuspendMs', () => {
+      expect(() => validateSessionStart({ ...validInput, maxSuspendMs: 60_000 })).not.toThrow();
+      expect(() => validateSessionStart({ ...validInput, maxSuspendMs: 0 })).not.toThrow();
+    });
+
+    it('rejects a negative maxSuspendMs', () => {
+      expect(() => validateSessionStart({ ...validInput, maxSuspendMs: -1 })).toThrow(MacpSessionError);
     });
   });
 });
