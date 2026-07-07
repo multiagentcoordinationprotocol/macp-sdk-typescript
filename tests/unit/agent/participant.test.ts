@@ -8,7 +8,7 @@ import type { Envelope } from '../../../src/types';
 
 function makeMockClient(): any {
   return {
-    auth: { agentId: 'test-agent', senderHint: 'test-agent' },
+    auth: { bearerToken: 'test-agent', senderHint: 'test-agent' },
     protoRegistry: {
       encodeKnownPayload: vi.fn(() => Buffer.alloc(0)),
       decodeKnownPayload: vi.fn(() => ({})),

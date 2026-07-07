@@ -119,9 +119,14 @@ const ack = await client.resumeSession('session-id', 'back to work', { auth });
 
 ### `listSessions(options?)`
 
-Enumerate sessions visible to the calling identity. Returns an array of
+Enumerate **all** sessions visible to the calling identity. Returns an array of
 `SessionMetadata` (including `contextId` and `extensionKeys` when set).
 Missing/empty responses normalise to `[]`.
+
+As of proto ≥ 0.1.6 the runtime may cap a single `ListSessions` response and
+return a `nextPageToken`. `listSessions()` transparently walks every page until
+the token is empty, so the returned array is always the complete listing. For
+manual page control use [`listSessionsPage`](#listsessionspageoptions).
 
 ```typescript
 const sessions = await client.listSessions({ auth });
@@ -132,6 +137,31 @@ for (const s of sessions) {
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
+| `pageSize` | `number` | server default | Per-request page cap while auto-paginating. `0` lets the server choose. |
+| `auth` | `AuthConfig` | client auth | Override the default identity. |
+| `deadlineMs` | `number` | client default | Deadline for each unary call. |
+
+### `listSessionsPage(options?)`
+
+Fetch a **single** page of sessions. Returns `{ sessions, nextPageToken }`.
+Callers MUST NOT assume the listing is complete unless `nextPageToken` is empty.
+Pass a returned non-empty `nextPageToken` back as `pageToken` to fetch the next
+page; a **stale** token yields `INVALID_ARGUMENT` (inspect via
+`MacpTransportError.code`).
+
+```typescript
+let pageToken = '';
+do {
+  const { sessions, nextPageToken } = await client.listSessionsPage({ pageSize: 50, pageToken, auth });
+  for (const s of sessions) console.log(s.sessionId);
+  pageToken = nextPageToken;
+} while (pageToken);
+```
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `pageSize` | `number` | server default | Max sessions to return. `0` = server-chosen; the server MAY cap it. |
+| `pageToken` | `string` | `''` | Continuation token from a previous page. Empty = first page. |
 | `auth` | `AuthConfig` | client auth | Override the default identity. |
 | `deadlineMs` | `number` | client default | Deadline for the unary call. |
 
@@ -180,10 +210,21 @@ const result = await client.registerExtMode({
   modeVersion: '1.0.0',
   title: 'Custom Mode',
   description: 'My custom coordination mode',
-  messageTypes: ['CustomMsg'],
+  messageTypes: ['CustomMsg', 'Commitment'],
   terminalMessageTypes: ['Commitment'],
 }, { auth });
 ```
+
+Guardrails (runtime ≥ 0.5.0):
+
+- The descriptor **must** list `'Commitment'` in `terminalMessageTypes` — a mode
+  without a terminal `Commitment` can never resolve. The SDK throws
+  `MacpSessionError` before the wire call if it's missing (mirrors the runtime).
+- `promoteMode` into the reserved `macp.mode.*` namespace is rejected.
+- A `SessionStart` with an empty `mode_version` binds the registered descriptor's
+  `modeVersion`; a later `Commitment` must echo that bound version. `BaseSession`
+  defaults `modeVersion` to `'1.0.0'`, so set the descriptor's version to match
+  (or override the session's `modeVersion`) or the commitment will mismatch.
 
 ### `unregisterExtMode(mode, options?)`
 
@@ -255,7 +296,16 @@ await stream.sendSubscribe('session-abc', lastSeenSequence);
 | Param | Type | Default | Description |
 |-------|------|---------|-------------|
 | `sessionId` | `string` | *required* | Session to subscribe to |
-| `afterSequence` | `number` | `0` | Replay envelopes with `seq > afterSequence`. Pass `0` for a full replay. |
+| `afterSequence` | `number` | `0` | Exclusive cursor: replay envelopes whose ordinal is `> afterSequence`. Pass `0` for a full replay. |
+
+**Ordinal contract (runtime ≥ 0.5.0, RFC-MACP-0006 §3.2):** `afterSequence` is
+the **1-based accepted-envelope ordinal** — the Nth accepted envelope has
+ordinal N. Clients derive it by counting delivered envelopes; the agent
+framework's `GrpcTransportAdapter` exposes this as its `lastSequence` getter.
+Ordinals are **stable across log compaction and runtime restart**, and envelopes
+accepted during the subscribe window are never delivered twice. Resuming **below
+a compacted base** fails with `FAILED_PRECONDITION` (inspect via
+`MacpTransportError.code`) rather than silently skipping history.
 
 Rejects with `MacpSdkError` if the stream has already been closed. The agent
 framework's `GrpcTransportAdapter` calls this automatically after opening the

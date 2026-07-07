@@ -51,8 +51,10 @@ describe('ProtoRegistry', () => {
       expect(registry.getKnownTypeName(MODE_QUORUM, 'Approve')).toBe('macp.modes.quorum.v1.ApprovePayload');
     });
 
-    it('returns __json__ for multi-round Contribute', () => {
-      expect(registry.getKnownTypeName(MODE_MULTI_ROUND, 'Contribute')).toBe('__json__');
+    it('returns the canonical protobuf type for multi-round Contribute', () => {
+      expect(registry.getKnownTypeName(MODE_MULTI_ROUND, 'Contribute')).toBe(
+        'macp.modes.multi_round.v1.ContributePayload',
+      );
     });
 
     it('returns undefined for unknown types', () => {
@@ -151,19 +153,20 @@ describe('ProtoRegistry', () => {
     });
   });
 
-  describe('JSON fallback', () => {
-    it('encodes multi-round Contribute as JSON', () => {
-      const payload = { round: 1, content: 'hello' };
+  describe('multi-round Contribute (protobuf + legacy JSON fallback)', () => {
+    it('encodes Contribute as canonical protobuf and roundtrips', () => {
+      const payload = { value: 'option_a' };
       const encoded = registry.encodeKnownPayload(MODE_MULTI_ROUND, 'Contribute', payload);
-      expect(JSON.parse(encoded.toString('utf8'))).toEqual(payload);
+      // Canonical protobuf: first byte is the field-1 tag (0x0A), never JSON `{`.
+      expect(encoded[0]).toBe(0x0a);
+      const decoded = registry.decodeKnownPayload(MODE_MULTI_ROUND, 'Contribute', encoded);
+      expect(decoded).toEqual({ value: 'option_a' });
     });
 
-    it('decodes multi-round Contribute as JSON', () => {
-      const payload = { round: 1, content: 'hello' };
-      const encoded = Buffer.from(JSON.stringify(payload), 'utf8');
+    it('decodes a legacy JSON Contribute payload to { value }', () => {
+      const encoded = Buffer.from('{"value":"x"}', 'utf8');
       const decoded = registry.decodeKnownPayload(MODE_MULTI_ROUND, 'Contribute', encoded);
-      expect(decoded).toHaveProperty('encoding', 'json');
-      expect(decoded).toHaveProperty('json');
+      expect(decoded).toEqual({ value: 'x' });
     });
 
     it('returns undefined for empty unknown payload', () => {

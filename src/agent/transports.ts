@@ -27,12 +27,25 @@ function normalizeEnvelope(
 export class GrpcTransportAdapter implements TransportAdapter {
   private stream: MacpStream | null = null;
   private seq = 0;
+  private delivered = 0;
 
   constructor(
     private readonly client: MacpClient,
     private readonly sessionId: string,
     private readonly auth?: AuthConfig,
   ) {}
+
+  /**
+   * The server passive-subscribe ordinal of the last delivered envelope (the
+   * 1-based count of accepted envelopes delivered on this stream, RFC-MACP-0006
+   * §3.2). `0` before anything is delivered. Pass this as `afterSequence` to
+   * `MacpStream.sendSubscribe` on a reconnect to resume exactly-once — ordinals
+   * are stable across compaction/restart. Distinct from `IncomingMessage.seq`,
+   * which is a client-local 0-based delivery index.
+   */
+  get lastSequence(): number {
+    return this.delivered;
+  }
 
   async *start(): AsyncIterable<IncomingMessage> {
     this.stream = this.client.openStream({ auth: this.auth });
@@ -45,6 +58,7 @@ export class GrpcTransportAdapter implements TransportAdapter {
 
     for await (const envelope of this.stream.responses()) {
       if (envelope.sessionId !== this.sessionId) continue;
+      this.delivered++;
       yield normalizeEnvelope(
         envelope,
         (mode, mt, p) => this.client.protoRegistry.decodeKnownPayload(mode, mt, p),

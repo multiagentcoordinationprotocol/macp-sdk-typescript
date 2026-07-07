@@ -88,8 +88,9 @@ This method:
 
 | Method | Returns | Description |
 |--------|---------|-------------|
-| `getHandoff(handoffId)` | `HandoffRecord \| undefined` | Full handoff record |
+| `getHandoff(handoffId)` | `HandoffRecord \| undefined` | Full handoff record (`.implicit` set once accepted) |
 | `isAccepted(handoffId)` | `boolean` | HandoffAccept received |
+| `isImplicitlyAccepted(handoffId)` | `boolean` | Accepted by a runtime synthetic implicit accept (RFC-MACP-0010 §5.1, proto ≥ 0.1.6) |
 | `isDeclined(handoffId)` | `boolean` | HandoffDecline received |
 | `pendingHandoffs()` | `HandoffRecord[]` | Handoffs in offered/context_sent status |
 

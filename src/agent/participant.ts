@@ -31,6 +31,8 @@ export interface InitiatorConfig {
     intent: string;
     participants: string[];
     ttlMs: number;
+    /** Per-session max-suspend cap (ms, proto ≥ 0.1.5). 0/absent = runtime default. */
+    maxSuspendMs?: number;
     contextId?: string;
     extensions?: Record<string, Buffer>;
     context?: Record<string, unknown>;
@@ -392,6 +394,7 @@ export class Participant {
         intent: ss.intent,
         participants: ss.participants,
         ttlMs: ss.ttlMs,
+        maxSuspendMs: ss.maxSuspendMs,
         contextId: ss.contextId,
         extensions: ss.extensions,
         roots: ss.roots,

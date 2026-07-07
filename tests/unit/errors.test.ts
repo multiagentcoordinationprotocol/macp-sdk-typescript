@@ -22,6 +22,12 @@ describe('Error classes', () => {
     const err = new MacpTransportError('transport fail');
     expect(err).toBeInstanceOf(MacpSdkError);
     expect(err.name).toBe('MacpTransportError');
+    expect(err.code).toBeUndefined();
+  });
+
+  it('MacpTransportError carries an optional gRPC status code', () => {
+    const err = new MacpTransportError('lag', 'RESOURCE_EXHAUSTED');
+    expect(err.code).toBe('RESOURCE_EXHAUSTED');
   });
 
   it('MacpAckError formats message from ack', () => {

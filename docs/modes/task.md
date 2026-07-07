@@ -151,6 +151,18 @@ session.projection.isRetryable('t1');     // true if failure was retryable
 session.projection.activeTasks();         // tasks in requested/accepted/in_progress
 ```
 
+## External orchestrator (runtime ≥ 0.5.0)
+
+The initiator (orchestrator) **need not be a member of `participants`**.
+RFC-MACP-0009 authorizes `TaskRequest` by the initiator *role*, not by
+membership, so a coordinator can start and drive a task session it does not
+participate in. The participant pool must still contain **at least one eligible
+assignee other than the initiator**. `TaskSession.start()` does not require
+initiator membership, so no code change is needed to use this.
+
+> Handoff mode is different: it still requires the initiator to be a participant
+> (the delegated model is intrinsic to RFC-MACP-0010 §2).
+
 ## RFC Validation Rules
 
 1. At most one `TaskRequest` per session (base v1)
@@ -158,6 +170,7 @@ session.projection.activeTasks();         // tasks in requested/accepted/in_prog
 3. Only one assignee may be active at a time
 4. `TaskUpdate`/`TaskComplete`/`TaskFail` must come from the active assignee
 5. Only the initiator can emit `Commitment`
+6. The initiator need not be in `participants`; the pool must include ≥1 non-initiator assignee
 
 ## Example
 

@@ -123,6 +123,15 @@ export interface SessionStartPayload {
   configurationVersion: string;
   policyVersion?: string;
   ttlMs: number;
+  /**
+   * Maximum cumulative suspended duration (ms) before a SUSPENDED session
+   * transitions to EXPIRED (RFC-MACP-0001 §7.5, proto ≥ 0.1.5). Bound at
+   * session start like {@link ttlMs}: `0` (or absent) selects the runtime's
+   * configured default (7 days). The runtime records the resolved cap so
+   * replay is deterministic. Negative values are rejected at SessionStart.
+   * Decoded as a string (int64) but accepted as `number` on input.
+   */
+  maxSuspendMs?: number | string;
   contextId?: string;
   extensions?: Record<string, Buffer>;
   roots?: Root[];
@@ -290,6 +299,15 @@ export interface HandoffAcceptPayload {
   handoffId: string;
   acceptedBy: string;
   reason?: string;
+  /**
+   * Runtime-emitted synthetic accepts ONLY (RFC-MACP-0010 §5.1): `true` on the
+   * accept the runtime produces when a handoff's `implicit_accept_timeout_ms`
+   * elapses (`message_id` = `implicit-accept:<handoff_id>`, proto ≥ 0.1.6).
+   * Read-only — clients MUST NOT submit an accept with `implicit = true`; the
+   * runtime rejects it. `HandoffSession.acceptHandoff` strips this field before
+   * encoding so a caller can never produce a rejected envelope.
+   */
+  implicit?: boolean;
 }
 
 export interface HandoffDeclinePayload {

@@ -140,7 +140,10 @@ It maintains two lookup maps:
 - `MODE_MAP`: Maps `(mode, messageType)` to protobuf type names for mode-specific messages.
 - `CORE_MAP`: Maps `messageType` to protobuf type names for core messages (SessionStart, Commitment, Signal, Progress).
 
-For extension modes using JSON encoding (like `ext.multi_round.v1`), it falls back to JSON serialization.
+`ext.multi_round.v1` `Contribute` uses the canonical protobuf encoding
+(`ContributePayload`) as of proto 0.1.4 / runtime 0.5.0; decode still accepts
+legacy JSON (`{"value":"..."}`) first for byte-identical replay of pre-proto
+histories. Unmapped extension modes fall back to JSON serialization.
 
 ## Runtime Boundary
 

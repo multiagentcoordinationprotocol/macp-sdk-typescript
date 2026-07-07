@@ -5,13 +5,18 @@ excluded from `npm test` and run via `npm run test:integration`.
 
 ## Runtime setup
 
-Build and start the runtime with dev credentials enabled:
+Build and start the runtime in insecure dev mode. As of runtime 0.5.0 the
+published image no longer bakes in `MACP_ALLOW_INSECURE=1`, and the runtime
+refuses to start with no auth configured unless it is passed explicitly — so it
+is now mandatory. The dev fallback authenticates any `Authorization: Bearer
+<value>` as sender `<value>`, which is exactly what `Auth.devAgent('alice')`
+sends; the legacy `MACP_ALLOW_DEV_SENDER_HEADER` is gone.
 
 ```bash
 docker build -t macp-runtime ../../macp-runtime/
 docker run -d --name macp-runtime-test -p 50051:50051 \
   -e MACP_BIND_ADDR=0.0.0.0:50051 -e MACP_ALLOW_INSECURE=1 \
-  -e MACP_ALLOW_DEV_SENDER_HEADER=1 -e MACP_MEMORY_ONLY=1 macp-runtime
+  -e MACP_MEMORY_ONLY=1 macp-runtime
 ```
 
 ## Variables
@@ -24,7 +29,7 @@ docker run -d --name macp-runtime-test -p 50051:50051 \
 
 The direct-agent-auth tests (RFC-MACP-0004 §4) are skipped automatically when
 the bearer envs are absent, so the default `npm run test:integration` flow
-still works against a dev-header-only runtime.
+still works against an insecure dev-mode runtime.
 
 ## Enabling direct-agent-auth tests
 
@@ -39,7 +44,6 @@ export MACP_AUTH_TOKENS_JSON='{"tokens":[
 docker run -d --name macp-runtime-test -p 50051:50051 \
   -e MACP_BIND_ADDR=0.0.0.0:50051 \
   -e MACP_ALLOW_INSECURE=1 \
-  -e MACP_ALLOW_DEV_SENDER_HEADER=1 \
   -e MACP_MEMORY_ONLY=1 \
   -e MACP_AUTH_TOKENS_JSON="$MACP_AUTH_TOKENS_JSON" \
   macp-runtime

@@ -23,6 +23,13 @@ interface FixtureMessage {
   payload_type: string;
   payload: Record<string, unknown>;
   expect: 'accept' | 'reject';
+  /**
+   * Canonical reject expectation (spec `schema.json`). This in-process harness
+   * only replays the accepted prefix, so the code is not asserted here — it is
+   * exercised by the runtime's own conformance oracle. Surfaced on the
+   * interface so a fixture carrying it type-checks.
+   */
+  expected_error_code?: string;
 }
 
 interface Fixture {
@@ -60,25 +67,44 @@ const MODE_PROJECTIONS: Record<string, () => ProjectionLike> = {
   [MODE_QUORUM]: () => new QuorumProjection() as unknown as ProjectionLike,
 };
 
-// Map payload_type from fixture format to (mode, messageType) for ProtoRegistry
+const MODE_SHORT_MAP: Record<string, string> = {
+  decision: MODE_DECISION,
+  proposal: MODE_PROPOSAL,
+  task: MODE_TASK,
+  handoff: MODE_HANDOFF,
+  quorum: MODE_QUORUM,
+  multi_round: MODE_MULTI_ROUND,
+};
+
+// Canonical fixture `payload_type` values are fully-qualified proto message
+// names (spec `schema.json`): `macp.v1.<Name>Payload` for core payloads and
+// `macp.modes.<mode>.v1.<Name>Payload` for mode payloads. The legacy shorthand
+// (`decision.Proposal`, bare `Commitment`) is intentionally NOT parsed — the
+// format-guard test below fails any fixture that regresses to it, mirroring the
+// runtime's own format guard.
+const CORE_PAYLOAD_RE = /^macp\.v1\.([A-Za-z]+)Payload$/;
+const MODE_PAYLOAD_RE = /^macp\.modes\.([a-z_]+)\.v\d+\.([A-Za-z]+)Payload$/;
+
+// Map a fully-qualified `payload_type` to (mode, messageType) for ProtoRegistry.
+// The package prefix disambiguates decision-vs-proposal `Proposal` payloads —
+// exactly why the harness must key on package, not the bare message name.
 function resolvePayloadType(payloadType: string): { mode: string; messageType: string } {
-  // Core types like "Commitment"
-  if (!payloadType.includes('.')) {
-    return { mode: '', messageType: payloadType };
+  const core = CORE_PAYLOAD_RE.exec(payloadType);
+  if (core) return { mode: '', messageType: core[1] };
+
+  const mode = MODE_PAYLOAD_RE.exec(payloadType);
+  if (mode) {
+    const resolvedMode = MODE_SHORT_MAP[mode[1]];
+    if (!resolvedMode) throw new Error(`unknown mode in payload_type: ${payloadType}`);
+    return { mode: resolvedMode, messageType: mode[2] };
   }
 
-  const [modeShort, messageType] = payloadType.split('.');
-  const modeMap: Record<string, string> = {
-    decision: MODE_DECISION,
-    proposal: MODE_PROPOSAL,
-    task: MODE_TASK,
-    handoff: MODE_HANDOFF,
-    quorum: MODE_QUORUM,
-    multi_round: MODE_MULTI_ROUND,
-  };
-
-  return { mode: modeMap[modeShort] ?? '', messageType };
+  throw new Error(`payload_type is not a canonical fully-qualified proto name: ${payloadType}`);
 }
+
+// Same pattern as spec `schema.json` — used by the format-guard test so a
+// shorthand `payload_type` can never re-enter the vendored fixtures.
+const CANONICAL_PAYLOAD_TYPE_RE = /^(macp\.v1\.[A-Za-z]+|macp\.modes\.[a-z_]+\.v\d+\.[A-Za-z]+Payload)$/;
 
 // Proto `bytes` fields (camelCase). Fixtures are JSON, so these arrive as plain
 // strings and must be UTF-8 encoded to a Buffer before protobuf encoding —
@@ -104,7 +130,9 @@ const registry = new ProtoRegistry();
 
 const fixtureFiles = fs
   .readdirSync(FIXTURE_DIR)
-  .filter((f) => f.endsWith('.json'))
+  // `schema.json` is the canonical JSON-Schema definition, synced alongside the
+  // fixtures by `make sync-fixtures` — it is not a fixture, so exclude it.
+  .filter((f) => f.endsWith('.json') && f !== 'schema.json')
   .sort();
 
 describe('conformance: projection replay', () => {
@@ -177,6 +205,24 @@ describe('conformance: projection replay', () => {
             expect(votes.get(proposalId)?.get(sender)?.vote).toBe(record.vote);
           }
         }
+      }
+    });
+  }
+});
+
+// Format guard: every vendored fixture must use canonical fully-qualified
+// `payload_type` names. Fails loudly if a hand-edited or drifted fixture
+// reintroduces the legacy shorthand (`decision.Proposal`, bare `Commitment`),
+// mirroring the runtime's own format-guard test so the harness parser and the
+// fixtures can never diverge.
+describe('conformance: fixture format guard', () => {
+  for (const file of fixtureFiles) {
+    const fixtureName = path.basename(file, '.json');
+    const fixture: Fixture = JSON.parse(fs.readFileSync(path.join(FIXTURE_DIR, file), 'utf8'));
+
+    it(`${fixtureName}: every payload_type is canonical fully-qualified`, () => {
+      for (const msg of fixture.messages) {
+        expect(msg.payload_type).toMatch(CANONICAL_PAYLOAD_TYPE_RE);
       }
     });
   }

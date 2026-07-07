@@ -64,13 +64,15 @@ for await (const envelope of stream.responses()) {
 
 `sendSubscribe(sessionId, afterSequence?)` is how non-initiator agents observe the `SessionStart` and earlier `Proposal` / `Vote` envelopes when they join a session that is already in flight. The `GrpcTransportAdapter` in the agent framework calls this automatically — you only need to call it yourself when driving a raw `MacpStream`.
 
+`afterSequence` is the **1-based accepted-envelope ordinal**, exclusive (`0` = from the start): the Nth accepted envelope has ordinal N. Derive `lastSeenSequence` by counting delivered envelopes (`GrpcTransportAdapter.lastSequence` does this for you). Ordinals are stable across compaction and restart; resuming below a compacted base returns `FAILED_PRECONDITION` (runtime ≥ 0.5.0). See [`sendSubscribe`](../api/client.md#sendsubscribesessionid-aftersequence) for the full contract.
+
 ### Important Notes
 
 - `StreamSession` is a server-advertised capability (`sessions.stream`). Check `Initialize` response capabilities before using.
 - The stream delivers envelopes in **authoritative acceptance order**, matching the runtime's ordering.
 - Late-attach is supported via `sendSubscribe(sessionId, afterSequence?)` — the runtime replays accepted envelopes from that cursor before switching to live broadcast.
 - For durable observation, use `getSession()` to fetch current metadata and `sendSubscribe()` to replay the envelope history over the stream.
-- Lag recovery (broadcast buffer holds 256 envelopes per session): on `ResourceExhausted`, reconnect and call `sendSubscribe(sessionId, lastSeenSequence)` to resume without missing envelopes. See the runtime's [SDK guide — Handling stream lag](https://github.com/multiagentcoordinationprotocol/macp-runtime/blob/main/docs/sdk-guide.md#handling-stream-lag) for the full recovery contract.
+- Lag recovery (broadcast buffer holds 256 envelopes per session): consumer lag terminates the stream with a coded `MacpTransportError` (`error.code === 'RESOURCE_EXHAUSTED'`). Reconnect and call `sendSubscribe(sessionId, lastSeenSequence)` to resume without missing envelopes. Do **not** reconnect on `UNAUTHENTICATED` — fix auth first. See the runtime's [SDK guide — Handling stream lag](https://github.com/multiagentcoordinationprotocol/macp-runtime/blob/main/docs/sdk-guide.md#handling-stream-lag) for the full recovery contract.
 
 ## Mode Registry Watcher
 
@@ -119,7 +121,12 @@ console.log('first change at', change.observedAtUnixMs);
 
 ## Roots Watcher
 
-`RootsWatcher` monitors changes to coordination roots/boundaries:
+`RootsWatcher` monitors changes to coordination roots/boundaries.
+
+> **Runtime 0.5.0 advertises `roots.list_changed: false`** in its `Initialize`
+> capabilities: it serves `ListRoots` but does not emit change notifications, so
+> `RootsWatcher` yields nothing against this runtime. Check
+> `capabilities.roots.listChanged` from `initialize()` before relying on it.
 
 ```typescript
 import { RootsWatcher } from 'macp-sdk-typescript';

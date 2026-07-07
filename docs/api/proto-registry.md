@@ -33,7 +33,7 @@ registry.getKnownTypeName('', 'SessionStart');
 // → 'macp.v1.SessionStartPayload'
 
 registry.getKnownTypeName('ext.multi_round.v1', 'Contribute');
-// → '__json__'
+// → 'macp.modes.multi_round.v1.ContributePayload'  (canonical protobuf, proto ≥ 0.1.4)
 
 registry.getKnownTypeName('unknown', 'Unknown');
 // → undefined
@@ -74,7 +74,9 @@ const buffer = registry.encodeKnownPayload(
 );
 ```
 
-For `__json__` types (like multi-round Contribute), serializes as JSON instead of protobuf.
+`ext.multi_round.v1` `Contribute` encodes as canonical protobuf
+(`ContributePayload`) as of proto 0.1.4 / runtime 0.5.0. Unmapped extension
+modes still fall back to `__json__` (JSON serialization).
 
 Throws if no mapping exists for the given mode/messageType combination.
 
@@ -91,6 +93,11 @@ const obj = registry.decodeKnownPayload(
 ```
 
 For unknown types, attempts UTF-8 JSON decoding. Returns `undefined` for empty payloads.
+
+`ext.multi_round.v1` `Contribute` decodes both wire formats: legacy JSON
+(`{"value":"..."}`, replayed verbatim from pre-proto histories) is tried first,
+then canonical protobuf. Both normalize to `{ value: string }`. The two
+encodings are disjoint on their first byte, so neither mis-parses as the other.
 
 ## Type Mappings
 

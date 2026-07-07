@@ -297,7 +297,8 @@ See [`docs/api/cancel-callback.md`](docs/api/cancel-callback.md) and
 ## Authentication
 
 ```typescript
-// Development (uses x-macp-agent-id header)
+// Development (bearer-only; sends Authorization: Bearer my-agent).
+// Requires the runtime to run with MACP_ALLOW_INSECURE=1.
 const auth = Auth.devAgent('my-agent');
 
 // Production (Bearer token with authenticated identity — RFC-MACP-0004 §4).
@@ -417,7 +418,7 @@ Run the full SDK against a live MACP runtime:
 docker build -t macp-runtime ../macp-runtime/
 docker run -d --name macp-runtime-test -p 50051:50051 \
   -e MACP_BIND_ADDR=0.0.0.0:50051 -e MACP_ALLOW_INSECURE=1 \
-  -e MACP_ALLOW_DEV_SENDER_HEADER=1 -e MACP_MEMORY_ONLY=1 macp-runtime
+  -e MACP_MEMORY_ONLY=1 macp-runtime
 
 # Run tests
 npm run test:integration

@@ -30,6 +30,12 @@ export function buildSessionStartPayload(input: {
   intent: string;
   participants: string[];
   ttlMs: number;
+  /**
+   * Per-session max-suspend cap in ms (proto ≥ 0.1.5). `0`/absent selects the
+   * runtime default (7 days). Emitted as `0` when omitted, matching `ttlMs`'s
+   * "0 = default" convention.
+   */
+  maxSuspendMs?: number;
   modeVersion?: string;
   configurationVersion?: string;
   policyVersion?: string;
@@ -44,6 +50,7 @@ export function buildSessionStartPayload(input: {
     configurationVersion: input.configurationVersion ?? DEFAULT_CONFIGURATION_VERSION,
     policyVersion: input.policyVersion ?? DEFAULT_POLICY_VERSION,
     ttlMs: input.ttlMs,
+    maxSuspendMs: input.maxSuspendMs ?? 0,
     contextId: input.contextId ?? '',
     extensions: input.extensions ?? {},
     roots: input.roots ?? [],
@@ -67,6 +74,20 @@ export function buildCommitmentRef(input: { sessionId: string; commitmentHash: s
   return { sessionId: input.sessionId, commitmentHash: input.commitmentHash };
 }
 
+/**
+ * Build a `CommitmentPayload`. Defaults `policyVersion` to
+ * {@link DEFAULT_POLICY_VERSION} (`'policy.default'`) when omitted.
+ *
+ * Policy-version echo (runtime ≥ 0.5.0): a Commitment with an **empty**
+ * `policyVersion` matches the session's bound policy — a session started with an
+ * empty policy_version no longer has to echo `'policy.default'`. A **non-empty**
+ * value must equal the session's resolved policy id exactly. The mode session
+ * helpers (`DecisionSession.commit`, etc.) echo the session-bound value, which
+ * is correct against both old and new runtimes; this standalone builder keeps
+ * the `'policy.default'` default for backward compatibility (older runtimes
+ * rejected an empty echo). Pass `policyVersion: ''` explicitly to opt into the
+ * new empty-matches-bound behavior — `''` is not coalesced by the default.
+ */
 export function buildCommitmentPayload(input: {
   action: string;
   authorityScope: string;

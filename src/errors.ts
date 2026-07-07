@@ -8,9 +8,20 @@ export class MacpSdkError extends Error {
 }
 
 export class MacpTransportError extends MacpSdkError {
-  constructor(message: string) {
+  /**
+   * gRPC status name (e.g. `RESOURCE_EXHAUSTED`, `FAILED_PRECONDITION`,
+   * `UNAUTHENTICATED`) when the underlying transport failure carried one.
+   * Lets consumers distinguish, for example, watch-stream consumer lag
+   * (`RESOURCE_EXHAUSTED` → reconnect) from an auth failure (`UNAUTHENTICATED`
+   * → do not reconnect), or a passive-subscribe resume below a compacted base
+   * (`FAILED_PRECONDITION`). Absent for locally-raised transport errors.
+   */
+  readonly code?: string;
+
+  constructor(message: string, code?: string) {
     super(message);
     this.name = 'MacpTransportError';
+    this.code = code;
   }
 }
 

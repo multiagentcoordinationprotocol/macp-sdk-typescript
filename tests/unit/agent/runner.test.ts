@@ -73,12 +73,14 @@ describe('fromBootstrap', () => {
       expect(participant.auth!.expectedSender).toBe('agent-1');
     });
 
-    it('uses dev agent auth when no auth_token', () => {
+    it('uses dev agent auth when no auth_token (bearer-backed, runtime 0.5.0)', () => {
       const filePath = writeTempBootstrap(validPayload());
       const participant = fromBootstrap(filePath);
 
       expect(participant.auth).toBeDefined();
-      expect(participant.auth!.agentId).toBe('agent-1');
+      // devAgent is bearer-only now: the agent id becomes the bearer token.
+      expect(participant.auth!.bearerToken).toBe('agent-1');
+      expect(participant.auth!.senderHint).toBe('agent-1');
     });
 
     it('uses agent_id for dev auth when provided', () => {
@@ -90,7 +92,8 @@ describe('fromBootstrap', () => {
       const participant = fromBootstrap(filePath);
 
       expect(participant.auth).toBeDefined();
-      expect(participant.auth!.agentId).toBe('custom-agent-id');
+      expect(participant.auth!.bearerToken).toBe('custom-agent-id');
+      expect(participant.auth!.senderHint).toBe('custom-agent-id');
     });
   });
 

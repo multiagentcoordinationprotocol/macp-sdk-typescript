@@ -44,6 +44,21 @@ const policy = buildDecisionPolicy(
 await client.registerPolicy(policy);
 ```
 
+> **Read-only registry (`MACP_POLICIES_DIR`).** When the runtime is started with
+> a policies directory, its registry is read-only: `Initialize` advertises
+> `capabilities.policyRegistry.registerPolicy: false`, and `registerPolicy` /
+> `unregisterPolicy` fail with `FAILED_PRECONDITION` (inspect via
+> `MacpTransportError.code`). Check the capability flag before attempting to
+> register:
+>
+> ```typescript
+> const init = await client.initialize();
+> const caps = init.capabilities as { policyRegistry?: { registerPolicy?: boolean } };
+> if (caps.policyRegistry?.registerPolicy) {
+>   await client.registerPolicy(policy);
+> }
+> ```
+
 ## Using a Policy in a Session
 
 Pass the `policyVersion` when starting a session:

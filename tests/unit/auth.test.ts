@@ -4,12 +4,17 @@ import { MacpIdentityMismatchError } from '../../src/errors';
 
 describe('Auth', () => {
   describe('Auth.devAgent', () => {
-    it('creates config with agentId and senderHint', () => {
+    it('creates a bearer-only config using the agent id as the token (runtime 0.5.0)', () => {
       const config = Auth.devAgent('alice');
-      expect(config.agentId).toBe('alice');
+      expect(config.bearerToken).toBe('alice');
       expect(config.senderHint).toBe('alice');
-      expect(config.bearerToken).toBeUndefined();
       expect(config.expectedSender).toBeUndefined();
+    });
+
+    it('emits an Authorization: Bearer <agentId> frame, not x-macp-agent-id', () => {
+      const metadata = metadataFromAuth(Auth.devAgent('alice'));
+      expect(metadata.get('authorization')).toEqual(['Bearer alice']);
+      expect(metadata.get('x-macp-agent-id')).toEqual([]);
     });
   });
 
@@ -17,7 +22,6 @@ describe('Auth', () => {
     it('returns a plain bearer config when no options given', () => {
       const config = Auth.bearer('tok123');
       expect(config.bearerToken).toBe('tok123');
-      expect(config.agentId).toBeUndefined();
       expect(config.senderHint).toBeUndefined();
       expect(config.expectedSender).toBeUndefined();
     });
@@ -43,20 +47,16 @@ describe('Auth', () => {
   });
 
   describe('validateAuth', () => {
-    it('throws when neither token nor agentId', () => {
-      expect(() => validateAuth({})).toThrow('either bearerToken or agentId is required');
-    });
-
-    it('throws when both token and agentId', () => {
-      expect(() => validateAuth({ bearerToken: 'tok', agentId: 'id' })).toThrow('choose either');
+    it('throws when no bearer token is present', () => {
+      expect(() => validateAuth({})).toThrow('bearerToken is required');
     });
 
     it('passes for valid bearer', () => {
       expect(() => validateAuth({ bearerToken: 'tok' })).not.toThrow();
     });
 
-    it('passes for valid agentId', () => {
-      expect(() => validateAuth({ agentId: 'id' })).not.toThrow();
+    it('passes for a dev-agent credential (bearer-backed)', () => {
+      expect(() => validateAuth(Auth.devAgent('alice'))).not.toThrow();
     });
   });
 
@@ -69,8 +69,8 @@ describe('Auth', () => {
       expect(authSender({ senderHint: 'alice', bearerToken: 'tok' })).toBe('alice');
     });
 
-    it('falls back to agentId', () => {
-      expect(authSender({ agentId: 'bob' })).toBe('bob');
+    it('resolves a dev-agent credential to its agent id', () => {
+      expect(authSender(Auth.devAgent('bob'))).toBe('bob');
     });
 
     it('returns undefined when no auth', () => {
@@ -82,11 +82,6 @@ describe('Auth', () => {
     it('sets authorization header for bearer', () => {
       const metadata = metadataFromAuth({ bearerToken: 'tok123' });
       expect(metadata.get('authorization')).toEqual(['Bearer tok123']);
-    });
-
-    it('sets x-macp-agent-id header for dev agent', () => {
-      const metadata = metadataFromAuth({ agentId: 'alice' });
-      expect(metadata.get('x-macp-agent-id')).toEqual(['alice']);
     });
 
     it('does not include expectedSender in the metadata frame', () => {

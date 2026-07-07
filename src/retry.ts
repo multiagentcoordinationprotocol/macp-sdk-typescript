@@ -7,6 +7,13 @@ export interface RetryPolicy {
   maxRetries: number;
   backoffBase: number;
   backoffMax: number;
+  /**
+   * Retryable **ack** (NACK) codes — MACP application-level error codes on a
+   * `Send` response (e.g. `RATE_LIMITED`, `INTERNAL_ERROR`). This is distinct
+   * from a gRPC **stream** status such as `RESOURCE_EXHAUSTED` (watch-stream
+   * consumer lag), which is not an ack code and is not handled here — reconnect
+   * the stream instead (see the watcher classes' reconnect JSDoc).
+   */
   retryableCodes: Set<string>;
 }
 

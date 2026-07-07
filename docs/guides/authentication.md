@@ -6,10 +6,18 @@ The MACP runtime requires authentication for most operations. The SDK supports t
 
 | Mechanism | Header | Use Case |
 |-----------|--------|----------|
-| Dev Agent | `x-macp-agent-id` | Local development (requires `MACP_ALLOW_DEV_SENDER_HEADER=1` on runtime) |
+| Dev Agent | `Authorization: Bearer <agentId>` | Local development against an insecure runtime (`MACP_ALLOW_INSECURE=1`) |
 | Bearer Token | `Authorization: Bearer <token>` | Production deployments (opaque static tokens **or** JWTs) |
 
-The SDK is resolver-agnostic: both opaque static tokens and JWTs travel in `Authorization: Bearer`, and the runtime picks the right resolver based on the token shape. For the server-side resolver chain (JWT bearer → static bearer → dev-mode fallback), capability flags, and the `tokens.json` / JWT claim layout, see the runtime's [Getting Started](https://github.com/multiagentcoordinationprotocol/macp-runtime/blob/main/docs/getting-started.md#authentication-configuration) and [Deployment](https://github.com/multiagentcoordinationprotocol/macp-runtime/blob/main/docs/deployment.md#authentication) guides.
+**Runtime 0.5.0 change:** dev auth is bearer-only. `Auth.devAgent('alice')` now
+sends `Authorization: Bearer alice`; the runtime's dev fallback authenticates
+any bearer value as the sender of that value. The legacy `x-macp-agent-id`
+header and `MACP_ALLOW_DEV_SENDER_HEADER` are gone — no supported runtime reads
+them. The runtime also refuses to start with no auth configured unless
+`MACP_ALLOW_INSECURE=1` is set, and the published Docker image no longer bakes
+it in. Pin SDK 0.4.x if you must talk to a pre-0.5.0 runtime via the old header.
+
+The SDK is resolver-agnostic: both opaque static tokens and JWTs travel in `Authorization: Bearer`, and the runtime picks the right resolver based on the token shape. The runtime's default JWT algorithm allowlist is **RS256/ES256**; HS256 (shared-secret) deployments must opt in via `MACP_AUTH_JWT_ALGS=HS256`. For the server-side resolver chain (JWT bearer → static bearer → dev-mode fallback), capability flags, and the `tokens.json` / JWT claim layout, see the runtime's [Getting Started](https://github.com/multiagentcoordinationprotocol/macp-runtime/blob/main/docs/getting-started.md#authentication-configuration) and [Deployment](https://github.com/multiagentcoordinationprotocol/macp-runtime/blob/main/docs/deployment.md#authentication) guides.
 
 ## Creating Auth Configs
 
@@ -18,9 +26,9 @@ The SDK is resolver-agnostic: both opaque static tokens and JWTs travel in `Auth
 ```typescript
 import { Auth } from 'macp-sdk-typescript';
 
-// Simple dev agent — sets both agentId and senderHint
+// Simple dev agent — bearer-only, uses the agent id as the token
 const auth = Auth.devAgent('alice');
-// → Header: x-macp-agent-id: alice
+// → Header: Authorization: Bearer alice  (runtime dev fallback → sender "alice")
 ```
 
 ### Production
