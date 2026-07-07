@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Auth } from '../../src/auth';
-import { MacpClient, MacpStream } from '../../src/client';
+import { MacpClient, MacpStream, grpcStatusName } from '../../src/client';
 import { DecisionSession } from '../../src/decision';
 import { HandoffSession } from '../../src/handoff';
 import { ProposalSession } from '../../src/proposal';
@@ -326,6 +326,22 @@ describe('MacpClient.listSessions', () => {
     const result = await client.listSessions({ pageSize: 2 });
     expect(result.map((s) => s.sessionId)).toEqual(['s1', 's2', 's3', 's4']);
     expect(seenTokens).toEqual(['', 'tok-1', 'tok-2']);
+  });
+});
+
+// ── grpcStatusName helper ───────────────────────────────────────────
+
+describe('grpcStatusName', () => {
+  it('maps a numeric gRPC status code to its name', () => {
+    expect(grpcStatusName(8)).toBe('RESOURCE_EXHAUSTED');
+    expect(grpcStatusName(16)).toBe('UNAUTHENTICATED');
+    expect(grpcStatusName(9)).toBe('FAILED_PRECONDITION');
+  });
+
+  it('returns undefined for non-numeric or unknown codes', () => {
+    expect(grpcStatusName('8')).toBeUndefined();
+    expect(grpcStatusName(undefined)).toBeUndefined();
+    expect(grpcStatusName(99999)).toBeUndefined();
   });
 });
 

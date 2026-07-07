@@ -169,6 +169,17 @@ describe('ProtoRegistry', () => {
       expect(decoded).toEqual({ value: 'x' });
     });
 
+    it('coerces a non-string legacy JSON value to a string', () => {
+      const encoded = Buffer.from('{"value":123}', 'utf8');
+      const decoded = registry.decodeKnownPayload(MODE_MULTI_ROUND, 'Contribute', encoded);
+      expect(decoded).toEqual({ value: '123' });
+    });
+
+    it('decodes an empty Contribute payload via protobuf (default)', () => {
+      const decoded = registry.decodeKnownPayload(MODE_MULTI_ROUND, 'Contribute', Buffer.alloc(0));
+      expect(decoded).toEqual({});
+    });
+
     it('returns undefined for empty unknown payload', () => {
       const decoded = registry.decodeKnownPayload('unknown', 'Unknown', Buffer.alloc(0));
       expect(decoded).toBeUndefined();

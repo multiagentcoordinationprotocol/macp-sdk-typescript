@@ -234,5 +234,14 @@ describe('validation', () => {
     it('rejects empty configurationVersion', () => {
       expect(() => validateSessionStart({ ...validInput, configurationVersion: '' })).toThrow(MacpSessionError);
     });
+
+    it('accepts a valid maxSuspendMs', () => {
+      expect(() => validateSessionStart({ ...validInput, maxSuspendMs: 60_000 })).not.toThrow();
+      expect(() => validateSessionStart({ ...validInput, maxSuspendMs: 0 })).not.toThrow();
+    });
+
+    it('rejects a negative maxSuspendMs', () => {
+      expect(() => validateSessionStart({ ...validInput, maxSuspendMs: -1 })).toThrow(MacpSessionError);
+    });
   });
 });

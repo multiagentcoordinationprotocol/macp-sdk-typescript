@@ -72,6 +72,18 @@ describe('ModeRegistryWatcher', () => {
     await expect(next).rejects.toThrow('boom');
   });
 
+  it('wraps a coded gRPC ServiceError into a MacpTransportError carrying the status name', async () => {
+    const stream = new FakeReadableStream();
+    const watcher = new ModeRegistryWatcher(makeClientWith('watchModeRegistry', stream));
+
+    const iter = watcher.changes();
+    const next = iter.next();
+    // grpc.status.RESOURCE_EXHAUSTED === 8 — consumer-lag signal on a watch stream.
+    const svcErr = Object.assign(new Error('8 RESOURCE_EXHAUSTED'), { code: 8, details: 'lagging consumer' });
+    stream.emitError(svcErr);
+    await expect(next).rejects.toMatchObject({ name: 'MacpTransportError', code: 'RESOURCE_EXHAUSTED' });
+  });
+
   it('cancels the underlying stream when the AbortSignal fires', async () => {
     const stream = new FakeReadableStream();
     const watcher = new ModeRegistryWatcher(makeClientWith('watchModeRegistry', stream));
