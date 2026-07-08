@@ -114,4 +114,27 @@ describe('DecisionSession — projection roundtrip', () => {
     expect(ack.sessionState).toBe('SESSION_STATE_OPEN');
     expect(spy).toHaveBeenCalledWith(session.sessionId, 'back', expect.objectContaining({ raiseOnNack: true }));
   });
+
+  it('cancel() delegates to client.cancelSession with the session id', async () => {
+    const client = makeClient();
+    const session = new DecisionSession(client);
+    const spy = vi
+      .spyOn(client, 'cancelSession')
+      .mockResolvedValue({ ok: true, sessionState: 'SESSION_STATE_CANCELLED' });
+
+    const ack = await session.cancel('done');
+    expect(ack.sessionState).toBe('SESSION_STATE_CANCELLED');
+    expect(spy).toHaveBeenCalledWith(session.sessionId, 'done', expect.objectContaining({ raiseOnNack: true }));
+  });
+
+  it('a resolved NACK is returned but not applied to the projection', async () => {
+    const client = makeClient();
+    const session = new DecisionSession(client);
+    vi.spyOn(client, 'send').mockResolvedValue({ ok: false, error: { code: 'POLICY_DENIED', message: 'no' } });
+
+    const ack = await session.propose({ proposalId: 'p1', option: 'go' });
+    expect(ack.ok).toBe(false);
+    expect(session.projection.proposals.has('p1')).toBe(false);
+    expect(session.projection.transcript).toHaveLength(0);
+  });
 });

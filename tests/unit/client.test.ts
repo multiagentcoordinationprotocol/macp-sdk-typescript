@@ -33,21 +33,14 @@ describe('MacpClient constructor — TLS guard', () => {
   });
 
   it('throws when secure: false is passed without allowInsecure', () => {
-    expect(
-      () =>
-        new MacpClient({
-          address: '127.0.0.1:50051',
-          secure: false,
-        }),
-    ).toThrow(MacpSdkError);
-
-    expect(
-      () =>
-        new MacpClient({
-          address: '127.0.0.1:50051',
-          secure: false,
-        }),
-    ).toThrow(/allowInsecure/);
+    let caught: unknown;
+    try {
+      new MacpClient({ address: '127.0.0.1:50051', secure: false });
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(MacpSdkError);
+    expect((caught as Error).message).toMatch(/allowInsecure/);
   });
 
   it('throws when secure: false is paired with allowInsecure: false', () => {
@@ -91,24 +84,59 @@ describe('MacpClient constructor — TLS guard', () => {
 // `senderFor` helper is shared so this exercises all action methods.
 
 describe('Identity guard — mode helpers', () => {
-  it('DecisionSession.propose throws when sender conflicts with expectedSender', async () => {
+  // One row per mode: each session class carries its own private `senderFor`,
+  // so the table covers five distinct implementations, not one shared helper
+  // five times.
+  const GUARDED_ACTIONS: Array<[string, (client: MacpClient, sender: string) => Promise<unknown>]> = [
+    [
+      'DecisionSession.propose',
+      (client, sender) => new DecisionSession(client).propose({ proposalId: 'p1', option: 'x', sender }),
+    ],
+    [
+      'ProposalSession.propose',
+      (client, sender) => new ProposalSession(client).propose({ proposalId: 'p1', title: 't', sender }),
+    ],
+    [
+      'TaskSession.requestTask',
+      (client, sender) =>
+        new TaskSession(client).requestTask({
+          taskId: 't1',
+          title: 'Review',
+          instructions: 'something',
+          assignee: 'bob',
+          sender,
+        }),
+    ],
+    [
+      'HandoffSession.offer',
+      (client, sender) => new HandoffSession(client).offer({ handoffId: 'h1', targetParticipant: 'bob', sender }),
+    ],
+    [
+      'QuorumSession.requestApproval',
+      (client, sender) =>
+        new QuorumSession(client).requestApproval({
+          requestId: 'r1',
+          action: 'deploy',
+          summary: 'ship it',
+          requiredApprovals: 1,
+          sender,
+        }),
+    ],
+  ];
+
+  it.each(GUARDED_ACTIONS)('%s throws when sender conflicts with expectedSender', async (_label, invoke) => {
     const client = makeClient();
-    const session = new DecisionSession(client);
     const sendSpy = vi.spyOn(client, 'send').mockResolvedValue({ ok: true });
 
-    await expect(session.propose({ proposalId: 'p1', option: 'x', sender: 'mallory' })).rejects.toBeInstanceOf(
-      MacpIdentityMismatchError,
-    );
+    await expect(invoke(client, 'mallory')).rejects.toBeInstanceOf(MacpIdentityMismatchError);
     expect(sendSpy).not.toHaveBeenCalled();
   });
 
-  it('DecisionSession allows sender equal to expectedSender', async () => {
+  it.each(GUARDED_ACTIONS)('%s allows sender equal to expectedSender', async (_label, invoke) => {
     const client = makeClient();
-    const session = new DecisionSession(client);
     const sendSpy = vi.spyOn(client, 'send').mockResolvedValue({ ok: true });
 
-    const ack = await session.propose({ proposalId: 'p1', option: 'x', sender: 'alice' });
-    expect(ack.ok).toBe(true);
+    await invoke(client, 'alice');
     expect(sendSpy).toHaveBeenCalledTimes(1);
   });
 
@@ -120,58 +148,6 @@ describe('Identity guard — mode helpers', () => {
     await session.propose({ proposalId: 'p1', option: 'x' });
     const envelope = sendSpy.mock.calls[0][0];
     expect(envelope.sender).toBe('alice');
-  });
-
-  it('ProposalSession.propose enforces the guard', async () => {
-    const client = makeClient();
-    const session = new ProposalSession(client);
-    vi.spyOn(client, 'send').mockResolvedValue({ ok: true });
-
-    await expect(session.propose({ proposalId: 'p1', title: 't', sender: 'mallory' })).rejects.toBeInstanceOf(
-      MacpIdentityMismatchError,
-    );
-  });
-
-  it('TaskSession.requestTask enforces the guard', async () => {
-    const client = makeClient();
-    const session = new TaskSession(client);
-    vi.spyOn(client, 'send').mockResolvedValue({ ok: true });
-
-    await expect(
-      session.requestTask({
-        taskId: 't1',
-        title: 'Review',
-        instructions: 'something',
-        assignee: 'bob',
-        sender: 'mallory',
-      }),
-    ).rejects.toBeInstanceOf(MacpIdentityMismatchError);
-  });
-
-  it('HandoffSession.offer enforces the guard', async () => {
-    const client = makeClient();
-    const session = new HandoffSession(client);
-    vi.spyOn(client, 'send').mockResolvedValue({ ok: true });
-
-    await expect(
-      session.offer({ handoffId: 'h1', targetParticipant: 'bob', sender: 'mallory' }),
-    ).rejects.toBeInstanceOf(MacpIdentityMismatchError);
-  });
-
-  it('QuorumSession.requestApproval enforces the guard', async () => {
-    const client = makeClient();
-    const session = new QuorumSession(client);
-    vi.spyOn(client, 'send').mockResolvedValue({ ok: true });
-
-    await expect(
-      session.requestApproval({
-        requestId: 'r1',
-        action: 'deploy',
-        summary: 'ship it',
-        requiredApprovals: 1,
-        sender: 'mallory',
-      }),
-    ).rejects.toBeInstanceOf(MacpIdentityMismatchError);
   });
 
   it('guard is silent for legacy Auth.bearer(token, senderHintString)', async () => {
@@ -301,8 +277,14 @@ describe('MacpClient.listSessions', () => {
       // grpc.status.FAILED_PRECONDITION === 9
       cb({ code: 9, details: 'stale page token', message: '9 FAILED_PRECONDITION' });
     };
-    await expect(client.listSessionsPage()).rejects.toBeInstanceOf(MacpTransportError);
-    await expect(client.listSessionsPage()).rejects.toMatchObject({ code: 'FAILED_PRECONDITION' });
+    let caught: unknown;
+    try {
+      await client.listSessionsPage();
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(MacpTransportError);
+    expect((caught as MacpTransportError).code).toBe('FAILED_PRECONDITION');
   });
 
   it('listSessions auto-paginates until the next token is empty', async () => {
@@ -373,8 +355,14 @@ describe('MacpClient.registerExtMode guardrails', () => {
 describe('MacpClient.watchSignals', () => {
   it('throws a clear client-side error when no auth is configured', () => {
     const client = new MacpClient({ address: '127.0.0.1:50051', secure: false, allowInsecure: true });
-    expect(() => client.watchSignals()).toThrow(MacpSdkError);
-    expect(() => client.watchSignals()).toThrow(/requires auth/);
+    let caught: unknown;
+    try {
+      client.watchSignals();
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(MacpSdkError);
+    expect((caught as Error).message).toMatch(/requires auth/);
   });
 
   it('subscribes with metadata when auth is present', () => {

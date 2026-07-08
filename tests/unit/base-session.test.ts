@@ -87,6 +87,67 @@ describe('BaseSession / BaseProjection extension point', () => {
     expect(() => leak.senderFor('mallory')).toThrow(/does not match/);
   });
 
+  it('validates an explicit sessionId and keeps a valid one', () => {
+    expect(() => new SmokeSession(makeClient(), { sessionId: 'not-a-uuid' })).toThrow();
+    const session = new SmokeSession(makeClient(), { sessionId: '550e8400-e29b-41d4-a716-446655440000' });
+    expect(session.sessionId).toBe('550e8400-e29b-41d4-a716-446655440000');
+  });
+
+  it('start() validates maxSuspendMs before hitting the wire', async () => {
+    const client = makeClient();
+    const sendSpy = vi.spyOn(client, 'send').mockResolvedValue({ ok: true });
+    const session = new SmokeSession(client);
+
+    await expect(
+      session.start({ intent: 'test', participants: ['alice'], ttlMs: 30_000, maxSuspendMs: -1 }),
+    ).rejects.toThrow();
+    expect(sendSpy).not.toHaveBeenCalled();
+  });
+
+  it('commit() success feeds the projection: phase Committed, commitment decoded', async () => {
+    const client = makeClient();
+    vi.spyOn(client, 'send').mockResolvedValue({ ok: true });
+    const session = new SmokeSession(client);
+
+    // The real ProtoRegistry resolves Commitment via the core payload map for
+    // unknown ext modes, so the projection decodes a real protobuf payload.
+    await session.commit({ action: 'done', authorityScope: 'session', reason: 'smoke', outcomePositive: true });
+
+    expect(session.projection.isCommitted).toBe(true);
+    expect(session.projection.phase).toBe('Committed');
+    expect(session.projection.commitment).toMatchObject({ action: 'done', reason: 'smoke' });
+    expect(session.projection.isPositiveOutcome).toBe(true);
+  });
+
+  it('metadata()/cancel()/suspend()/resume() delegate to the client with the session id', async () => {
+    const client = makeClient();
+    const session = new SmokeSession(client);
+    const getSpy = vi.spyOn(client, 'getSession').mockResolvedValue({ metadata: { sessionId: session.sessionId } });
+    const cancelSpy = vi.spyOn(client, 'cancelSession').mockResolvedValue({ ok: true });
+    const suspendSpy = vi.spyOn(client, 'suspendSession').mockResolvedValue({ ok: true });
+    const resumeSpy = vi.spyOn(client, 'resumeSession').mockResolvedValue({ ok: true });
+
+    await session.metadata();
+    await session.cancel('done');
+    await session.suspend('pausing');
+    await session.resume('back');
+
+    expect(getSpy).toHaveBeenCalledWith(session.sessionId, expect.any(Object));
+    expect(cancelSpy).toHaveBeenCalledWith(session.sessionId, 'done', expect.any(Object));
+    expect(suspendSpy).toHaveBeenCalledWith(session.sessionId, 'pausing', expect.any(Object));
+    expect(resumeSpy).toHaveBeenCalledWith(session.sessionId, 'back', expect.any(Object));
+  });
+
+  it('openStream() forwards session auth to client.openStream', () => {
+    const client = makeClient();
+    const sentinel = {};
+    const streamSpy = vi.spyOn(client, 'openStream').mockReturnValue(sentinel as ReturnType<MacpClient['openStream']>);
+    const session = new SmokeSession(client);
+
+    expect(session.openStream()).toBe(sentinel);
+    expect(streamSpy).toHaveBeenCalledWith({ auth: undefined });
+  });
+
   it('BaseProjection ignores envelopes from other modes (transcript untouched)', () => {
     const registry = new (class {
       decodeKnownPayload() {
@@ -109,5 +170,22 @@ describe('BaseSession / BaseProjection extension point', () => {
     );
     expect(projection.transcript).toHaveLength(0);
     expect(projection.events).toHaveLength(0);
+  });
+
+  // isPositiveOutcome branch table: undefined without commitment; defaults to
+  // true when the field is absent; respects explicit false; accepts the
+  // snake_case wire spelling.
+  it.each([
+    ['no commitment', undefined, undefined],
+    ['field absent (proto3 default)', {}, true],
+    ['explicit outcomePositive: false', { outcomePositive: false }, false],
+    ['snake_case outcome_positive: false', { outcome_positive: false }, false],
+    ['explicit outcomePositive: true', { outcomePositive: true }, true],
+  ] as const)('BaseProjection.isPositiveOutcome — %s', (_label, commitment, expected) => {
+    const projection = new SmokeProjection();
+    if (commitment !== undefined) {
+      (projection as { commitment?: Record<string, unknown> }).commitment = commitment as Record<string, unknown>;
+    }
+    expect(projection.isPositiveOutcome).toBe(expected);
   });
 });
