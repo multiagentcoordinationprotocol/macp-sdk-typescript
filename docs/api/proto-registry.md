@@ -59,8 +59,15 @@ const obj = registry.decodeMessage(
   'macp.modes.decision.v1.ProposalPayload',
   buffer,
 );
-// → { proposalId: 'p1', option: 'A', rationale: '', supportingData: <Buffer> }
+// → { proposalId: 'p1', option: 'A' }
 ```
+
+Decoding uses `defaults: false`, so proto3 scalars at their default value
+(empty string, `0`, empty bytes) are **absent** from the result — with one
+exception: non-repeated `bool` fields are materialized to `false` when absent.
+Without this, an explicit `false` (e.g. `Commitment.outcome_positive` on a
+decline) would be indistinguishable from unset and mis-read as positive.
+`long` values decode as strings, enums as their names, bytes as `Buffer`.
 
 ### `encodeKnownPayload(mode, messageType, value)`
 
@@ -75,8 +82,7 @@ const buffer = registry.encodeKnownPayload(
 ```
 
 `ext.multi_round.v1` `Contribute` encodes as canonical protobuf
-(`ContributePayload`) as of proto 0.1.4 / runtime 0.5.0. Unmapped extension
-modes still fall back to `__json__` (JSON serialization).
+(`ContributePayload`) as of proto 0.1.4 / runtime 0.5.0.
 
 Throws if no mapping exists for the given mode/messageType combination.
 
@@ -92,7 +98,10 @@ const obj = registry.decodeKnownPayload(
 );
 ```
 
-For unknown types, attempts UTF-8 JSON decoding. Returns `undefined` for empty payloads.
+For unmapped mode/messageType combinations, attempts a UTF-8 fallback decode:
+valid JSON yields `{ encoding: 'json', json }`, anything else yields
+`{ encoding: 'text', text, payloadBase64 }`. Returns `undefined` for empty
+unmapped payloads.
 
 `ext.multi_round.v1` `Contribute` decodes both wire formats: legacy JSON
 (`{"value":"..."}`, replayed verbatim from pre-proto histories) is tried first,

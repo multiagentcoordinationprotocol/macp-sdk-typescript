@@ -4,6 +4,8 @@ TypeScript SDK for the [Multi-Agent Coordination Protocol (MACP)](https://github
 
 ## Install
 
+Requires Node.js >= 20.
+
 ```bash
 npm install macp-sdk-typescript
 ```
@@ -405,9 +407,13 @@ npm run lint               # ESLint
 npm run format             # Prettier
 npm test                   # Run unit + conformance tests
 npm run test:watch         # Watch mode
-npm run test:coverage      # With coverage
-npm run test:integration   # Integration tests (requires Docker runtime)
+npm run test:coverage      # With coverage (CI enforces thresholds from vitest.config.ts)
+npm run test:integration   # Integration tests (requires Docker runtime; not run in CI)
 ```
+
+CI (GitHub Actions) runs type-check, lint, format check, the coverage-gated
+test suite, and the build on Node 20, 22, and 24 for every push and pull
+request, and posts a coverage summary comment on PRs.
 
 ### Integration Tests
 

@@ -36,9 +36,9 @@ TypeScript and Python agents.
 ### `startCancelCallbackServer(options)`
 
 ```typescript
-import { startCancelCallbackServer } from 'macp-sdk-typescript/agent';
+import { agent } from 'macp-sdk-typescript';
 
-const server = await startCancelCallbackServer({
+const server = await agent.startCancelCallbackServer({
   host: '127.0.0.1',
   port: 0,                             // 0 = ephemeral, read `server.port` after
   path: '/cancel',
@@ -109,9 +109,9 @@ cancels to `participant.stop()`, and is torn down when `run()` returns:
 ### 2. Manually (advanced)
 
 ```typescript
-import { Participant, startCancelCallbackServer } from 'macp-sdk-typescript/agent';
+import { agent } from 'macp-sdk-typescript';
 
-const server = await startCancelCallbackServer({
+const server = await agent.startCancelCallbackServer({
   host: '127.0.0.1',
   port: 0,
   path: '/cancel',

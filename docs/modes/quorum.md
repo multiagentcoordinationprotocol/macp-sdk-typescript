@@ -39,6 +39,13 @@ await session.start({
 | `abstain(input)` | `Abstain` | Abstain from voting |
 | `commit(input)` | `Commitment` | Finalize once quorum is reached |
 
+Like every mode session, `QuorumSession` also exposes the shared lifecycle
+helpers — `metadata()`, `cancel(reason)`, `suspend(reason)`, `resume(reason)`,
+and `openStream()`. `suspend()` (proto 0.1.3+) is a non-terminal pause: the
+runtime banks the remaining TTL and rejects messages until `resume()` restores
+`SESSION_STATE_OPEN` and the banked TTL. See
+[Decision Mode → Lifecycle helpers](decision.md#lifecycle-helpers).
+
 ### Request Approval
 
 ```typescript
@@ -106,7 +113,8 @@ await session.approve({
 | `requests` | `Map<string, ApprovalRequestRecord>` | Approval requests |
 | `ballots` | `Map<string, Map<string, BallotRecord>>` | requestId → sender → ballot |
 | `transcript` | `Envelope[]` | All accepted envelopes |
-| `phase` | `'Requesting' \| 'Voting' \| 'Committed'` | Current phase |
+| `phase` | `'Pending' \| 'Voting' \| 'Committed'` | Current phase |
+| `commitment` | `Record<string, unknown> \| undefined` | Commitment payload if resolved |
 
 ### BallotRecord
 
@@ -134,6 +142,12 @@ session.projection.remainingVotesNeeded('r1');   // max(0, required - approvalCo
 
 // Participation
 session.projection.votedSenders('r1');           // ['alice', 'bob', 'carol']
+
+// Commitment readiness
+session.projection.commitmentReady('r1');        // quorum reached and not yet committed
+session.projection.isThresholdUnreachable('r1', 3); // remaining unvoted eligibles can't reach threshold
+session.projection.isCommitted;                  // true once a Commitment is applied
+session.projection.isPositiveOutcome;            // undefined until committed; then outcomePositive
 ```
 
 ## RFC Validation Rules

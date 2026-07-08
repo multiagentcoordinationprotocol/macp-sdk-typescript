@@ -15,7 +15,7 @@ The MACP TypeScript SDK connects TypeScript/Node.js applications to the [Multi-A
 - [Streaming](guides/streaming.md) — Session streams, registry watchers, signal watchers, and policy watchers
 - [Policy Framework](guides/policy.md) — Governance policies, rule builders, and policy lifecycle
 - [Agent Framework](guides/agent-framework.md) — Participant abstraction, strategies, and bootstrap
-- [Testing](guides/testing.md) — Running tests, writing new tests, and integration test patterns
+- [Testing](guides/testing.md) — Running tests, coverage gates, conformance fixtures, and integration test patterns
 
 ### Coordination Modes
 
@@ -42,7 +42,7 @@ The MACP TypeScript SDK connects TypeScript/Node.js applications to the [Multi-A
 This SDK is the gRPC client; the runtime is the source of truth for protocol semantics, RPC contracts, deployment, and auth. Rather than duplicate runtime material, we link to it:
 
 - [Runtime — Getting Started](https://github.com/multiagentcoordinationprotocol/macp-runtime/blob/main/docs/getting-started.md) — build the runtime, static/JWT auth configuration, first session
-- [Runtime — API Reference](https://github.com/multiagentcoordinationprotocol/macp-runtime/blob/main/docs/API.md) — all 22 gRPC RPCs with request/response fields and capability flags
+- [Runtime — API Reference](https://github.com/multiagentcoordinationprotocol/macp-runtime/blob/main/docs/API.md) — every gRPC RPC with request/response fields and capability flags
 - [Runtime — Architecture](https://github.com/multiagentcoordinationprotocol/macp-runtime/blob/main/docs/architecture.md) — layer structure, request flow, durability model
 - [Runtime — Modes](https://github.com/multiagentcoordinationprotocol/macp-runtime/blob/main/docs/modes.md) — per-mode state machine implementation details
 - [Runtime — Policy](https://github.com/multiagentcoordinationprotocol/macp-runtime/blob/main/docs/policy.md) — policy framework, rule schemas, evaluator internals

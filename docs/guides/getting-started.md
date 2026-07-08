@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-- **Node.js 18+** (ES2022 target)
+- **Node.js 20+** (ES2022 target; `package.json` declares `engines.node >= 20`)
 - A running MACP Rust runtime (default at `127.0.0.1:50051`)
 
 ## Install

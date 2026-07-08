@@ -35,6 +35,13 @@ await session.start({ intent: '...', participants: ['bob'], ttlMs: 60_000 });
 | `decline(input)` | `HandoffDecline` | Decline the handoff |
 | `commit(input)` | `Commitment` | Finalize the session |
 
+Like every mode session, `HandoffSession` also exposes the shared lifecycle
+helpers — `metadata()`, `cancel(reason)`, `suspend(reason)`, `resume(reason)`,
+and `openStream()`. `suspend()` (proto 0.1.3+) is a non-terminal pause: the
+runtime banks the remaining TTL and rejects messages until `resume()` restores
+`SESSION_STATE_OPEN` and the banked TTL. See
+[Decision Mode → Lifecycle helpers](decision.md#lifecycle-helpers).
+
 > **Migrating from 0.2.x**: the `sendContext()` alias was deprecated in `0.2.3`
 > and **removed in `0.3.0`**. Replace any call site with `addContext()` — the
 > signature and semantics are identical. See the `0.3.0` "Removed" entry in
@@ -46,7 +53,7 @@ await session.start({ intent: '...', participants: ['bob'], ttlMs: 60_000 });
 await session.offer({
   handoffId: 'h1',
   targetParticipant: 'bob',
-  scope: 'frontend-ownership',
+  scope: 'frontend-ownership',  // optional; defaults to '' when omitted
   reason: 'moving to backend team',
 });
 ```
@@ -98,14 +105,15 @@ await session.decline({
 |----------|------|-------------|
 | `handoffs` | `Map<string, HandoffRecord>` | Handoffs with status tracking |
 | `transcript` | `Envelope[]` | All accepted envelopes |
-| `phase` | `'Offering' \| 'ContextSharing' \| 'Resolved' \| 'Committed'` | Current phase |
+| `phase` | `'Pending' \| 'OfferPending' \| 'ContextSharing' \| 'Accepted' \| 'Declined' \| 'Committed'` | Current phase |
+| `commitment` | `Record<string, unknown> \| undefined` | Commitment payload if resolved |
 
 ### HandoffRecord Status
 
 | Status | Meaning |
 |--------|---------|
 | `offered` | Handoff proposed, awaiting response |
-| `context_sent` | Additional context provided |
+| `context_sent` | Context provided while still pending (context after accept/decline leaves status unchanged) |
 | `accepted` | Target accepted the handoff |
 | `declined` | Target declined the handoff |
 
@@ -117,6 +125,9 @@ session.projection.isAccepted('h1');            // true after HandoffAccept
 session.projection.isImplicitlyAccepted('h1');  // true only for a runtime synthetic implicit accept
 session.projection.isDeclined('h1');            // true after HandoffDecline
 session.projection.pendingHandoffs();           // handoffs in offered/context_sent status
+session.projection.hasAcceptedOffer();          // any accepted handoff (or pass a handoffId)
+session.projection.activeOffer();               // most recent still-pending handoff, if any
+session.projection.isCommitted;                 // true once a Commitment is applied
 ```
 
 ### Implicit accepts (RFC-MACP-0010 §5.1, proto ≥ 0.1.6)

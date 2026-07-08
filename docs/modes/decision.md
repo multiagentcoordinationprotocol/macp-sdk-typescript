@@ -47,10 +47,12 @@ Initiates the decision session.
 await session.start({
   intent: 'choose deployment strategy',
   participants: ['alice', 'bob', 'carol'],
-  ttlMs: 300_000,    // 5 minutes
-  context: { project: 'web-app' },  // optional, Buffer | string | object
+  ttlMs: 300_000,    // 5 minutes (max 24 hours)
+  contextId: 'proj-web-app',                 // optional correlation id
+  extensions: { note: Buffer.from('...') },  // optional opaque extension payloads
   roots: [{ uri: 'https://git.example.com/repo', name: 'main-repo' }],
-  sender: 'coordinator',  // optional, derived from auth
+  maxSuspendMs: 3_600_000,  // optional (proto ≥ 0.1.5); 0/absent = runtime default
+  sender: 'coordinator',    // optional, derived from auth
 });
 ```
 
@@ -74,7 +76,7 @@ Add an evaluation of a proposal.
 ```typescript
 await session.evaluate({
   proposalId: 'p1',
-  recommendation: 'approve',  // or 'reject', 'defer', etc.
+  recommendation: 'approve',  // 'approve' | 'review' | 'block' | 'reject' (case-insensitive)
   confidence: 0.92,            // 0.0 - 1.0
   reason: 'risk assessment favorable',
   sender: 'alice',
@@ -90,7 +92,7 @@ Flag an objection against a proposal.
 await session.raiseObjection({
   proposalId: 'p1',
   reason: 'insufficient monitoring coverage',
-  severity: 'high',  // 'low', 'medium', 'high', 'critical', 'block'
+  severity: 'high',  // 'low' | 'medium' | 'high' | 'critical' (case-insensitive; only 'critical' blocks)
   sender: 'bob',
   auth: Auth.devAgent('bob'),
 });
@@ -103,7 +105,7 @@ Cast a vote on a proposal.
 ```typescript
 await session.vote({
   proposalId: 'p1',
-  vote: 'approve',  // recognized positive: approve, approved, yes, accept, accepted
+  vote: 'approve',  // 'approve' | 'reject' | 'abstain' (case-insensitive; validated client-side)
   reason: 'all concerns addressed',
   sender: 'carol',
   auth: Auth.devAgent('carol'),
@@ -120,8 +122,25 @@ await session.commit({
   authorityScope: 'release-management',
   reason: 'unanimous approval for canary deploy',
   commitmentId: 'optional-custom-id',  // default: auto-generated UUID
+  outcomePositive: true,               // optional; omitted = positive outcome
 });
 ```
+
+#### Lifecycle helpers
+
+Every session class (all 5 modes) shares the same lifecycle surface:
+
+```typescript
+await session.metadata();            // { metadata: SessionMetadata } from the runtime
+await session.cancel('reason');      // CancelSession — terminal (SESSION_STATE_CANCELLED)
+await session.suspend('reason');     // SuspendSession (proto 0.1.3+) — non-terminal pause:
+                                     // remaining TTL is banked; messages are rejected until resume()
+await session.resume('reason');      // ResumeSession — restores SESSION_STATE_OPEN and the banked TTL
+const stream = session.openStream(); // duplex MacpStream using the session's auth
+```
+
+Each helper accepts an optional trailing `auth` override. `cancel()`, `suspend()`,
+and `resume()` throw `MacpAckError` if the runtime rejects the request.
 
 ## DecisionProjection
 
@@ -146,13 +165,25 @@ The projection tracks all proposals, evaluations, objections, and votes locally.
 session.projection.voteTotals();
 // → { 'p1': 2, 'p2': 1 }
 
-// Get proposal with most positive votes
+// Proposal holding a strict majority (>50%) of all non-abstain votes, if any
 session.projection.majorityWinner();
 // → 'p1'
 
-// Check for blocking objections (severity: high, critical, or block)
+// APPROVE ratio for one proposal (ABSTAIN excluded from the denominator)
+session.projection.voteRatio('p1');
+// → 0.67
+
+// Check for blocking objections (only severity 'critical' blocks per RFC-MACP-0004)
 session.projection.hasBlockingObjection('p1');
 // → true/false
+
+// Evaluations split by recommendation: REVIEW (informational) vs the rest (qualifying)
+session.projection.reviewEvaluations();
+session.projection.qualifyingEvaluations();
+
+// Commitment state (getters, available on every mode projection)
+session.projection.isCommitted;        // true once a Commitment is applied
+session.projection.isPositiveOutcome;  // undefined until committed; then outcomePositive (default true)
 ```
 
 ### Vote Deduplication
@@ -161,7 +192,9 @@ If the same sender votes twice on the same proposal, the later vote replaces the
 
 ## RFC Validation Rules
 
-The runtime enforces these rules (the SDK does not validate locally):
+The runtime enforces these cross-message rules (the SDK validates only field
+formats — vote/recommendation/severity values, confidence range, required
+fields — client-side):
 
 1. `proposal_id` must be unique within the session
 2. Evaluation, Objection, and Vote must reference an existing `proposal_id`

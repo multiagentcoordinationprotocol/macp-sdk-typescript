@@ -40,20 +40,23 @@ await participant.run();
 The central class that wraps a session, projection, transport, and dispatcher. Created via `ParticipantConfig` or the `fromBootstrap()` factory.
 
 ```typescript
-import { Participant, type ParticipantConfig } from 'macp-sdk-typescript/agent';
-import { MacpClient, Auth, MODE_DECISION } from 'macp-sdk-typescript';
+import { agent, MacpClient, Auth, MODE_DECISION } from 'macp-sdk-typescript';
 
-const config: ParticipantConfig = {
+const config: agent.ParticipantConfig = {
   participantId: 'agent-1',
-  sessionId: 'session-123',
+  // Session ids must be UUID v4/v7 or base64url (22+ chars) — the runtime's validator
+  sessionId: '550e8400-e29b-41d4-a716-446655440000',
   mode: MODE_DECISION,
   client: new MacpClient({ address: 'localhost:50051', auth: Auth.devAgent('agent-1') }),
   auth: Auth.devAgent('agent-1'),
   policyVersion: 'policy.fraud.majority-veto',
 };
 
-const participant = new Participant(config);
+const participant = new agent.Participant(config);
 ```
+
+(All agent-framework symbols live under the `agent` namespace export — the
+package does not expose a `macp-sdk-typescript/agent` subpath.)
 
 **Handler registration** uses a fluent API:
 
@@ -92,7 +95,7 @@ const p2 = agent.fromBootstrap();
 **Bootstrap payload format:**
 ```json
 {
-  "session_id": "session-123",
+  "session_id": "550e8400-e29b-41d4-a716-446655440000",
   "participant_id": "agent-1",
   "mode": "macp.mode.decision.v1",
   "runtime_address": "localhost:50051",
@@ -119,6 +122,7 @@ const p2 = agent.fromBootstrap();
 | `mode_version`, `configuration_version`, `policy_version` | no | Version strings forwarded to the session helper. |
 | `participants` | no | Optional participant roster, passed through to `ParticipantConfig`. |
 | `initiator.session_start.context_id` | no | Upstream context identifier (RFC-MACP-0007). Forwarded to the mode-session `start()` as `contextId`. |
+| `initiator.session_start.max_suspend_ms` | no | Per-session max-suspend cap in ms (proto ≥ 0.1.5). `0`/absent = runtime default. |
 | `initiator.session_start.extensions` | no | Map of extension metadata (RFC-MACP-0008). JSON-native values are UTF-8 JSON-encoded by the runner to satisfy the envelope's `Record<string, Buffer>` contract; pre-encoded `Buffer` / `Uint8Array` values pass through unchanged. |
 
 ### Example: initiator with context + extensions
@@ -253,9 +257,9 @@ On start, the adapter sends a subscribe-only frame (`sendSubscribe(sessionId)`) 
 Polls an HTTP endpoint for events. Useful when gRPC is not available:
 
 ```typescript
-import { HttpTransportAdapter } from 'macp-sdk-typescript/agent';
+import { agent } from 'macp-sdk-typescript';
 
-const transport = new HttpTransportAdapter({
+const transport = new agent.HttpTransportAdapter({
   baseUrl: 'http://localhost:3000',
   sessionId: 'session-123',
   participantId: 'agent-1',
@@ -263,7 +267,7 @@ const transport = new HttpTransportAdapter({
   authToken: 'optional-token',
 });
 
-const participant = new Participant({
+const participant = new agent.Participant({
   ...config,
   transport,
 });
@@ -285,8 +289,8 @@ For extension modes, a fallback `DecisionProjection` is used and only `send` is 
 
 ## Lifecycle
 
-1. **Create** — `new Participant(config)` or `fromBootstrap()`
+1. **Create** — `new agent.Participant(config)` or `agent.fromBootstrap()`
 2. **Register handlers** — `.on()`, `.onPhaseChange()`, `.onTerminal()`
 3. **Run** — `await participant.run()` starts consuming messages
-4. **Terminal** — When the projection reaches `Committed`, `Resolved`, or `Cancelled`, the terminal handler fires and `run()` returns
+4. **Terminal** — When the projection reaches a terminal phase (`Committed`, `Accepted`, `Declined`, `Cancelled`, or `TerminalRejected`), the terminal handler fires and `run()` returns
 5. **Stop** — Call `await participant.stop()` to stop early

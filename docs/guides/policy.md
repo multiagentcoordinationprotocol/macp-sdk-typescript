@@ -30,7 +30,7 @@ const policy = buildDecisionPolicy(
       quorum: { type: 'count', value: 3 },
     },
     objectionHandling: {
-      blockSeverityVetoes: true,
+      criticalSeverityVetoes: true,
       vetoThreshold: 1,
     },
     commitment: {
@@ -64,16 +64,17 @@ await client.registerPolicy(policy);
 Pass the `policyVersion` when starting a session:
 
 ```typescript
-import { DecisionSession, MODE_DECISION } from 'macp-sdk-typescript';
+import { DecisionSession, newSessionId } from 'macp-sdk-typescript';
 
 const session = new DecisionSession(client, {
-  sessionId: 'review-123',
+  sessionId: newSessionId(), // session ids must be UUID v4/v7 or base64url (22+ chars)
   policyVersion: 'policy.fraud.majority-veto',
 });
 
 await session.start({
   intent: 'Review transaction for fraud',
   participants: ['analyst-1', 'analyst-2', 'fraud-lead'],
+  ttlMs: 60_000,
   sender: 'fraud-lead',
 });
 ```

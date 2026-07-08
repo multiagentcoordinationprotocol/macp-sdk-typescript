@@ -32,7 +32,7 @@ interface Ack {
   messageId?: string;        // echoed message_id
   sessionId?: string;        // session context
   acceptedAtUnixMs?: string; // acceptance timestamp
-  sessionState?: string;     // current session state
+  sessionState?: SessionState; // current session state
   error?: MacpErrorShape;    // present if not ok
 }
 ```
@@ -65,6 +65,23 @@ interface SessionMetadata {
   modeVersion?: string;
   configurationVersion?: string;
   policyVersion?: string;
+  participants?: string[];
+  participantActivity?: ParticipantActivity[];
+  initiator?: string;
+  contextId?: string;
+  extensionKeys?: string[];
+}
+```
+
+### `ParticipantActivity`
+
+Per-participant activity summary in `SessionMetadata`.
+
+```typescript
+interface ParticipantActivity {
+  participantId: string;
+  lastMessageAtUnixMs: string;
+  messageCount: number;
 }
 ```
 
@@ -140,7 +157,8 @@ interface SessionStartPayload {
   policyVersion?: string;
   ttlMs: number;
   maxSuspendMs?: number | string;  // proto ≥ 0.1.5; 0/absent = runtime default (7 days); negatives rejected
-  context?: Buffer;
+  contextId?: string;
+  extensions?: Record<string, Buffer>;
   roots?: Root[];
 }
 ```
@@ -188,6 +206,18 @@ interface SignalPayload {
 }
 ```
 
+### `ProgressPayload`
+
+```typescript
+interface ProgressPayload {
+  progressToken: string;
+  progress: number;
+  total: number;
+  message?: string;
+  targetMessageId?: string;
+}
+```
+
 ## Mode Payload Types
 
 ### Decision Mode
@@ -216,7 +246,7 @@ interface SignalPayload {
 
 ### Handoff Mode
 
-- `HandoffOfferPayload` — `{ handoffId, targetParticipant, scope, reason? }`
+- `HandoffOfferPayload` — `{ handoffId, targetParticipant, scope?, reason? }`
 - `HandoffContextPayload` — `{ handoffId, contentType, context? }`
 - `HandoffAcceptPayload` — `{ handoffId, acceptedBy, reason?, implicit? }` — `implicit` (proto ≥ 0.1.6) is **decode-only**: `true` on the runtime-emitted synthetic accept (RFC-MACP-0010 §5.1). Clients MUST NOT set it; `acceptHandoff` strips it before sending.
 - `HandoffDeclinePayload` — `{ handoffId, declinedBy, reason? }`
@@ -246,3 +276,37 @@ interface RootsChanged {
   observedAtUnixMs: string;
 }
 ```
+
+### `SessionLifecycleEvent`
+
+Yielded by `SessionLifecycleWatcher` / `client.watchSessions()`.
+
+```typescript
+type SessionLifecycleEventType =
+  | 'EVENT_TYPE_UNSPECIFIED'
+  | 'EVENT_TYPE_CREATED'
+  | 'EVENT_TYPE_RESOLVED'
+  | 'EVENT_TYPE_EXPIRED'
+  | 'EVENT_TYPE_SUSPENDED'
+  | 'EVENT_TYPE_RESUMED'
+  | 'EVENT_TYPE_CANCELLED';
+
+interface SessionLifecycleEvent {
+  eventType: SessionLifecycleEventType;
+  session: SessionMetadata;
+  observedAtUnixMs: string;
+}
+```
+
+`RESOLVED`, `EXPIRED`, and `CANCELLED` are terminal; `SUSPENDED`/`RESUMED` are
+not. The SDK exports `TERMINAL_SESSION_LIFECYCLE_EVENT_TYPES` plus predicates
+(`isSessionCreated`, `isSessionResolved`, `isSessionExpired`,
+`isSessionCancelled`, `isSessionSuspended`, `isSessionResumed`,
+`isTerminalSessionLifecycleEvent`) for classifying events.
+
+## Other Exported Types
+
+- `InitializeResult` — result of `client.initialize()`: `{ selectedProtocolVersion, runtimeInfo?, supportedModes?, instructions?, capabilities? }`
+- `TransportEndpoint` — `{ transport, uri, contentTypes?, metadata? }` (used in `AgentManifest.transportEndpoints`)
+- `PolicyDescriptor` — see [policy.md](policy.md)
+- `PolicyChange` — `{ descriptors: PolicyDescriptor[]; observedAtUnixMs: number }` (yielded by `PolicyWatcher`)

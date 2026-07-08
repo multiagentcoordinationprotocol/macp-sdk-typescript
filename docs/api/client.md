@@ -32,7 +32,7 @@ const client = new MacpClient({
 | `defaultDeadlineMs` | `number` | `undefined` | Default RPC deadline (ms) |
 | `clientName` | `string` | `'macp-sdk-typescript'` | Client name for Initialize |
 | `clientVersion` | `string` | matches SDK package version | Client version for Initialize |
-| `protoDir` | `string` | `<pkg>/proto` | Proto definitions directory |
+| `protoDir` | `string` | `@multiagentcoordinationprotocol/proto`'s `protoDir` | Override the proto definitions directory |
 
 > The constructor throws `MacpSdkError` if `secure: false` is passed without `allowInsecure: true`. This prevents shipping with TLS off by accident.
 
@@ -69,6 +69,9 @@ const ack: Ack = await client.send(envelope, {
   raiseOnNack: true,             // default: true; throw MacpAckError on nack
 });
 ```
+
+A duplicate ack (`ack.duplicate === true`) is treated as success and returned
+without throwing — the message was already accepted.
 
 ### `getSession(sessionId, options?)`
 
@@ -242,12 +245,111 @@ Promote an extension mode to standards-track.
 const result = await client.promoteMode('ext.custom.v1', 'macp.mode.custom.v1', { auth });
 ```
 
+### `registerPolicy(descriptor, options?)`
+
+Register a governance policy. Returns `{ ok, error? }`. Build the descriptor
+with the typed builders in [policy.md](policy.md) rather than by hand.
+
+```typescript
+const result = await client.registerPolicy(descriptor, { auth });
+```
+
+### `unregisterPolicy(policyId, options?)`
+
+Remove a registered policy. Returns `{ ok, error? }`.
+
+```typescript
+const result = await client.unregisterPolicy('policy-id', { auth });
+```
+
+### `getPolicy(policyId, options?)`
+
+Fetch a single policy descriptor. Returns the `PolicyDescriptor` directly
+(not wrapped in a response object).
+
+```typescript
+const descriptor: PolicyDescriptor = await client.getPolicy('policy-id', { auth });
+```
+
+### `listPolicies(mode?, options?)`
+
+List registered policies, optionally filtered by mode. Returns
+`PolicyDescriptor[]` (missing/empty responses normalise to `[]`).
+
+```typescript
+const all = await client.listPolicies(undefined, { auth });
+const decisionOnly = await client.listPolicies('macp.mode.decision.v1', { auth });
+```
+
 ### `openStream(options?)`
 
-Open a bidirectional session stream.
+Open a bidirectional session stream. Requires auth (throws `MacpSdkError` if
+neither `options.auth` nor the client default is set).
 
 ```typescript
 const stream: MacpStream = client.openStream({ auth });
+```
+
+### `sendSignal(options)`
+
+Convenience wrapper for the ambient signal plane: builds, encodes and sends a
+`Signal` envelope in one call. Returns the Ack.
+
+```typescript
+const ack = await client.sendSignal({
+  signalType: 'ext.signal.heartbeat',   // required; validated client-side
+  data: Buffer.from('{}'),              // optional payload bytes
+  confidence: 0.9,                      // optional
+  correlationSessionId: 'session-id',   // optional
+  sender: 'alice',                      // optional; defaults to senderHint()
+  auth,                                 // optional; defaults to client auth
+  deadlineMs: 5000,                     // optional
+});
+```
+
+Throws `MacpIdentityMismatchError` if `sender` conflicts with the auth config's
+`expectedSender`.
+
+### `sendProgress(options)`
+
+Convenience wrapper for `Progress` messages. Returns the Ack.
+
+```typescript
+const ack = await client.sendProgress({
+  sessionId: 'session-id',
+  mode: 'macp.mode.task.v1',
+  progressToken: 'token-1',   // required
+  progress: 3,                // required
+  total: 10,                  // required
+  message: '3 of 10 done',    // optional
+  targetMessageId: 'msg-id',  // optional
+  auth,
+});
+```
+
+### Watch methods
+
+Server-streaming RPCs that return a raw `grpc.ClientReadableStream`. Prefer the
+watcher classes in `src/watchers.ts` (`ModeRegistryWatcher`, `RootsWatcher`,
+`SignalWatcher`, `PolicyWatcher`, `SessionLifecycleWatcher`), which wrap these
+in async generators. The deprecated `_`-prefixed aliases (`_watchModeRegistry`,
+etc.) were **removed in 0.5.0** — use the names below.
+
+| Method | RPC | Auth |
+|--------|-----|------|
+| `watchModeRegistry(auth?)` | `WatchModeRegistry` | optional |
+| `watchRoots(auth?)` | `WatchRoots` | optional |
+| `watchSignals(auth?)` | `WatchSignals` | **required** (runtime ≥ 0.5.0) |
+| `watchSessions(auth?)` | `WatchSessions` | optional |
+| `watchPolicies(auth?)` | `WatchPolicies` | optional |
+
+`watchSignals` throws `MacpSdkError` client-side when no auth is available
+(neither the argument nor `client.auth`), rather than failing later with a
+stream `UNAUTHENTICATED`.
+
+```typescript
+const call = client.watchSignals(auth);
+call.on('data', (event) => console.log(event));
 ```
 
 ### `senderHint(auth?)`
@@ -313,7 +415,8 @@ stream, so you only need it when driving a raw `MacpStream`.
 
 ### `responses()`
 
-Async generator yielding received envelopes.
+Async generator yielding received envelopes. Throws `MacpTransportError` if the
+underlying stream errors; returns when the stream ends.
 
 ```typescript
 for await (const envelope of stream.responses()) {
@@ -321,10 +424,49 @@ for await (const envelope of stream.responses()) {
 }
 ```
 
+### `read(timeoutMs?)`
+
+Read a single envelope from the stream (parity with the Python SDK's
+`MacpStream.read(timeout)`). Returns the next envelope, or `null` if the stream
+has ended. If `timeoutMs` is omitted, blocks until an envelope arrives, the
+stream ends, or an error occurs.
+
+```typescript
+const envelope = await stream.read(5000); // Envelope | null
+```
+
+Throws `MacpTimeoutError` if `timeoutMs` elapses first, and
+`MacpTransportError` if the underlying stream errored.
+
+### `onInlineError(callback)`
+
+Register a callback for inline application-level errors delivered on the stream
+(`response.error` frames). The stream stays open when these arrive — they are
+not transport failures.
+
+```typescript
+stream.onInlineError(({ code, message }) => {
+  console.warn('inline error', code, message);
+});
+```
+
 ### `close()`
 
-End the stream.
+End the stream. Idempotent; subsequent `send()`/`sendSubscribe()` calls reject
+with `MacpSdkError`.
 
 ```typescript
 stream.close();
+```
+
+## `grpcStatusName(code)`
+
+Top-level export mapping a numeric gRPC status code to its name (e.g. `8` →
+`'RESOURCE_EXHAUSTED'`). Returns `undefined` for non-numeric or unknown codes.
+The SDK uses it to populate `MacpTransportError.code`.
+
+```typescript
+import { grpcStatusName } from 'macp-sdk-typescript';
+
+grpcStatusName(9); // 'FAILED_PRECONDITION'
 ```
