@@ -1,5 +1,15 @@
 # Architecture
 
+This page covers the SDK's own structure. The protocol model — the two-plane
+(coordination/ambient) design, the envelope schema, and the session model — is
+defined normatively in
+[RFC-MACP-0001 (Core)](https://github.com/multiagentcoordinationprotocol/multiagentcoordinationprotocol/blob/main/rfcs/RFC-MACP-0001-core.md)
+and summarized in the
+[spec architecture overview](https://github.com/multiagentcoordinationprotocol/multiagentcoordinationprotocol/blob/main/docs/architecture.md).
+For server internals (request flow for `Send`/`StreamSession`, durability
+model), see the
+[runtime architecture guide](https://github.com/multiagentcoordinationprotocol/macp-runtime/blob/main/docs/architecture.md).
+
 ## Three-Layer Design
 
 The SDK is organized into three layers. Each sits on the one below it and is
@@ -73,7 +83,8 @@ aliases were removed in 0.5.0.
 The client dynamically loads protobuf definitions from the
 `@multiagentcoordinationprotocol/proto` package at construction time and creates
 a gRPC channel using either TLS (default) or insecure credentials — the latter
-requires the explicit `allowInsecure: true` opt-out per RFC-MACP-0006 §3.
+requires the explicit `allowInsecure: true` opt-out per
+[RFC-MACP-0006 (Transport Bindings)](https://github.com/multiagentcoordinationprotocol/multiagentcoordinationprotocol/blob/main/rfcs/RFC-MACP-0006-transport-bindings.md) §3.
 
 ### Layer 2: Session Helpers
 

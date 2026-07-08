@@ -25,7 +25,7 @@ const client = new MacpClient({
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `address` | `string` | *required* | gRPC server address (`host:port`) |
-| `secure` | `boolean` | `true` | Use TLS credentials (RFC-MACP-0006 §3) |
+| `secure` | `boolean` | `true` | Use TLS credentials ([RFC-MACP-0006 (Transport Bindings)](https://github.com/multiagentcoordinationprotocol/multiagentcoordinationprotocol/blob/main/rfcs/RFC-MACP-0006-transport-bindings.md) §3) |
 | `allowInsecure` | `boolean` | `false` | Required when `secure: false`; constructor throws otherwise |
 | `auth` | `AuthConfig` | `undefined` | Default auth for all operations |
 | `rootCertificates` | `Buffer` | `undefined` | TLS root CA certificates |

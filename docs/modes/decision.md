@@ -8,6 +8,8 @@
 
 Structured decision-making with proposals, evaluations, objections, and votes leading to a bound outcome via Commitment.
 
+> **Canonical references**: [RFC-MACP-0007 (Decision Mode)](https://github.com/multiagentcoordinationprotocol/multiagentcoordinationprotocol/blob/main/rfcs/RFC-MACP-0007-decision-mode.md) is normative for the state machine, authority rules, and validation constraints. See also the [spec mode summaries](https://github.com/multiagentcoordinationprotocol/multiagentcoordinationprotocol/blob/main/docs/modes.md#standard-mode-summaries) and [runtime modes guide › Decision Mode](https://github.com/multiagentcoordinationprotocol/macp-runtime/blob/main/docs/modes.md#decision-mode) for validation as implemented. This page covers the TypeScript API.
+
 ## Session Lifecycle
 
 ```
@@ -192,15 +194,15 @@ If the same sender votes twice on the same proposal, the later vote replaces the
 
 ## RFC Validation Rules
 
-The runtime enforces these cross-message rules (the SDK validates only field
-formats — vote/recommendation/severity values, confidence range, required
-fields — client-side):
-
-1. `proposal_id` must be unique within the session
-2. Evaluation, Objection, and Vote must reference an existing `proposal_id`
-3. Each participant may cast at most one Vote per proposal (latest wins)
-4. Commitment must come from an authorized sender
-5. Session must have at least one proposal before resolving
+The runtime enforces the cross-message rules — unique `proposal_id`s,
+Evaluation/Objection/Vote referencing an existing proposal, one Vote per
+participant per proposal (latest wins), commitment authority, and at least one
+proposal before resolution. The SDK validates only field formats client-side
+(vote/recommendation/severity values, confidence range, required fields). The
+normative rule set lives in RFC-MACP-0007 §4; the
+[runtime modes guide › Decision Mode](https://github.com/multiagentcoordinationprotocol/macp-runtime/blob/main/docs/modes.md#decision-mode)
+documents validation as implemented, including the NACK codes each rejection
+produces.
 
 ## Example
 

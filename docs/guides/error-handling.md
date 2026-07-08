@@ -74,28 +74,29 @@ base). It is absent for locally-raised transport errors.
 
 ## Runtime Error Codes
 
-The MACP runtime uses structured error codes in the Ack:
+The MACP runtime uses structured error codes in the Ack. The ones you will hit
+most often:
 
 | Code | Meaning |
 |------|---------|
 | `UNAUTHENTICATED` | Authentication failed |
 | `FORBIDDEN` | Sender not authorized for this session or message type |
-| `SESSION_ALREADY_EXISTS` | `SessionStart` for a session id that already exists |
 | `SESSION_NOT_FOUND` | Session does not exist |
 | `SESSION_NOT_OPEN` | Session already resolved, expired, or suspended |
-| `DUPLICATE_MESSAGE` | `message_id` already accepted within session |
 | `INVALID_ENVELOPE` | Envelope validation failed or payload structure invalid |
-| `UNSUPPORTED_PROTOCOL_VERSION` | No mutually supported protocol version |
-| `MODE_NOT_SUPPORTED` | Mode or mode version not supported |
-| `PAYLOAD_TOO_LARGE` | Payload exceeds allowed size (default 1MB) |
-| `RATE_LIMITED` | Too many requests |
-| `INVALID_SESSION_ID` | Session ID format invalid |
 | `POLICY_DENIED` | Governance policy denied the message (e.g. commitment without quorum) |
-| `UNKNOWN_POLICY_VERSION` | `policy_version` not registered with the runtime |
-| `INVALID_POLICY_DEFINITION` | Policy registration rejected (malformed rules) |
+| `RATE_LIMITED` | Too many requests |
 | `INTERNAL_ERROR` | Unrecoverable internal runtime error |
 
-Each code is exported as a string constant from `src/constants.ts` (e.g.
+The canonical, complete code list lives in the spec's
+[Common Error Codes](https://github.com/multiagentcoordinationprotocol/multiagentcoordinationprotocol/blob/main/docs/security.md#common-error-codes);
+the runtime's
+[common errors](https://github.com/multiagentcoordinationprotocol/macp-runtime/blob/main/docs/getting-started.md#common-errors)
+and
+[SDK guide › error handling](https://github.com/multiagentcoordinationprotocol/macp-runtime/blob/main/docs/sdk-guide.md#error-handling)
+cover when each is returned and how to react.
+
+Every code is exported as a string constant from `src/constants.ts` (e.g.
 `import { SESSION_NOT_OPEN } from 'macp-sdk-typescript'`), so comparisons
 don't need string literals.
 

@@ -2,7 +2,7 @@
 
 ## Overview
 
-The MACP runtime requires authentication for most operations. The SDK supports two mechanisms:
+The MACP runtime requires authentication for most operations. The protocol's identity and authorization model is normative in [RFC-MACP-0004 (Security)](https://github.com/multiagentcoordinationprotocol/multiagentcoordinationprotocol/blob/main/rfcs/RFC-MACP-0004-security.md) and summarized in the [spec security overview](https://github.com/multiagentcoordinationprotocol/multiagentcoordinationprotocol/blob/main/docs/security.md); this page covers the SDK's client-side auth API. The SDK supports two mechanisms:
 
 | Mechanism | Header | Use Case |
 |-----------|--------|----------|
@@ -204,7 +204,7 @@ The SDK does not own runtime auth configuration. For the `tokens.json` schema (i
 
 ## TLS
 
-TLS is on by default (RFC-MACP-0006 §3). The constructor throws if you pass
+TLS is on by default ([RFC-MACP-0006 (Transport Bindings)](https://github.com/multiagentcoordinationprotocol/multiagentcoordinationprotocol/blob/main/rfcs/RFC-MACP-0006-transport-bindings.md) §3). The constructor throws if you pass
 `secure: false` without the explicit dev-only escape hatch:
 
 ```typescript

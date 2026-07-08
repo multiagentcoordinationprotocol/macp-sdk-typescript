@@ -164,7 +164,7 @@ interface SessionStartPayload {
 ```
 
 `maxSuspendMs` binds a per-session cap on cumulative suspended time before a
-`SUSPENDED` session `EXPIRE`s (RFC-MACP-0001 §7.5). Accepts a `number` on input;
+`SUSPENDED` session `EXPIRE`s ([RFC-MACP-0001 (Core)](https://github.com/multiagentcoordinationprotocol/multiagentcoordinationprotocol/blob/main/rfcs/RFC-MACP-0001-core.md) §7.5). Accepts a `number` on input;
 decodes as a string (int64). `0` or absent selects the runtime default.
 
 ### `CommitmentPayload`
@@ -248,7 +248,7 @@ interface ProgressPayload {
 
 - `HandoffOfferPayload` — `{ handoffId, targetParticipant, scope?, reason? }`
 - `HandoffContextPayload` — `{ handoffId, contentType, context? }`
-- `HandoffAcceptPayload` — `{ handoffId, acceptedBy, reason?, implicit? }` — `implicit` (proto ≥ 0.1.6) is **decode-only**: `true` on the runtime-emitted synthetic accept (RFC-MACP-0010 §5.1). Clients MUST NOT set it; `acceptHandoff` strips it before sending.
+- `HandoffAcceptPayload` — `{ handoffId, acceptedBy, reason?, implicit? }` — `implicit` (proto ≥ 0.1.6) is **decode-only**: `true` on the runtime-emitted synthetic accept ([RFC-MACP-0010 (Handoff Mode)](https://github.com/multiagentcoordinationprotocol/multiagentcoordinationprotocol/blob/main/rfcs/RFC-MACP-0010-handoff-mode.md) §5.1). Clients MUST NOT set it; `acceptHandoff` strips it before sending.
 - `HandoffDeclinePayload` — `{ handoffId, declinedBy, reason? }`
 
 ### Quorum Mode

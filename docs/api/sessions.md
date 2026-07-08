@@ -106,7 +106,7 @@ Every mode-specific method that accepts a `sender` parameter runs the SDK's
 identity guard before the envelope is built. When `auth.expectedSender` is
 configured (via `Auth.bearer(token, { expectedSender })`), a caller-supplied
 `sender` that disagrees raises `MacpIdentityMismatchError` — client-side, before
-any RPC hits the wire (RFC-MACP-0004 §4).
+any RPC hits the wire ([RFC-MACP-0004 (Security)](https://github.com/multiagentcoordinationprotocol/multiagentcoordinationprotocol/blob/main/rfcs/RFC-MACP-0004-security.md) §4).
 
 ```typescript
 import { Auth, DecisionSession, MacpIdentityMismatchError } from 'macp-sdk-typescript';

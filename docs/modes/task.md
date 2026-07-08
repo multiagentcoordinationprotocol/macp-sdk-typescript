@@ -8,6 +8,8 @@
 
 Bounded task delegation from a coordinator (initiator) to an assignee, with progress tracking through to completion or failure.
 
+> **Canonical references**: [RFC-MACP-0009 (Task Mode)](https://github.com/multiagentcoordinationprotocol/multiagentcoordinationprotocol/blob/main/rfcs/RFC-MACP-0009-task-mode.md) is normative for the state machine, authority rules, and validation constraints. See also the [spec mode summaries](https://github.com/multiagentcoordinationprotocol/multiagentcoordinationprotocol/blob/main/docs/modes.md#standard-mode-summaries) and [runtime modes guide › Task Mode](https://github.com/multiagentcoordinationprotocol/macp-runtime/blob/main/docs/modes.md#task-mode) for validation as implemented. This page covers the TypeScript API.
+
 ## Session Lifecycle
 
 ```
@@ -173,16 +175,19 @@ assignee other than the initiator**. `TaskSession.start()` does not require
 initiator membership, so no code change is needed to use this.
 
 > Handoff mode is different: it still requires the initiator to be a participant
-> (the delegated model is intrinsic to RFC-MACP-0010 §2).
+> (the delegated model is intrinsic to
+> [RFC-MACP-0010 (Handoff Mode)](https://github.com/multiagentcoordinationprotocol/multiagentcoordinationprotocol/blob/main/rfcs/RFC-MACP-0010-handoff-mode.md) §2).
 
 ## RFC Validation Rules
 
-1. At most one `TaskRequest` per session (base v1)
-2. `TaskAccept`/`TaskReject` must come from the requested assignee
-3. Only one assignee may be active at a time
-4. `TaskUpdate`/`TaskComplete`/`TaskFail` must come from the active assignee
-5. Only the initiator can emit `Commitment`
-6. The initiator need not be in `participants`; the pool must include ≥1 non-initiator assignee
+The runtime enforces the cross-message rules — at most one `TaskRequest` per
+session (base v1), accept/reject only from the requested assignee, one active
+assignee at a time, updates/completions/failures only from the active assignee,
+and initiator-only Commitment (the initiator need not be in `participants`, but
+the pool must include at least one non-initiator assignee). The normative rule
+set lives in RFC-MACP-0009 §4; the
+[runtime modes guide › Task Mode](https://github.com/multiagentcoordinationprotocol/macp-runtime/blob/main/docs/modes.md#task-mode)
+documents validation as implemented.
 
 ## Example
 

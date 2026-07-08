@@ -2,7 +2,7 @@
 
 An HTTP endpoint that a `Participant` listens on so an external orchestrator
 (e.g. the control-plane or examples-service) can request an agent shutdown
-without needing a gRPC channel back. This is RFC-MACP-0001 §7.2 Option A.
+without needing a gRPC channel back. This is [RFC-MACP-0001 (Core)](https://github.com/multiagentcoordinationprotocol/multiagentcoordinationprotocol/blob/main/rfcs/RFC-MACP-0001-core.md) §7.2 Option A.
 
 The server is a thin wrapper around Node's built-in `http` module — zero extra
 dependencies. Parity with the Python SDK's
@@ -149,4 +149,4 @@ See [`examples/cancel-callback.ts`](../../examples/cancel-callback.ts).
 
 - [`docs/guides/agent-framework.md`](../guides/agent-framework.md) — `Participant` lifecycle
 - [`docs/api/runner.md`](./runner.md) — `fromBootstrap()` bootstrap schema *(if present — see `agent-framework.md` otherwise)*
-- RFC-MACP-0001 §7.2 — cancellation delivery options
+- [RFC-MACP-0001 (Core)](https://github.com/multiagentcoordinationprotocol/multiagentcoordinationprotocol/blob/main/rfcs/RFC-MACP-0001-core.md) §7.2 — cancellation delivery options

@@ -52,7 +52,7 @@ const payload = buildSessionStartPayload({
 ```
 
 `maxSuspendMs` binds a per-session cap on cumulative suspended time before a
-SUSPENDED session transitions to EXPIRED (RFC-MACP-0001 §7.5). `0` or absent
+SUSPENDED session transitions to EXPIRED ([RFC-MACP-0001 (Core)](https://github.com/multiagentcoordinationprotocol/multiagentcoordinationprotocol/blob/main/rfcs/RFC-MACP-0001-core.md) §7.5). `0` or absent
 selects the runtime's configured default; negative values are rejected. The
 runtime records the resolved cap so replay is deterministic. Every mode
 session's `start()` accepts `maxSuspendMs` too and threads it here.

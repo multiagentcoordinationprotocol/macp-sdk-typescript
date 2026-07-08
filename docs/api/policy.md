@@ -20,7 +20,7 @@ interface PolicyDescriptor {
 ### `buildDecisionPolicy(policyId, description, rules)`
 
 Creates a `PolicyDescriptor` targeting `macp.mode.decision.v1`. Emits
-`schemaVersion: 2` (RFC-MACP-0012) — the only builder to do so; the other four
+`schemaVersion: 2` ([RFC-MACP-0012 (Policy)](https://github.com/multiagentcoordinationprotocol/multiagentcoordinationprotocol/blob/main/rfcs/RFC-MACP-0012-policy.md)) — the only builder to do so; the other four
 modes remain schema version 1.
 
 **Parameters:**

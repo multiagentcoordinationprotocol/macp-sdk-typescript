@@ -51,7 +51,7 @@ mode-specific message types. The five built-in projections below pre-date
 | `voteTotals()` | `Record<string, number>` | Positive vote counts per proposal |
 | `majorityWinner()` | `string \| undefined` | Proposal whose positive votes exceed 50% of all non-abstain votes |
 | `voteRatio(proposalId)` | `number` | Approve ratio, excluding abstains from the denominator |
-| `hasBlockingObjection(proposalId?)` | `boolean` | Has a **critical**-severity objection (only critical blocks per RFC-MACP-0004); omit the ID to check all proposals |
+| `hasBlockingObjection(proposalId?)` | `boolean` | Has a **critical**-severity objection (only critical blocks per [RFC-MACP-0004 (Security)](https://github.com/multiagentcoordinationprotocol/multiagentcoordinationprotocol/blob/main/rfcs/RFC-MACP-0004-security.md)); omit the ID to check all proposals |
 | `reviewEvaluations()` | `DecisionEvaluationRecord[]` | Evaluations with REVIEW recommendation (informational) |
 | `qualifyingEvaluations()` | `DecisionEvaluationRecord[]` | Evaluations excluding REVIEW |
 
@@ -109,7 +109,7 @@ mode-specific message types. The five built-in projections below pre-date
 |--------|---------|-------------|
 | `getHandoff(handoffId)` | `HandoffRecord \| undefined` | Full handoff record (`.implicit` set once accepted) |
 | `isAccepted(handoffId)` | `boolean` | HandoffAccept received |
-| `isImplicitlyAccepted(handoffId)` | `boolean` | Accepted by a runtime synthetic implicit accept (RFC-MACP-0010 §5.1, proto ≥ 0.1.6) |
+| `isImplicitlyAccepted(handoffId)` | `boolean` | Accepted by a runtime synthetic implicit accept ([RFC-MACP-0010 (Handoff Mode)](https://github.com/multiagentcoordinationprotocol/multiagentcoordinationprotocol/blob/main/rfcs/RFC-MACP-0010-handoff-mode.md) §5.1, proto ≥ 0.1.6) |
 | `isDeclined(handoffId)` | `boolean` | HandoffDecline received |
 | `pendingHandoffs()` | `HandoffRecord[]` | Handoffs in offered/context_sent status |
 | `hasAcceptedOffer(handoffId?)` | `boolean` | Given handoff accepted, or (with no ID) any handoff accepted |

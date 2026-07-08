@@ -1,6 +1,6 @@
 # Agent Framework
 
-The agent framework provides a high-level `Participant` abstraction for building event-driven agents that participate in MACP coordination sessions. Instead of manually managing gRPC streams and protobuf encoding, you register handlers for message types and let the framework dispatch incoming messages.
+The agent framework provides a high-level `Participant` abstraction for building event-driven agents that participate in MACP coordination sessions. Instead of manually managing gRPC streams and protobuf encoding, you register handlers for message types and let the framework dispatch incoming messages. If you are new to MACP itself, the spec's [Onboarding an Agent](https://github.com/multiagentcoordinationprotocol/multiagentcoordinationprotocol/blob/main/docs/onboarding-an-agent.md) tutorial walks through the agent lifecycle independent of any SDK.
 
 ## Quick Start
 
@@ -121,9 +121,9 @@ const p2 = agent.fromBootstrap();
 | `allow_insecure` | no | Must be `true` when `secure` is `false`; otherwise `MacpClient` throws. |
 | `mode_version`, `configuration_version`, `policy_version` | no | Version strings forwarded to the session helper. |
 | `participants` | no | Optional participant roster, passed through to `ParticipantConfig`. |
-| `initiator.session_start.context_id` | no | Upstream context identifier (RFC-MACP-0007). Forwarded to the mode-session `start()` as `contextId`. |
+| `initiator.session_start.context_id` | no | Upstream context identifier ([RFC-MACP-0007 (Decision Mode)](https://github.com/multiagentcoordinationprotocol/multiagentcoordinationprotocol/blob/main/rfcs/RFC-MACP-0007-decision-mode.md)). Forwarded to the mode-session `start()` as `contextId`. |
 | `initiator.session_start.max_suspend_ms` | no | Per-session max-suspend cap in ms (proto ≥ 0.1.5). `0`/absent = runtime default. |
-| `initiator.session_start.extensions` | no | Map of extension metadata (RFC-MACP-0008). JSON-native values are UTF-8 JSON-encoded by the runner to satisfy the envelope's `Record<string, Buffer>` contract; pre-encoded `Buffer` / `Uint8Array` values pass through unchanged. |
+| `initiator.session_start.extensions` | no | Map of extension metadata ([RFC-MACP-0008 (Proposal Mode)](https://github.com/multiagentcoordinationprotocol/multiagentcoordinationprotocol/blob/main/rfcs/RFC-MACP-0008-proposal-mode.md)). JSON-native values are UTF-8 JSON-encoded by the runner to satisfy the envelope's `Record<string, Buffer>` contract; pre-encoded `Buffer` / `Uint8Array` values pass through unchanged. |
 
 ### Example: initiator with context + extensions
 
@@ -226,7 +226,7 @@ participant.on('Vote', agent.commitmentHandler(
 ## Cancel Callback
 
 Long-running agents can expose a local HTTP endpoint that an orchestrator
-POSTs to in order to request shutdown (RFC-MACP-0001 §7.2 Option A). If the
+POSTs to in order to request shutdown ([RFC-MACP-0001 (Core)](https://github.com/multiagentcoordinationprotocol/multiagentcoordinationprotocol/blob/main/rfcs/RFC-MACP-0001-core.md) §7.2 Option A). If the
 bootstrap JSON includes a `cancel_callback` block, `Runner.fromBootstrap()`
 starts the server on `participant.run()` and tears it down when `run()`
 exits:
@@ -250,7 +250,7 @@ Transports abstract how messages are received. Two built-in options:
 
 Uses `MacpClient.openStream()` for real-time bidirectional streaming. This is the default when no transport is specified.
 
-On start, the adapter sends a subscribe-only frame (`sendSubscribe(sessionId)`) so the runtime replays every accepted envelope for the session before switching to live broadcast (RFC-MACP-0006-A1). That is what lets a non-initiator `Participant` attach to a session at any point and still see the `SessionStart` + prior `Proposal` / `Vote` / … envelopes — spawn order and connection timing no longer matter.
+On start, the adapter sends a subscribe-only frame (`sendSubscribe(sessionId)`) so the runtime replays every accepted envelope for the session before switching to live broadcast ([RFC-MACP-0006 (Transport Bindings)](https://github.com/multiagentcoordinationprotocol/multiagentcoordinationprotocol/blob/main/rfcs/RFC-MACP-0006-transport-bindings.md) A1). That is what lets a non-initiator `Participant` attach to a session at any point and still see the `SessionStart` + prior `Proposal` / `Vote` / … envelopes — spawn order and connection timing no longer matter.
 
 ### HttpTransportAdapter
 

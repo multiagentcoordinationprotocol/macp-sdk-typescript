@@ -233,6 +233,12 @@ each fixture's **accepted** message prefix is encoded via a real
 `ProtoRegistry`, applied to the mode's projection, and the resulting phase,
 resolution, and mode state are asserted against the fixture's expectations.
 
+The fixture-sync contract — what a conformant SDK must replay and how fixtures
+and protos are kept in lockstep with the spec — is canonical in the spec's
+[SDK Parity › Sync Mechanisms](https://github.com/multiagentcoordinationprotocol/multiagentcoordinationprotocol/blob/main/docs/sdk-parity.md#sync-mechanisms)
+and
+[SDK Parity › Conformance Test Suite](https://github.com/multiagentcoordinationprotocol/multiagentcoordinationprotocol/blob/main/docs/sdk-parity.md#conformance-test-suite).
+
 Harness behaviours worth knowing:
 
 - **`ext.multi_round.v1` fixtures replay too.** The extension mode has no
@@ -248,7 +254,9 @@ Harness behaviours worth knowing:
 - **Runtime NACK codes are out of scope here.** This in-process harness only
   replays the accepted prefix; whether the runtime actually returns each
   `expected_error_code` is asserted by the **macp-runtime conformance
-  oracle**. The suite carries explicit `it.skip` markers documenting that
+  oracle** (see the
+  [runtime testing guide](https://github.com/multiagentcoordinationprotocol/macp-runtime/blob/main/docs/testing.md)).
+  The suite carries explicit `it.skip` markers documenting that
   split rather than pretending to cover it.
 
 ## Proto Registry Tests

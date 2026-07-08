@@ -53,7 +53,7 @@ try {
 
 ### Subscribe with history replay (RFC-MACP-0006-A1)
 
-A freshly opened stream only broadcasts envelopes accepted **after** you connect. To also receive envelopes that were accepted earlier in the session, send a subscribe-only frame:
+A freshly opened stream only broadcasts envelopes accepted **after** you connect. To also receive envelopes that were accepted earlier in the session, send a subscribe-only frame. The subscribe/replay contract is specified in [RFC-MACP-0006 (Transport Bindings)](https://github.com/multiagentcoordinationprotocol/multiagentcoordinationprotocol/blob/main/rfcs/RFC-MACP-0006-transport-bindings.md) §3.2 (StreamSession) and documented server-side in the [runtime API reference › StreamSession](https://github.com/multiagentcoordinationprotocol/macp-runtime/blob/main/docs/API.md#streamsession).
 
 ```typescript
 const stream = client.openStream({ auth });

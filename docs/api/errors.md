@@ -125,7 +125,7 @@ Thrown for client-side session/mode state violations — for example,
 ## MacpIdentityMismatchError
 
 Thrown when a caller-supplied `sender` disagrees with `auth.expectedSender`.
-Raised client-side before the envelope hits the wire (RFC-MACP-0004 §4).
+Raised client-side before the envelope hits the wire ([RFC-MACP-0004 (Security)](https://github.com/multiagentcoordinationprotocol/multiagentcoordinationprotocol/blob/main/rfcs/RFC-MACP-0004-security.md) §4).
 
 ```typescript
 import { Auth, MacpIdentityMismatchError } from 'macp-sdk-typescript';

@@ -8,6 +8,8 @@
 
 Transfer responsibility from one participant to another, with optional context sharing.
 
+> **Canonical references**: [RFC-MACP-0010 (Handoff Mode)](https://github.com/multiagentcoordinationprotocol/multiagentcoordinationprotocol/blob/main/rfcs/RFC-MACP-0010-handoff-mode.md) is normative for the state machine, authority rules, and validation constraints. See also the [spec mode summaries](https://github.com/multiagentcoordinationprotocol/multiagentcoordinationprotocol/blob/main/docs/modes.md#standard-mode-summaries) and [runtime modes guide › Handoff Mode](https://github.com/multiagentcoordinationprotocol/macp-runtime/blob/main/docs/modes.md#handoff-mode) for validation as implemented. This page covers the TypeScript API.
+
 ## Session Lifecycle
 
 ```
@@ -145,15 +147,17 @@ lands in a later runtime release — SDK decode support future-proofs consumers.
 
 ## RFC Validation Rules
 
-1. Every `handoff_id` identifies one specific offer
-2. `HandoffContext`/`HandoffAccept`/`HandoffDecline` must reference an existing `handoff_id`
-3. Accept/Decline must come from the offer's `target_participant`
-4. Only one final accept per `handoff_id`
-5. A session may contain multiple serial handoff offers, but only one final Commitment
+The runtime enforces the cross-message rules — each `handoff_id` identifies one
+offer, context/accept/decline must reference an existing offer, accept/decline
+only from the offer's `target_participant`, one final accept per `handoff_id`,
+and one final Commitment even across serial offers. The normative rule set
+lives in RFC-MACP-0010 §4; the
+[runtime modes guide › Handoff Mode](https://github.com/multiagentcoordinationprotocol/macp-runtime/blob/main/docs/modes.md#handoff-mode)
+documents validation as implemented.
 
 ## Context-Frozen Determinism
 
-Handoff mode uses **context-frozen** determinism — semantic determinism holds only if the external context bound at SessionStart is replayed exactly. The context provided via `HandoffContext` messages is part of this frozen state.
+Handoff mode uses **context-frozen** determinism — semantic determinism holds only if the external context bound at SessionStart is replayed exactly. The context provided via `HandoffContext` messages is part of this frozen state. See [RFC-MACP-0003 (Determinism)](https://github.com/multiagentcoordinationprotocol/multiagentcoordinationprotocol/blob/main/rfcs/RFC-MACP-0003-determinism.md) for the determinism class definitions.
 
 ## Example
 

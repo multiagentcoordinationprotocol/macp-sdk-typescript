@@ -8,6 +8,8 @@
 
 Peer-to-peer negotiation with proposals, counterproposals, accepts, rejects, and withdrawals.
 
+> **Canonical references**: [RFC-MACP-0008 (Proposal Mode)](https://github.com/multiagentcoordinationprotocol/multiagentcoordinationprotocol/blob/main/rfcs/RFC-MACP-0008-proposal-mode.md) is normative for the state machine, authority rules, and validation constraints. See also the [spec mode summaries](https://github.com/multiagentcoordinationprotocol/multiagentcoordinationprotocol/blob/main/docs/modes.md#standard-mode-summaries) and [runtime modes guide › Proposal Mode](https://github.com/multiagentcoordinationprotocol/macp-runtime/blob/main/docs/modes.md#proposal-mode) for validation as implemented. This page covers the TypeScript API.
+
 ## Session Lifecycle
 
 ```
@@ -124,11 +126,12 @@ session.projection.isPositiveOutcome;           // undefined until committed; th
 
 ## RFC Validation Rules
 
-1. Every `proposal_id` must be unique within the session
-2. `CounterProposal.supersedesProposalId` must reference an existing proposal
-3. Accept, Reject, and Withdraw must reference an existing proposal
-4. Withdrawn proposals cannot later be accepted or committed
-5. Participants may change acceptance targets; latest Accept supersedes earlier ones
+The runtime enforces the cross-message rules — unique `proposal_id`s,
+CounterProposal/Accept/Reject/Withdraw referencing an existing proposal,
+withdrawn proposals staying withdrawn, and latest-Accept-wins retargeting. The
+normative rule set lives in RFC-MACP-0008 §4; the
+[runtime modes guide › Proposal Mode](https://github.com/multiagentcoordinationprotocol/macp-runtime/blob/main/docs/modes.md#proposal-mode)
+documents validation as implemented.
 
 ## Example
 

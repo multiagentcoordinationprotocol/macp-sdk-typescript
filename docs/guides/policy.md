@@ -1,6 +1,8 @@
 # Policy Framework
 
-The MACP governance policy framework (RFC-MACP-0012) allows you to register, resolve, and apply governance rules that control how coordination sessions reach commitment. Policies define voting algorithms, quorum requirements, objection handling, and commitment authority.
+The MACP governance policy framework ([RFC-MACP-0012 (Policy)](https://github.com/multiagentcoordinationprotocol/multiagentcoordinationprotocol/blob/main/rfcs/RFC-MACP-0012-policy.md)) allows you to register, resolve, and apply governance rules that control how coordination sessions reach commitment. Policies define voting algorithms, quorum requirements, objection handling, and commitment authority.
+
+This page covers the TypeScript builder API and policy lifecycle from the client side. The rule schemas themselves and their evaluation semantics are canonical elsewhere: see the spec's [Rule Schemas by Mode](https://github.com/multiagentcoordinationprotocol/multiagentcoordinationprotocol/blob/main/docs/policy.md#rule-schemas-by-mode) and [Policy Evaluation](https://github.com/multiagentcoordinationprotocol/multiagentcoordinationprotocol/blob/main/docs/policy.md#policy-evaluation), and the runtime's [rule examples by mode](https://github.com/multiagentcoordinationprotocol/macp-runtime/blob/main/docs/policy.md#rule-examples-by-mode) and [how evaluation works](https://github.com/multiagentcoordinationprotocol/macp-runtime/blob/main/docs/policy.md#how-evaluation-works).
 
 ## Concepts
 
@@ -93,7 +95,7 @@ Each standard mode has a typed builder:
 | `buildTaskPolicy()` | `macp.mode.task.v1` |
 | `buildHandoffPolicy()` | `macp.mode.handoff.v1` |
 
-See [Policy API Reference](../api/policy.md) for the full input types and defaults.
+See [Policy API Reference](../api/policy.md) for the full input types and defaults. The builders emit rules JSON matching the spec's [Rule Schemas by Mode](https://github.com/multiagentcoordinationprotocol/multiagentcoordinationprotocol/blob/main/docs/policy.md#rule-schemas-by-mode); how the runtime interprets each rule (including [commitment authority](https://github.com/multiagentcoordinationprotocol/macp-runtime/blob/main/docs/policy.md#commitment-authority)) is documented in the runtime policy guide.
 
 ## Querying Policies
 
@@ -127,11 +129,4 @@ for await (const change of watcher.changes()) {
 
 ## Default Policy
 
-When `policy_version` is empty or set to `policy.default`, the runtime applies the default policy:
-
-- **Voting**: `algorithm: "none"` — no threshold enforced
-- **Objections**: vetoes disabled
-- **Evaluation**: not required before voting
-- **Commitment**: initiator-only authority, no quorum required
-
-This matches the runtime's behavior before the policy framework was introduced.
+When `policy_version` is empty or set to `policy.default`, the runtime applies the default policy — no voting threshold, vetoes disabled, initiator-only commitment authority. This matches the runtime's behavior before the policy framework was introduced. The full default rule set is specified in the spec's [Default Policy](https://github.com/multiagentcoordinationprotocol/multiagentcoordinationprotocol/blob/main/docs/policy.md#default-policy) section.
