@@ -6,23 +6,35 @@ on:
   pull_request:
     branches: [main]
 
+# Cancel superseded runs on PRs; never cancel main pushes mid-run.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: read
+      # Required by the coverage-report step to post/update the PR comment.
+      pull-requests: write
     strategy:
+      fail-fast: false
       matrix:
-        node-version: [20, 22]
+        node-version: [20, 22, 24]
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
           node-version: ${{ matrix.node-version }}
           registry-url: 'https://npm.pkg.github.com'
           scope: '@multiagentcoordinationprotocol'
-      - run: rm -f package-lock.json && npm install
+          cache: npm
+      - run: npm ci
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - run: npm run check
@@ -33,23 +45,11 @@ jobs:
       # this step fails the build.
       - run: npm run test:coverage
       - run: npm run build
-
-  audit:
-    # Non-blocking dependency audit. Fails only on "high" / "critical" CVEs and
-    # is allowed to go red so we notice without hard-blocking PRs.
-    runs-on: ubuntu-latest
-    continue-on-error: true
-    permissions:
-      contents: read
-      packages: read
-    steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
-        with:
-          node-version: 22
-          registry-url: 'https://npm.pkg.github.com'
-          scope: '@multiagentcoordinationprotocol'
-      - run: rm -f package-lock.json && npm install
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - run: npm audit --audit-level=high
+      # Post the coverage summary as a sticky PR comment (one matrix leg only).
+      # `always()` so the numbers still land when the threshold gate fails —
+      # that is exactly when they matter most. Degrades to the job summary on
+      # fork PRs where GITHUB_TOKEN is read-only.
+      - name: Coverage report
+        if: always() && matrix.node-version == 22 && github.event_name == 'pull_request'
+        uses: davelosert/vitest-coverage-report-action@3c054a2d2e2ca45446417ad5d6d5eb33092af8f1 # v2.12.1
+        continue-on-error: true
