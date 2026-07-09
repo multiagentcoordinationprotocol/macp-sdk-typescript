@@ -4,9 +4,13 @@
 
 ```
 Error
-└── MacpSdkError           Base class for all SDK errors
-    ├── MacpTransportError  gRPC connectivity issues
-    └── MacpAckError        Runtime rejected the message (nack)
+└── MacpSdkError                     Base class for all SDK errors
+    ├── MacpTransportError           gRPC connectivity issues (optional .code = gRPC status name)
+    │   ├── MacpTimeoutError         stream.read(timeoutMs) elapsed
+    │   └── MacpRetryError           retrySend() exhausted its retry budget
+    ├── MacpAckError                 Runtime rejected the message (nack)
+    ├── MacpSessionError             Client-side payload/session validation failed (invalid session id, vote value, confidence, …)
+    └── MacpIdentityMismatchError    Explicit sender conflicts with auth.expectedSender
 ```
 
 ## MacpAckError
@@ -27,6 +31,13 @@ try {
   }
 }
 ```
+
+For structured logging or persistence, `err.failure` exposes an `AckFailure`
+record (`{ code, message, sessionId, messageId, reasons }`) with the same
+shape as the Python SDK's `MacpAckError.failure`. The `reasons` array is
+parsed from `ack.error.details` (or the `macp-error-details-bin` gRPC
+trailing metadata) when the runtime attaches per-rule rejection reasons —
+e.g. policy denials.
 
 ### Suppressing Auto-Throw
 
@@ -50,29 +61,44 @@ try {
   await client.initialize();
 } catch (err) {
   if (err instanceof MacpTransportError) {
-    console.log('gRPC error:', err.message);
+    console.log('gRPC error:', err.message, err.code);
   }
 }
 ```
 
+When the underlying failure carried a gRPC status, `err.code` holds the
+status name (e.g. `RESOURCE_EXHAUSTED` for watch-stream consumer lag →
+reconnect; `UNAUTHENTICATED` for an auth failure → do not reconnect;
+`FAILED_PRECONDITION` for a passive-subscribe resume below a compacted
+base). It is absent for locally-raised transport errors.
+
 ## Runtime Error Codes
 
-The MACP runtime uses structured error codes in the Ack:
+The MACP runtime uses structured error codes in the Ack. The ones you will hit
+most often:
 
 | Code | Meaning |
 |------|---------|
 | `UNAUTHENTICATED` | Authentication failed |
 | `FORBIDDEN` | Sender not authorized for this session or message type |
 | `SESSION_NOT_FOUND` | Session does not exist |
-| `SESSION_NOT_OPEN` | Session already resolved or expired |
-| `DUPLICATE_MESSAGE` | `message_id` already accepted within session |
+| `SESSION_NOT_OPEN` | Session already resolved, expired, or suspended |
 | `INVALID_ENVELOPE` | Envelope validation failed or payload structure invalid |
-| `UNSUPPORTED_PROTOCOL_VERSION` | No mutually supported protocol version |
-| `MODE_NOT_SUPPORTED` | Mode or mode version not supported |
-| `PAYLOAD_TOO_LARGE` | Payload exceeds allowed size (default 1MB) |
+| `POLICY_DENIED` | Governance policy denied the message (e.g. commitment without quorum) |
 | `RATE_LIMITED` | Too many requests |
-| `INVALID_SESSION_ID` | Session ID format invalid |
 | `INTERNAL_ERROR` | Unrecoverable internal runtime error |
+
+The canonical, complete code list lives in the spec's
+[Common Error Codes](https://github.com/multiagentcoordinationprotocol/multiagentcoordinationprotocol/blob/main/docs/security.md#common-error-codes);
+the runtime's
+[common errors](https://github.com/multiagentcoordinationprotocol/macp-runtime/blob/main/docs/getting-started.md#common-errors)
+and
+[SDK guide › error handling](https://github.com/multiagentcoordinationprotocol/macp-runtime/blob/main/docs/sdk-guide.md#error-handling)
+cover when each is returned and how to react.
+
+Every code is exported as a string constant from `src/constants.ts` (e.g.
+`import { SESSION_NOT_OPEN } from 'macp-sdk-typescript'`), so comparisons
+don't need string literals.
 
 ## Duplicate Handling
 
@@ -87,7 +113,25 @@ if (ack.duplicate) {
 
 ## Patterns
 
-### Retry on Transient Errors
+### Built-in Retry: `retrySend()`
+
+The SDK ships a retry helper (`src/retry.ts`) so you rarely need to hand-roll
+backoff. `retrySend()` retries on any `MacpTransportError` and on NACKs whose
+code is in `retryableCodes` (default: `RATE_LIMITED`, `INTERNAL_ERROR`), with
+exponential backoff. Non-retryable NACKs are rethrown immediately; when the
+budget is exhausted it throws `MacpRetryError` with the last error as `cause`:
+
+```typescript
+import { retrySend, DEFAULT_RETRY_POLICY } from 'macp-sdk-typescript';
+
+const ack = await retrySend(client, envelope, {
+  policy: { maxRetries: 5, backoffBase: 0.2, backoffMax: 5.0 }, // partial override of DEFAULT_RETRY_POLICY
+});
+```
+
+### Retry on Transient Errors (manual)
+
+If you need custom semantics, the equivalent hand-rolled loop looks like this:
 
 ```typescript
 async function sendWithRetry(

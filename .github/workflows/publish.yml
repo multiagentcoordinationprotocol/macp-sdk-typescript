@@ -4,6 +4,9 @@ on:
   release:
     types: [created]
 
+permissions:
+  contents: read
+
 jobs:
   publish:
     runs-on: ubuntu-latest
@@ -12,21 +15,20 @@ jobs:
       id-token: write
       packages: read
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
           node-version: 22
           registry-url: https://registry.npmjs.org
           cache: npm
+      # setup-node points .npmrc auth at npmjs.org for the publish; the proto
+      # dependency still resolves from GitHub Packages, so append its token.
       - name: Authenticate to GitHub Packages
         run: echo "//npm.pkg.github.com/:_authToken=${{ secrets.GITHUB_TOKEN }}" >> .npmrc
       - run: npm ci
-      - run: npm run check
-      - run: npm run build
-      # Skip prepublishOnly — CI already gates on test + lint via the
-      # required build-and-test job. Re-running vitest here fails because
-      # rollup's optional native binary (@rollup/rollup-linux-x64-gnu) is
-      # not resolved by npm ci in the clean CI environment.
-      - run: npm publish --ignore-scripts --provenance --access public
+      # `prepublishOnly` (check + lint + format:check + test + build) runs as
+      # part of publish — the full release gate executes against the exact
+      # tree being published.
+      - run: npm publish --provenance --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

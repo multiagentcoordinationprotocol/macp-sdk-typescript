@@ -10,7 +10,24 @@ import {
   MODE_HANDOFF,
   MODE_QUORUM,
   MODE_MULTI_ROUND,
+  UNSUPPORTED_PROTOCOL_VERSION,
+  INVALID_ENVELOPE,
+  SESSION_ALREADY_EXISTS,
+  SESSION_NOT_FOUND,
+  SESSION_NOT_OPEN,
+  MODE_NOT_SUPPORTED,
+  FORBIDDEN,
+  UNAUTHENTICATED,
+  DUPLICATE_MESSAGE,
+  PAYLOAD_TOO_LARGE,
+  RATE_LIMITED,
+  INTERNAL_ERROR,
+  POLICY_DENIED,
+  INVALID_SESSION_ID,
+  UNKNOWN_POLICY_VERSION,
+  INVALID_POLICY_DEFINITION,
 } from '../../src/constants';
+import { BaseProjection } from '../../src/projections/base';
 import { DecisionProjection } from '../../src/projections/decision';
 import { ProposalProjection } from '../../src/projections/proposal';
 import { TaskProjection } from '../../src/projections/task';
@@ -25,9 +42,11 @@ interface FixtureMessage {
   expect: 'accept' | 'reject';
   /**
    * Canonical reject expectation (spec `schema.json`). This in-process harness
-   * only replays the accepted prefix, so the code is not asserted here — it is
-   * exercised by the runtime's own conformance oracle. Surfaced on the
-   * interface so a fixture carrying it type-checks.
+   * only replays the accepted prefix, so the runtime behaviour behind the code
+   * is asserted by the runtime's own conformance oracle (see the explicit
+   * `it.skip` markers below). The harness DOES assert the fixture-side
+   * contract: every reject message carries a canonical, non-empty code and a
+   * resolvable payload_type — see 'conformance: reject-path fixtures'.
    */
   expected_error_code?: string;
 }
@@ -59,13 +78,52 @@ type ProjectionLike = {
 // union differently, and CI installs the latest at build time.
 type ExpectedVotes = Record<string, Record<string, { vote: string }>>;
 
+/**
+ * Replay projection for the `ext.multi_round.v1` extension mode. The mode has
+ * no first-class projection class; fixtures assert only transcript length,
+ * commitment presence, and resolution scalars — all handled generically by
+ * {@link BaseProjection} — so a transcript-only subclass gives the multi_round
+ * fixtures real assertions instead of a silent skip.
+ */
+class MultiRoundReplayProjection extends BaseProjection {
+  protected readonly mode = MODE_MULTI_ROUND;
+
+  protected applyMode(): void {
+    // Transcript-only: the fixtures carry no expected_mode_state for
+    // multi_round, so there is no per-message state to track.
+  }
+}
+
 const MODE_PROJECTIONS: Record<string, () => ProjectionLike> = {
   [MODE_DECISION]: () => new DecisionProjection() as unknown as ProjectionLike,
   [MODE_PROPOSAL]: () => new ProposalProjection() as unknown as ProjectionLike,
   [MODE_TASK]: () => new TaskProjection() as unknown as ProjectionLike,
   [MODE_HANDOFF]: () => new HandoffProjection() as unknown as ProjectionLike,
   [MODE_QUORUM]: () => new QuorumProjection() as unknown as ProjectionLike,
+  [MODE_MULTI_ROUND]: () => new MultiRoundReplayProjection() as unknown as ProjectionLike,
 };
+
+// Canonical NACK codes the runtime can emit (src/constants.ts, parity with
+// python-sdk). The reject-path guard below fails if a fixture ever carries a
+// code outside this set — catching typos and spec drift at sync time.
+const CANONICAL_ERROR_CODES = new Set([
+  UNSUPPORTED_PROTOCOL_VERSION,
+  INVALID_ENVELOPE,
+  SESSION_ALREADY_EXISTS,
+  SESSION_NOT_FOUND,
+  SESSION_NOT_OPEN,
+  MODE_NOT_SUPPORTED,
+  FORBIDDEN,
+  UNAUTHENTICATED,
+  DUPLICATE_MESSAGE,
+  PAYLOAD_TOO_LARGE,
+  RATE_LIMITED,
+  INTERNAL_ERROR,
+  POLICY_DENIED,
+  INVALID_SESSION_ID,
+  UNKNOWN_POLICY_VERSION,
+  INVALID_POLICY_DEFINITION,
+]);
 
 const MODE_SHORT_MAP: Record<string, string> = {
   decision: MODE_DECISION,
@@ -140,13 +198,15 @@ describe('conformance: projection replay', () => {
     const fixtureName = path.basename(file, '.json');
     const fixture: Fixture = JSON.parse(fs.readFileSync(path.join(FIXTURE_DIR, file), 'utf8'));
 
-    // Skip multi_round — no projection class for extension modes. Reject-path
-    // fixtures ARE replayed (their accepted prefix) so the projection state is
-    // asserted in lockstep with the python harness.
-    if (fixture.mode === MODE_MULTI_ROUND) continue;
-
     const projectionFactory = MODE_PROJECTIONS[fixture.mode];
-    if (!projectionFactory) continue;
+    if (!projectionFactory) {
+      // A newly synced fixture for an unmapped mode must fail loudly instead
+      // of silently contributing zero assertions.
+      it(`${fixtureName}: has a registered replay projection`, () => {
+        expect.fail(`no projection registered for mode '${fixture.mode}' — add it to MODE_PROJECTIONS`);
+      });
+      continue;
+    }
 
     it(`${fixtureName}: replays accepted messages through projection`, () => {
       const projection = projectionFactory();
@@ -224,6 +284,44 @@ describe('conformance: fixture format guard', () => {
       for (const msg of fixture.messages) {
         expect(msg.payload_type).toMatch(CANONICAL_PAYLOAD_TYPE_RE);
       }
+    });
+  }
+});
+
+// Reject-path contract: this in-process harness replays only the accepted
+// prefix, so it cannot observe the runtime NACK itself — but it CAN pin the
+// fixture-side contract so reject expectations never rot: every rejected
+// message must carry a canonical error code and a payload_type the registry
+// can still resolve. The runtime-behaviour half is an explicit, visible skip
+// (not a silent one) pointing at the runtime's conformance oracle.
+describe('conformance: reject-path fixtures', () => {
+  for (const file of fixtureFiles) {
+    const fixtureName = path.basename(file, '.json');
+    const fixture: Fixture = JSON.parse(fs.readFileSync(path.join(FIXTURE_DIR, file), 'utf8'));
+    const rejected = fixture.messages.filter((m) => m.expect === 'reject');
+    if (rejected.length === 0) continue;
+
+    it(`${fixtureName}: every reject message carries a canonical expected_error_code and a resolvable payload_type`, () => {
+      for (const msg of rejected) {
+        expect(
+          msg.expected_error_code,
+          `${msg.message_type} from ${msg.sender} is missing expected_error_code`,
+        ).toBeTruthy();
+        expect(
+          CANONICAL_ERROR_CODES.has(msg.expected_error_code!),
+          `'${msg.expected_error_code}' is not a canonical NACK code`,
+        ).toBe(true);
+        // The payload must still parse through the registry mapping — a
+        // reject fixture whose payload_type rots would otherwise go unnoticed.
+        expect(() => resolvePayloadType(msg.payload_type)).not.toThrow();
+      }
+    });
+
+    it.skip(`${fixtureName}: runtime NACK codes are asserted by the runtime conformance oracle only (macp-runtime)`, () => {
+      // Intentionally skipped: replaying a reject against the in-process
+      // projection cannot produce the runtime's NACK. The macp-runtime repo's
+      // conformance suite drives these same fixtures against the real server
+      // and asserts each expected_error_code there.
     });
   }
 });

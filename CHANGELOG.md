@@ -4,6 +4,40 @@ All notable changes to `macp-sdk-typescript` are documented here. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the
 project uses [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+
+- **BREAKING: requires Node.js >= 20** (`engines.node`). Node 18 reached
+  end-of-life in April 2025 and was never exercised in CI; the CI matrix now
+  tests Node 20, 22, and 24.
+- CI installs with `npm ci` against the committed lockfile (regenerated so all
+  platform-specific optional binaries are recorded), with npm caching and a
+  concurrency group that cancels superseded PR runs. The advisory-only
+  `npm audit` job is replaced by Dependabot (weekly grouped npm and
+  github-actions updates). All workflow actions are pinned by commit SHA.
+- Publishing now runs the full `prepublishOnly` gate (check + lint +
+  format:check + test + build) against the exact tree being published —
+  the `--ignore-scripts` workaround is gone.
+- Pull requests get a coverage summary comment from CI.
+
+### Added
+
+- Extensive unit coverage for previously integration-only surface: the
+  `MacpStream` data path (envelope unwrapping, inline errors, timeouts,
+  end-of-stream semantics), the entire `MacpClient` unary RPC surface and its
+  metadata/deadline dispatch, the `watch*` stream factories, session
+  `cancel`/`suspend`/`resume` delegation for all five modes, `BaseSession`/
+  `BaseProjection` extension-point behavior, and the `Participant` run loop
+  (terminal dispatch, cancel-callback wiring, initiator kickoff defaults).
+  Coverage thresholds raised to lines 94 / branches 88 / functions 90 /
+  statements 94.
+- Conformance: `ext.multi_round.v1` fixtures now replay with real assertions
+  (previously silently skipped); fixtures for unmapped modes fail loudly; and
+  reject-path fixtures are contract-checked (canonical `expected_error_code`,
+  resolvable `payload_type`) with explicit skip markers pointing at the
+  runtime conformance oracle for the NACK behavior itself.
+
 ## [0.5.0] - 2026-07-06
 
 Absorbs `macp-runtime` 0.5.0 and `@multiagentcoordinationprotocol/proto` 0.1.6

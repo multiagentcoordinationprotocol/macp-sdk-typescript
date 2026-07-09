@@ -9,8 +9,10 @@ Every session class:
 1. **Constructor**: `new XxxSession(client, options?)`
 2. **Properties**: `client`, `sessionId`, `modeVersion`, `configurationVersion`, `policyVersion`, `auth`, `projection`
 3. **Lifecycle**: `start(input)` → mode-specific methods → `commit(input)`
-4. **Metadata**: `metadata(auth?)` queries session state from runtime
-5. **Projection**: `session.projection` provides typed local state
+4. **Control plane**: `cancel(reason?, auth?)`, `suspend(reason?, auth?)`, `resume(reason?, auth?)` — thin wrappers over the client's `cancelSession`/`suspendSession`/`resumeSession` for this session's id. Suspension is non-terminal: TTL is banked and restored on `resume()`.
+5. **Metadata**: `metadata(auth?)` queries session state from runtime
+6. **Streaming**: `openStream(auth?)` opens a `MacpStream` with the session's auth
+7. **Projection**: `session.projection` provides typed local state
 
 ### Common Options
 
@@ -32,7 +34,8 @@ interface SessionOptions {
   participants: string[];                            // participant identifiers
   ttlMs: number;                                     // time-to-live in milliseconds
   maxSuspendMs?: number;                             // proto ≥ 0.1.5; max cumulative suspend (0 = runtime default)
-  context?: Buffer | string | Record<string, unknown>; // optional bound context
+  contextId?: string;                                // optional shared-context reference
+  extensions?: Record<string, Buffer>;               // optional extension payloads by key
   roots?: { uri: string; name?: string }[];          // optional coordination roots
   sender?: string;                                   // optional sender override
 }
@@ -42,10 +45,11 @@ interface SessionOptions {
 
 ```typescript
 {
-  action: string;          // outcome descriptor (e.g., 'deployment.approved')
-  authorityScope: string;  // scope of authority
-  reason: string;          // auditable reason
-  commitmentId?: string;   // default: auto-generated UUID
+  action: string;             // outcome descriptor (e.g., 'deployment.approved')
+  authorityScope: string;     // scope of authority
+  reason: string;             // auditable reason
+  commitmentId?: string;      // default: auto-generated UUID
+  outcomePositive?: boolean;  // default: inferred from action (endsWith 'rejected'/'failed'/'declined' → false)
   sender?: string;
   auth?: AuthConfig;
 }
@@ -60,6 +64,26 @@ interface SessionOptions {
 | `TaskSession` | `macp.mode.task.v1` | `request`, `acceptTask`, `rejectTask`, `update`, `complete`, `fail` |
 | `HandoffSession` | `macp.mode.handoff.v1` | `offer`, `addContext`, `acceptHandoff`, `decline` |
 | `QuorumSession` | `macp.mode.quorum.v1` | `requestApproval`, `approve`, `reject`, `abstain` |
+
+## BaseSession (custom modes)
+
+`BaseSession<P extends BaseProjection>` is the abstract base for building
+session helpers for custom modes registered via `registerExtMode`. It provides
+the shared lifecycle (`start`, `commit`, `cancel`, `suspend`, `resume`,
+`metadata`, `openStream`) plus the identity-guarded protected helpers
+`senderFor(sender?, auth?)` and `sendAndTrack(envelope, auth?)`. Subclasses
+supply the `mode` string and a `createProjection()` factory. The five built-in
+session classes pre-date `BaseSession` and implement their own equivalents,
+but expose the same surface.
+
+```typescript
+import { BaseSession } from 'macp-sdk-typescript';
+
+class CustomSession extends BaseSession<CustomProjection> {
+  protected readonly mode = 'ext.custom.v1';
+  protected createProjection() { return new CustomProjection(); }
+}
+```
 
 ## Per-Method Auth Override
 
@@ -82,7 +106,7 @@ Every mode-specific method that accepts a `sender` parameter runs the SDK's
 identity guard before the envelope is built. When `auth.expectedSender` is
 configured (via `Auth.bearer(token, { expectedSender })`), a caller-supplied
 `sender` that disagrees raises `MacpIdentityMismatchError` — client-side, before
-any RPC hits the wire (RFC-MACP-0004 §4).
+any RPC hits the wire ([RFC-MACP-0004 (Security)](https://github.com/multiagentcoordinationprotocol/multiagentcoordinationprotocol/blob/main/rfcs/RFC-MACP-0004-security.md) §4).
 
 ```typescript
 import { Auth, DecisionSession, MacpIdentityMismatchError } from 'macp-sdk-typescript';

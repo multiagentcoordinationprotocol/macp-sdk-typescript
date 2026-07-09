@@ -2,7 +2,13 @@
 
 TypeScript SDK for the [Multi-Agent Coordination Protocol (MACP)](https://github.com/multiagentcoordinationprotocol/multiagentcoordinationprotocol) runtime. Connects TypeScript/Node.js applications to the Rust MACP runtime over gRPC.
 
+SDK documentation lives in [`docs/`](docs/index.md) and covers the TypeScript API.
+Protocol semantics are normative in the [spec repo's docs and RFCs](https://github.com/multiagentcoordinationprotocol/multiagentcoordinationprotocol/tree/main/rfcs);
+runtime behavior is documented in the [runtime repo's docs](https://github.com/multiagentcoordinationprotocol/macp-runtime/blob/main/docs/getting-started.md).
+
 ## Install
+
+Requires Node.js >= 20.
 
 ```bash
 npm install macp-sdk-typescript
@@ -287,7 +293,7 @@ reference: [`docs/api/strategies.md`](docs/api/strategies.md).
 ### Cancel Callback
 
 Long-running agents can expose an HTTP endpoint that an orchestrator POSTs to
-in order to request a clean shutdown (RFC-MACP-0001 §7.2 Option A). Bootstrap
+in order to request a clean shutdown ([RFC-MACP-0001 (Core)](https://github.com/multiagentcoordinationprotocol/multiagentcoordinationprotocol/blob/main/rfcs/RFC-MACP-0001-core.md) §7.2 Option A). Bootstrap
 JSON with a `cancel_callback: { host, port, path }` block auto-wires the
 server via `fromBootstrap()`; for the manual path use
 `startCancelCallbackServer(...)` + `Participant.attachCancelCallbackServer(...)`.
@@ -323,7 +329,7 @@ await session.vote({
 
 ## TLS
 
-TLS is on by default (RFC-MACP-0006 §3). To connect to an insecure runtime
+TLS is on by default ([RFC-MACP-0006 (Transport Bindings)](https://github.com/multiagentcoordinationprotocol/multiagentcoordinationprotocol/blob/main/rfcs/RFC-MACP-0006-transport-bindings.md) §3). To connect to an insecure runtime
 during local development, you must opt out explicitly:
 
 ```typescript
@@ -405,9 +411,13 @@ npm run lint               # ESLint
 npm run format             # Prettier
 npm test                   # Run unit + conformance tests
 npm run test:watch         # Watch mode
-npm run test:coverage      # With coverage
-npm run test:integration   # Integration tests (requires Docker runtime)
+npm run test:coverage      # With coverage (CI enforces thresholds from vitest.config.ts)
+npm run test:integration   # Integration tests (requires Docker runtime; not run in CI)
 ```
+
+CI (GitHub Actions) runs type-check, lint, format check, the coverage-gated
+test suite, and the build on Node 20, 22, and 24 for every push and pull
+request, and posts a coverage summary comment on PRs.
 
 ### Integration Tests
 

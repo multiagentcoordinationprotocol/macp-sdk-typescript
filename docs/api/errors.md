@@ -39,10 +39,31 @@ try {
 } catch (err) {
   if (err instanceof MacpTransportError) {
     // gRPC layer error
-    console.log(err.message); // e.g., '14 UNAVAILABLE: Connection refused'
+    console.log(err.message); // e.g., 'Connection refused'
+    console.log(err.code);    // e.g., 'UNAVAILABLE'
   }
 }
 ```
+
+### `code` property
+
+`code?: string` carries the gRPC status **name** (e.g. `'RESOURCE_EXHAUSTED'`,
+`'FAILED_PRECONDITION'`, `'UNAUTHENTICATED'`) when the underlying failure had
+one, mapped via the exported `grpcStatusName()` helper. It lets consumers
+distinguish, for example, watch-stream consumer lag (`RESOURCE_EXHAUSTED` →
+reconnect) from an auth failure (`UNAUTHENTICATED` → don't reconnect), or a
+passive-subscribe resume below a compacted base (`FAILED_PRECONDITION`).
+`undefined` for locally-raised transport errors.
+
+## MacpTimeoutError
+
+Subclass of `MacpTransportError`. Thrown by `MacpStream.read(timeoutMs)` when
+the timeout elapses before an envelope arrives.
+
+## MacpRetryError
+
+Subclass of `MacpTransportError`. Thrown by `retrySend()` when the retry policy
+is exhausted (see `src/retry.ts`).
 
 ## MacpAckError
 
@@ -62,7 +83,25 @@ try {
     err.ack.error?.code;   // 'SESSION_NOT_OPEN'
     err.ack.error?.message;// 'session already resolved'
     err.ack.sessionState;  // 'SESSION_STATE_RESOLVED'
+    err.failure;           // structured AckFailure record (see below)
+    err.grpcMetadata;      // optional gRPC trailing metadata
   }
+}
+```
+
+### `failure` property
+
+`failure: AckFailure` is a structured NACK record (parity with the Python SDK's
+`MacpAckError.failure`):
+
+```typescript
+interface AckFailure {
+  code: string;       // ack.error.code, or 'UNKNOWN'
+  message: string;    // ack.error.message, or 'runtime returned nack'
+  sessionId: string;
+  messageId: string;
+  reasons: string[];  // parsed from ack.error.details JSON, falling back to
+                      // the 'macp-error-details-bin' gRPC trailing metadata
 }
 ```
 
@@ -77,10 +116,16 @@ if (!ack.ok) {
 }
 ```
 
+## MacpSessionError
+
+Thrown for client-side session/mode state violations — for example,
+`registerExtMode()` raises it when the descriptor is missing `'Commitment'` in
+`terminalMessageTypes` (runtime 0.5.0 guardrail).
+
 ## MacpIdentityMismatchError
 
 Thrown when a caller-supplied `sender` disagrees with `auth.expectedSender`.
-Raised client-side before the envelope hits the wire (RFC-MACP-0004 §4).
+Raised client-side before the envelope hits the wire ([RFC-MACP-0004 (Security)](https://github.com/multiagentcoordinationprotocol/multiagentcoordinationprotocol/blob/main/rfcs/RFC-MACP-0004-security.md) §4).
 
 ```typescript
 import { Auth, MacpIdentityMismatchError } from 'macp-sdk-typescript';

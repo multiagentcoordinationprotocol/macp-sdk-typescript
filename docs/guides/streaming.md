@@ -30,6 +30,13 @@ stream.close();
 3. `responses()` yields accepted envelopes from the server
 4. `close()` terminates the stream
 
+Instead of iterating `responses()`, you can pull one envelope at a time with
+`read(timeoutMs?)`: it resolves the next envelope, returns `null` once the
+stream has ended, and throws `MacpTimeoutError` if `timeoutMs` elapses first
+(omit the timeout to wait indefinitely). End-of-stream is sticky — after
+`read()` returns `null`, subsequent `read()`/`responses()` calls observe the
+end too.
+
 Errors on the stream surface as thrown exceptions from the async iterator:
 
 ```typescript
@@ -46,7 +53,7 @@ try {
 
 ### Subscribe with history replay (RFC-MACP-0006-A1)
 
-A freshly opened stream only broadcasts envelopes accepted **after** you connect. To also receive envelopes that were accepted earlier in the session, send a subscribe-only frame:
+A freshly opened stream only broadcasts envelopes accepted **after** you connect. To also receive envelopes that were accepted earlier in the session, send a subscribe-only frame. The subscribe/replay contract is specified in [RFC-MACP-0006 (Transport Bindings)](https://github.com/multiagentcoordinationprotocol/multiagentcoordinationprotocol/blob/main/rfcs/RFC-MACP-0006-transport-bindings.md) §3.2 (StreamSession) and documented server-side in the [runtime API reference › StreamSession](https://github.com/multiagentcoordinationprotocol/macp-runtime/blob/main/docs/API.md#streamsession).
 
 ```typescript
 const stream = client.openStream({ auth });
@@ -143,6 +150,31 @@ for await (const change of watcher.changes()) {
 ```
 
 The API is identical to `ModeRegistryWatcher` — `changes(signal?)`, `watch(handler)`, and `nextChange()`.
+
+## Signal Watcher
+
+`SignalWatcher` subscribes to the ambient signal plane — `Signal` envelopes
+sent via `client.sendSignal()` outside any session. Its iterator method is
+`signals(signal?)` (not `changes()`), with `watch(handler)` and
+`nextSignal()` conveniences:
+
+```typescript
+import { SignalWatcher } from 'macp-sdk-typescript';
+
+const watcher = new SignalWatcher(client, { auth });
+
+for await (const envelope of watcher.signals()) {
+  console.log('signal:', envelope.messageType, 'from', envelope.sender);
+}
+```
+
+> **Auth required (runtime 0.5.0).** `WatchSignals` is an authenticated RPC:
+> if neither the watcher nor the client has a credential, iterating
+> `signals()` throws immediately client-side. A rejected credential surfaces
+> as a `MacpTransportError` with `code === 'UNAUTHENTICATED'` — fix auth
+> rather than reconnecting. Consumer lag terminates the stream with
+> `code === 'RESOURCE_EXHAUSTED'`; there the correct response *is* to
+> reconnect.
 
 ## Session Lifecycle Watcher
 

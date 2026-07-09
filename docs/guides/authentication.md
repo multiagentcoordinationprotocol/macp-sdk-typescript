@@ -2,7 +2,7 @@
 
 ## Overview
 
-The MACP runtime requires authentication for most operations. The SDK supports two mechanisms:
+The MACP runtime requires authentication for most operations. The protocol's identity and authorization model is normative in [RFC-MACP-0004 (Security)](https://github.com/multiagentcoordinationprotocol/multiagentcoordinationprotocol/blob/main/rfcs/RFC-MACP-0004-security.md) and summarized in the [spec security overview](https://github.com/multiagentcoordinationprotocol/multiagentcoordinationprotocol/blob/main/docs/security.md); this page covers the SDK's client-side auth API. The SDK supports two mechanisms:
 
 | Mechanism | Header | Use Case |
 |-----------|--------|----------|
@@ -73,8 +73,8 @@ try {
 ```
 
 When `expectedSender` is undefined (dev agents and legacy bearer), the guard is
-silent and the resolver falls back to `senderHint` / `agentId`, preserving
-pre-0.2 behaviour.
+silent and the default sender falls back to `senderHint`, preserving pre-0.2
+behaviour.
 
 ## Default vs Per-Operation Auth
 
@@ -133,15 +133,17 @@ Priority order: **per-method auth > session auth > client auth**.
 
 ## Auth Validation
 
-The SDK validates that exactly one of `bearerToken` or `agentId` is set:
+Since 0.5.0 every credential is bearer-shaped — `AuthConfig` carries a
+`bearerToken` plus the optional `senderHint` / `expectedSender` identity
+fields (the old `agentId` field is gone). `validateAuth` therefore requires
+`bearerToken`:
 
 ```typescript
 import { validateAuth } from 'macp-sdk-typescript';
 
-validateAuth({});                              // throws: either bearerToken or agentId required
-validateAuth({ bearerToken: 'x', agentId: 'y' }); // throws: choose one, not both
-validateAuth({ bearerToken: 'x' });            // ok
-validateAuth({ agentId: 'y' });                // ok
+validateAuth({});                    // throws: bearerToken is required
+validateAuth({ bearerToken: 'x' });  // ok
+validateAuth(Auth.devAgent('y'));    // ok — devAgent produces { bearerToken: 'y', senderHint: 'y' }
 ```
 
 ## Pre-allocating a sessionId
@@ -202,7 +204,7 @@ The SDK does not own runtime auth configuration. For the `tokens.json` schema (i
 
 ## TLS
 
-TLS is on by default (RFC-MACP-0006 §3). The constructor throws if you pass
+TLS is on by default ([RFC-MACP-0006 (Transport Bindings)](https://github.com/multiagentcoordinationprotocol/multiagentcoordinationprotocol/blob/main/rfcs/RFC-MACP-0006-transport-bindings.md) §3). The constructor throws if you pass
 `secure: false` without the explicit dev-only escape hatch:
 
 ```typescript

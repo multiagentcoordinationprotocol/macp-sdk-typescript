@@ -15,7 +15,7 @@ The MACP TypeScript SDK connects TypeScript/Node.js applications to the [Multi-A
 - [Streaming](guides/streaming.md) — Session streams, registry watchers, signal watchers, and policy watchers
 - [Policy Framework](guides/policy.md) — Governance policies, rule builders, and policy lifecycle
 - [Agent Framework](guides/agent-framework.md) — Participant abstraction, strategies, and bootstrap
-- [Testing](guides/testing.md) — Running tests, writing new tests, and integration test patterns
+- [Testing](guides/testing.md) — Running tests, coverage gates, conformance fixtures, and integration test patterns
 
 ### Coordination Modes
 
@@ -39,13 +39,24 @@ The MACP TypeScript SDK connects TypeScript/Node.js applications to the [Multi-A
 
 ## Related documentation
 
-This SDK is the gRPC client; the runtime is the source of truth for protocol semantics, RPC contracts, deployment, and auth. Rather than duplicate runtime material, we link to it:
+These SDK docs cover the TypeScript API only; protocol semantics are normative in the RFCs (spec repo), and runtime behavior is documented in the runtime repo. Rather than duplicate that material, we link to it:
+
+### Protocol specification
+
+- [Spec — Architecture](https://github.com/multiagentcoordinationprotocol/multiagentcoordinationprotocol/blob/main/docs/architecture.md) — two-plane model, envelope, session model
+- [Spec — Modes](https://github.com/multiagentcoordinationprotocol/multiagentcoordinationprotocol/blob/main/docs/modes.md) — standard-mode summaries and state machines
+- [Spec — Policy](https://github.com/multiagentcoordinationprotocol/multiagentcoordinationprotocol/blob/main/docs/policy.md) — rule schemas by mode, policy evaluation, default policy
+- [Spec — Lifecycle](https://github.com/multiagentcoordinationprotocol/multiagentcoordinationprotocol/blob/main/docs/lifecycle.md) — session states, suspension/resume, cancellation authority
+- [Spec — Security](https://github.com/multiagentcoordinationprotocol/multiagentcoordinationprotocol/blob/main/docs/security.md) — identity, authorization, common error codes
+- [Spec — SDK Parity](https://github.com/multiagentcoordinationprotocol/multiagentcoordinationprotocol/blob/main/docs/sdk-parity.md) — what a conformant SDK must provide; proto/fixture sync contract
+- [RFC index](https://github.com/multiagentcoordinationprotocol/multiagentcoordinationprotocol/tree/main/rfcs) — the normative RFC-MACP-0001…0012 series
+
+### Runtime
 
 - [Runtime — Getting Started](https://github.com/multiagentcoordinationprotocol/macp-runtime/blob/main/docs/getting-started.md) — build the runtime, static/JWT auth configuration, first session
-- [Runtime — API Reference](https://github.com/multiagentcoordinationprotocol/macp-runtime/blob/main/docs/API.md) — all 22 gRPC RPCs with request/response fields and capability flags
+- [Runtime — API Reference](https://github.com/multiagentcoordinationprotocol/macp-runtime/blob/main/docs/API.md) — every gRPC RPC with request/response fields and capability flags
 - [Runtime — Architecture](https://github.com/multiagentcoordinationprotocol/macp-runtime/blob/main/docs/architecture.md) — layer structure, request flow, durability model
 - [Runtime — Modes](https://github.com/multiagentcoordinationprotocol/macp-runtime/blob/main/docs/modes.md) — per-mode state machine implementation details
 - [Runtime — Policy](https://github.com/multiagentcoordinationprotocol/macp-runtime/blob/main/docs/policy.md) — policy framework, rule schemas, evaluator internals
 - [Runtime — Deployment](https://github.com/multiagentcoordinationprotocol/macp-runtime/blob/main/docs/deployment.md) — production config, storage backends, TLS, crash recovery
 - [Runtime — SDK Developer Guide](https://github.com/multiagentcoordinationprotocol/macp-runtime/blob/main/docs/sdk-guide.md) — envelope construction, streaming, passive subscribe, retries
-- [Protocol Specification](https://www.multiagentcoordinationprotocol.io/docs) — two-plane model, session lifecycle, determinism, security, transport bindings

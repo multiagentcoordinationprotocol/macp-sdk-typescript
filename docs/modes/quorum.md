@@ -8,6 +8,8 @@
 
 Threshold-based approval or rejection. An action requires a specified number of approvals before it can be committed.
 
+> **Canonical references**: [RFC-MACP-0011 (Quorum Mode)](https://github.com/multiagentcoordinationprotocol/multiagentcoordinationprotocol/blob/main/rfcs/RFC-MACP-0011-quorum-mode.md) is normative for the state machine, threshold arithmetic, and validation constraints. See also the [spec mode summaries](https://github.com/multiagentcoordinationprotocol/multiagentcoordinationprotocol/blob/main/docs/modes.md#standard-mode-summaries) and [runtime modes guide › Quorum Mode](https://github.com/multiagentcoordinationprotocol/macp-runtime/blob/main/docs/modes.md#quorum-mode) for validation as implemented. This page covers the TypeScript API.
+
 ## Session Lifecycle
 
 ```
@@ -38,6 +40,13 @@ await session.start({
 | `reject(input)` | `Reject` | Cast a rejection vote |
 | `abstain(input)` | `Abstain` | Abstain from voting |
 | `commit(input)` | `Commitment` | Finalize once quorum is reached |
+
+Like every mode session, `QuorumSession` also exposes the shared lifecycle
+helpers — `metadata()`, `cancel(reason)`, `suspend(reason)`, `resume(reason)`,
+and `openStream()`. `suspend()` (proto 0.1.3+) is a non-terminal pause: the
+runtime banks the remaining TTL and rejects messages until `resume()` restores
+`SESSION_STATE_OPEN` and the banked TTL. See
+[Decision Mode → Lifecycle helpers](decision.md#lifecycle-helpers).
 
 ### Request Approval
 
@@ -106,7 +115,8 @@ await session.approve({
 | `requests` | `Map<string, ApprovalRequestRecord>` | Approval requests |
 | `ballots` | `Map<string, Map<string, BallotRecord>>` | requestId → sender → ballot |
 | `transcript` | `Envelope[]` | All accepted envelopes |
-| `phase` | `'Requesting' \| 'Voting' \| 'Committed'` | Current phase |
+| `phase` | `'Pending' \| 'Voting' \| 'Committed'` | Current phase |
+| `commitment` | `Record<string, unknown> \| undefined` | Commitment payload if resolved |
 
 ### BallotRecord
 
@@ -134,17 +144,23 @@ session.projection.remainingVotesNeeded('r1');   // max(0, required - approvalCo
 
 // Participation
 session.projection.votedSenders('r1');           // ['alice', 'bob', 'carol']
+
+// Commitment readiness
+session.projection.commitmentReady('r1');        // quorum reached and not yet committed
+session.projection.isThresholdUnreachable('r1', 3); // remaining unvoted eligibles can't reach threshold
+session.projection.isCommitted;                  // true once a Commitment is applied
+session.projection.isPositiveOutcome;            // undefined until committed; then outcomePositive
 ```
 
 ## RFC Validation Rules
 
-1. At most one `ApprovalRequest` per session (base v1)
-2. `requiredApprovals` must be > 0 and must not exceed participant count
-3. Each participant may cast at most one ballot (Approve, Reject, or Abstain) — latest replaces earlier
-4. Session is eligible for Commitment when:
-   - Approvals reach the threshold, **OR**
-   - Remaining possible approvals cannot reach the threshold
-5. Only an authorized coordinator may emit Commitment
+The runtime enforces the cross-message rules — at most one `ApprovalRequest`
+per session (base v1), `requiredApprovals` within `(0, participant count]`, one
+ballot per participant (latest replaces earlier), commitment eligibility only
+once the threshold is reached or provably unreachable, and coordinator-only
+Commitment. The normative rule set lives in RFC-MACP-0011 §4; the
+[runtime modes guide › Quorum Mode](https://github.com/multiagentcoordinationprotocol/macp-runtime/blob/main/docs/modes.md#quorum-mode)
+documents validation as implemented.
 
 ### Recommended Commitment Actions
 

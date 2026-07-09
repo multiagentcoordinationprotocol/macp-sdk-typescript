@@ -1,8 +1,13 @@
 # Getting Started
 
+This guide gets you from install to a first committed session with the
+TypeScript SDK. For the cross-language tutorial on onboarding an agent to MACP
+(concepts, roles, and the protocol flow independent of any SDK), see the spec's
+[Onboarding an Agent](https://github.com/multiagentcoordinationprotocol/multiagentcoordinationprotocol/blob/main/docs/onboarding-an-agent.md).
+
 ## Prerequisites
 
-- **Node.js 18+** (ES2022 target)
+- **Node.js 20+** (ES2022 target; `package.json` declares `engines.node >= 20`)
 - A running MACP Rust runtime (default at `127.0.0.1:50051`)
 
 ## Install
@@ -93,7 +98,7 @@ client.close();
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `address` | `string` | — | gRPC server address (`host:port`) |
-| `secure` | `boolean` | `true` | Use TLS credentials (RFC-MACP-0006 §3) |
+| `secure` | `boolean` | `true` | Use TLS credentials ([RFC-MACP-0006 (Transport Bindings)](https://github.com/multiagentcoordinationprotocol/multiagentcoordinationprotocol/blob/main/rfcs/RFC-MACP-0006-transport-bindings.md) §3) |
 | `allowInsecure` | `boolean` | `false` | Required when `secure: false`; dev-only escape hatch |
 | `auth` | `AuthConfig` | — | Default authentication for all operations |
 | `rootCertificates` | `Buffer` | — | TLS root CA certificates |

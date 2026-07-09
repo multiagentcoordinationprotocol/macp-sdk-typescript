@@ -84,7 +84,7 @@ participant.on('Evaluation', votingHandler(myVoter));
 const voter = agent.functionVoter(
   (projection) => projection.evaluations.length >= 2,
   async (projection) => ({
-    vote: projection.voteTotals()['approve'] ?? 0 > 0 ? 'APPROVE' : 'REJECT',
+    vote: projection.qualifyingEvaluations().length > 0 ? 'APPROVE' : 'REJECT',
     reason: `${projection.evaluations.length} evaluations seen`,
   }),
 );

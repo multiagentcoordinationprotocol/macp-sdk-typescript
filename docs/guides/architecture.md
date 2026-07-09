@@ -1,5 +1,15 @@
 # Architecture
 
+This page covers the SDK's own structure. The protocol model — the two-plane
+(coordination/ambient) design, the envelope schema, and the session model — is
+defined normatively in
+[RFC-MACP-0001 (Core)](https://github.com/multiagentcoordinationprotocol/multiagentcoordinationprotocol/blob/main/rfcs/RFC-MACP-0001-core.md)
+and summarized in the
+[spec architecture overview](https://github.com/multiagentcoordinationprotocol/multiagentcoordinationprotocol/blob/main/docs/architecture.md).
+For server internals (request flow for `Send`/`StreamSession`, durability
+model), see the
+[runtime architecture guide](https://github.com/multiagentcoordinationprotocol/macp-runtime/blob/main/docs/architecture.md).
+
 ## Three-Layer Design
 
 The SDK is organized into three layers. Each sits on the one below it and is
@@ -45,28 +55,36 @@ most agents live in the session or agent-framework layer.
 | `Initialize` | `client.initialize()` | `InitializeResult` |
 | `Send` | `client.send(envelope)` | `Ack` |
 | `StreamSession` | `client.openStream()` | `MacpStream` |
-| `GetSession` | `client.getSession(id)` | `SessionMetadata` |
-| `ListSessions` | `client.listSessions()` | `SessionMetadata[]` |
+| `GetSession` | `client.getSession(id)` | `{ metadata: SessionMetadata }` |
+| `ListSessions` | `client.listSessions()` (auto-paginates; `client.listSessionsPage()` for manual paging) | `SessionMetadata[]` |
 | `WatchSessions` | via `SessionLifecycleWatcher` | async iterator |
 | `CancelSession` | `client.cancelSession(id, reason)` | `Ack` |
-| `GetManifest` | `client.getManifest(agentId?)` | `AgentManifest` |
-| `ListModes` | `client.listModes()` | `ModeDescriptor[]` |
-| `ListRoots` | `client.listRoots()` | `Root[]` |
-| `ListExtModes` | `client.listExtModes()` | `ModeDescriptor[]` |
+| `SuspendSession` | `client.suspendSession(id, reason)` | `Ack` |
+| `ResumeSession` | `client.resumeSession(id, reason)` | `Ack` |
+| `GetManifest` | `client.getManifest(agentId?)` | `{ manifest: AgentManifest }` |
+| `ListModes` | `client.listModes()` | `{ modes: ModeDescriptor[] }` |
+| `ListRoots` | `client.listRoots()` | `{ roots: Root[] }` |
+| `ListExtModes` | `client.listExtModes()` | `{ modes: ModeDescriptor[] }` |
 | `RegisterExtMode` | `client.registerExtMode(desc)` | `{ ok, error? }` |
 | `UnregisterExtMode` | `client.unregisterExtMode(mode)` | `{ ok, error? }` |
 | `PromoteMode` | `client.promoteMode(mode, name?)` | `{ ok, error?, mode? }` |
 | `RegisterPolicy` / `UnregisterPolicy` / `GetPolicy` / `ListPolicies` | `client.registerPolicy(...)` etc. | `{ ok, error? }` / `PolicyDescriptor[]` |
 | `WatchModeRegistry` | via `ModeRegistryWatcher` | async iterator |
 | `WatchRoots` | via `RootsWatcher` | async iterator |
-| `WatchSignals` | via `SignalWatcher` | async iterator |
+| `WatchSignals` | via `SignalWatcher` (requires auth as of runtime 0.5.0) | async iterator |
 | `WatchPolicies` | via `PolicyWatcher` | async iterator |
 | *(convenience)* `sendSignal` / `sendProgress` | — | `Ack` |
+
+The watcher classes call the public `client.watchModeRegistry()`,
+`client.watchRoots()`, `client.watchSignals()`, `client.watchSessions()`, and
+`client.watchPolicies()` methods directly — the deprecated `_`-prefixed
+aliases were removed in 0.5.0.
 
 The client dynamically loads protobuf definitions from the
 `@multiagentcoordinationprotocol/proto` package at construction time and creates
 a gRPC channel using either TLS (default) or insecure credentials — the latter
-requires the explicit `allowInsecure: true` opt-out per RFC-MACP-0006 §3.
+requires the explicit `allowInsecure: true` opt-out per
+[RFC-MACP-0006 (Transport Bindings)](https://github.com/multiagentcoordinationprotocol/multiagentcoordinationprotocol/blob/main/rfcs/RFC-MACP-0006-transport-bindings.md) §3.
 
 ### Layer 2: Session Helpers
 
@@ -80,13 +98,18 @@ Each coordination mode has a session class that:
 6. Applies accepted envelopes to a local projection.
 
 ```typescript
-// Internal pattern (same for all session classes):
-private async sendAndTrack(envelope: Envelope, auth?: AuthConfig): Promise<Ack> {
+// Internal pattern (BaseSession.sendAndTrack — same shape in all session classes):
+protected async sendAndTrack(envelope: Envelope, auth?: AuthConfig): Promise<Ack> {
   const ack = await this.client.send(envelope, { auth: auth ?? this.auth });
   if (ack.ok) this.projection.applyEnvelope(envelope, this.client.protoRegistry);
   return ack;
 }
 ```
+
+Sessions also expose the shared lifecycle helpers `cancel(reason?)`,
+`suspend(reason?)`, and `resume(reason?)`, which delegate to
+`client.cancelSession` / `client.suspendSession` / `client.resumeSession`
+with the session's id and auth.
 
 #### Projections
 

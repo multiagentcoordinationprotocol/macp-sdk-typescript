@@ -1,0 +1,33 @@
+version: 2
+
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      minor-and-patch:
+        update-types: [minor, patch]
+    # majors arrive as individual PRs
+    ignore:
+      # Resolves from GitHub Packages (npm.pkg.github.com), which Dependabot
+      # cannot reach with the default token. To let Dependabot update it,
+      # remove this ignore and add a `registries:` block pointing at
+      # https://npm.pkg.github.com with a read:packages PAT stored as a
+      # *Dependabot* secret (Settings → Secrets → Dependabot), e.g.
+      #   registries:
+      #     github-packages:
+      #       type: npm-registry
+      #       url: https://npm.pkg.github.com
+      #       token: ${{ secrets.DEPENDABOT_GH_PACKAGES_TOKEN }}
+      # Proto upgrades are deliberate (SDK absorption releases), so manual
+      # bumps are acceptable in the meantime.
+      - dependency-name: '@multiagentcoordinationprotocol/proto'
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ['*']
