@@ -32,3 +32,32 @@ jobs:
       - run: npm publish --provenance --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  # ── Notify in-org SDK consumer (event-driven bump) ──────────────────
+  # After the public-npm publish, dispatch sdk-released {version, ecosystem}
+  # to macp-playground, whose bump-sdk.yml opens the bump PR. Zero-PAT.
+  dispatch-playground:
+    name: Dispatch sdk-released to macp-playground
+    runs-on: ubuntu-latest
+    needs: [publish]
+    steps:
+      - name: Mint GitHub App token
+        id: app
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.MACP_BOT_APP_ID }}
+          private-key: ${{ secrets.MACP_BOT_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: macp-playground
+
+      - name: Dispatch sdk-released
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          OWNER: ${{ github.repository_owner }}
+          VERSION: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+          V="${VERSION#v}"
+          jq -nc --arg v "$V" '{event_type:"sdk-released",client_payload:{version:$v,ecosystem:"npm"}}' \
+            | gh api -X POST "repos/$OWNER/macp-playground/dispatches" --input -
+          echo "dispatched sdk-released {version=$V, ecosystem=npm} -> macp-playground"
