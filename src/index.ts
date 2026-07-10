@@ -21,5 +21,6 @@ export * from './quorum';
 export * from './task';
 export * from './types';
 export * from './validation';
+export { VERSION } from './version';
 export * from './watchers';
 export * as agent from './agent';
