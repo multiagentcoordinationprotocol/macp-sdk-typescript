@@ -4,6 +4,13 @@ All notable changes to `macp-sdk-typescript` are documented here. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the
 project uses [Semantic Versioning](https://semver.org/).
 
+## [0.6.0](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/compare/v0.5.0...v0.6.0) (2026-07-10)
+
+
+### Features
+
+* export package VERSION constant ([#37](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/issues/37)) ([4ae5cda](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/commit/4ae5cda23255b82339490f740a30ca0b7fee0d5a))
+
 ## [Unreleased]
 
 ### Changed
