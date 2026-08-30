@@ -81,3 +81,5 @@ merged #45
 `/reconcile` ran over both `ASSUMPTIONS.md` entries left by this plan (see `DECISIONS.md`). One (public API surface) was CONFIRMED as-is, no code change. The other (`supersedes: null` builder/hasher divergence) was CHANGED — fixed on branch `fix/supersedes-null-reject`, shipped via a follow-on `/ship` pass. Two related, non-blocking follow-ups filed: [#47](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/issues/47) (frozen-field-set guard), [#48](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/issues/48) (empty-string `sessionId` bypasses validation, same truthy-check bug class, found during this fix's ship-gate verification).
 
 pushed fix/supersedes-null-reject 0c522a7
+
+PR #49 opened: https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/pull/49
