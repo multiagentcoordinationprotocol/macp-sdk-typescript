@@ -194,6 +194,66 @@ describe('envelope builders', () => {
       });
       expect(payload.supersedes).toEqual({ sessionId: 's', commitmentHash: VALID_HASH });
     });
+
+    it('throws MacpSessionError when supersedes is null (bypassing the type system)', () => {
+      expect(() =>
+        buildCommitmentPayload({
+          action: 'deploy',
+          authorityScope: 'ops',
+          reason: 'revised',
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- exercising an out-of-contract caller who bypasses TS
+          supersedes: null as any,
+        }),
+      ).toThrow(MacpSessionError);
+    });
+
+    it('throws MacpSessionError when supersedes is a non-object primitive (bypassing the type system)', () => {
+      expect(() =>
+        buildCommitmentPayload({
+          action: 'deploy',
+          authorityScope: 'ops',
+          reason: 'revised',
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- exercising an out-of-contract caller who bypasses TS
+          supersedes: 'oops' as any,
+        }),
+      ).toThrow(MacpSessionError);
+    });
+
+    it('throws MacpSessionError when supersedes is a bigint (bypassing the type system)', () => {
+      expect(() =>
+        buildCommitmentPayload({
+          action: 'deploy',
+          authorityScope: 'ops',
+          reason: 'revised',
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- exercising an out-of-contract caller who bypasses TS
+          supersedes: 10n as any,
+        }),
+      ).toThrow(MacpSessionError);
+    });
+
+    it('throws MacpSessionError when supersedes is an array (object shape, but not a CommitmentRef)', () => {
+      expect(() =>
+        buildCommitmentPayload({
+          action: 'deploy',
+          authorityScope: 'ops',
+          reason: 'revised',
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- exercising an out-of-contract caller who bypasses TS
+          supersedes: [] as any,
+        }),
+      ).toThrow(MacpSessionError);
+    });
+
+    it('throws MacpSessionError when supersedes is an empty object (object shape, but not a CommitmentRef)', () => {
+      expect(() =>
+        buildCommitmentPayload({
+          action: 'deploy',
+          authorityScope: 'ops',
+          reason: 'revised',
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- exercising an out-of-contract caller who bypasses TS
+          supersedes: {} as any,
+        }),
+      ).toThrow(MacpSessionError);
+    });
   });
 
   describe('buildCommitmentRef', () => {

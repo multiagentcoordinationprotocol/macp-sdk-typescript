@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { DEFAULT_CONFIGURATION_VERSION, DEFAULT_MODE_VERSION, DEFAULT_POLICY_VERSION, MACP_VERSION } from './constants';
+import { MacpSessionError } from './errors';
 import { validateCommitmentHash } from './validation';
 import type {
   CommitmentPayload,
@@ -105,7 +106,11 @@ export function buildCommitmentPayload(input: {
   /**
    * Cross-session supersession (RFC-MACP-0001 §7.3): reference to the prior
    * commitment this one supersedes. Distinct from proposal-mode
-   * `supersedesProposalId`. Absent by default. Backward-compatible.
+   * `supersedesProposalId`. Absent by default. Backward-compatible. A
+   * non-`undefined` value that isn't a `CommitmentRef` object (e.g. `null`,
+   * from a caller bypassing the type system) throws `MacpSessionError`
+   * rather than being silently dropped — see RFC-MACP-0013 reconcile,
+   * 2026-08-30.
    */
   supersedes?: CommitmentRef;
 }): CommitmentPayload {
@@ -119,7 +124,13 @@ export function buildCommitmentPayload(input: {
     policyVersion: input.policyVersion ?? DEFAULT_POLICY_VERSION,
     outcomePositive: input.outcomePositive ?? inferOutcomePositive(input.action),
   };
-  if (input.supersedes) {
+  if (input.supersedes !== undefined) {
+    if (typeof input.supersedes !== 'object' || input.supersedes === null) {
+      // `String()`, not `JSON.stringify()`: the latter throws on a bigint,
+      // which would replace this deliberate `MacpSessionError` with an
+      // unrelated `TypeError` for that one input shape.
+      throw new MacpSessionError(`supersedes must be a CommitmentRef object, got: ${String(input.supersedes)}`);
+    }
     validateCommitmentHash(input.supersedes.commitmentHash);
     payload.supersedes = input.supersedes;
   }

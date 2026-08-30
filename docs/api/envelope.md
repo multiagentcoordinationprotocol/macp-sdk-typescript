@@ -84,10 +84,13 @@ value automatically; the standalone builder keeps the `'policy.default'` default
 for backward compatibility (pass `policyVersion: ''` to opt into empty-echo —
 `''` is not coalesced by the default).
 
-When `supersedes` is provided, its `commitmentHash` is validated the same way
-as in `buildCommitmentRef` (`sha256:<64 lowercase hex>`, else throws
-`MacpSessionError`) — build it with `buildCommitmentRef()` (see below) rather
-than constructing a `CommitmentRef` by hand.
+When `supersedes` is provided (any non-`undefined` value), it must be a
+`CommitmentRef` object — `null` or any other non-object value throws
+`MacpSessionError` rather than being silently dropped. A well-formed object's
+`commitmentHash` is then validated the same way as in `buildCommitmentRef`
+(`sha256:<64 lowercase hex>`, else throws `MacpSessionError`) — build it with
+`buildCommitmentRef()` (see below) rather than constructing a `CommitmentRef`
+by hand.
 
 ## `inferOutcomePositive(action)`
 
