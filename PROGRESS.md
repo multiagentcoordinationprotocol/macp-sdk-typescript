@@ -168,3 +168,8 @@ Six findings, none breaking; all closed before the PR opened.
 Final: 699 passed / 7 skipped (33 files), coverage 96.14/91.02/92.54/96.14 vs floors
 94/88/90/94; `check`/`lint`/`format:check`/`verify-fixtures` all exit 0.
 - What's next: none — issue #50 closed by this PR.
+
+pushed feat/gate-cmt-hash-vectors fd7aedd98c99297bdcb89380489b9e9dc38a31a8
+PR #51 opened: https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/pull/51
+
+merged #51 (squash, a6f6ffa), CI green on Node 20/22/24 + verify-fixtures
