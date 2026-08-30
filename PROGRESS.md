@@ -83,3 +83,5 @@ merged #45
 pushed fix/supersedes-null-reject 0c522a7
 
 PR #49 opened: https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/pull/49
+
+merged #49 (squash, b4a68e3), CI green on Node 20/22/24 + verify-fixtures
