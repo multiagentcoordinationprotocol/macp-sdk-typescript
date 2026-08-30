@@ -67,3 +67,5 @@ Land Phases 1-3 as **one PR** (public surface appears once, already vector-prove
 ---
 
 pushed feat/rfc-macp-0013-commitment-hash e261ec536f2404b80010baf294b8c6a73053137c
+
+PR #45 opened: https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/pull/45
