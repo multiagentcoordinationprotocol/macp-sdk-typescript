@@ -24,7 +24,15 @@ Verified against `main` @ `ec51059` (plan's stated baseline).
 - Informational (not blocking, logged to `ASSUMPTIONS.md`): `canonicalizeCommitmentPayload` is also barrel-exported (public API); `supersedes: null`/non-object hashes identically to an empty-string ref (out-of-contract input, D3-permitted).
 - What's next: Phase 2.
 
-### Phase 2 — validate `commitmentHash` in `buildCommitmentRef` + `buildCommitmentPayload`'s `supersedes` branch — **Status: TODO**
+### Phase 2 — validate `commitmentHash` in `buildCommitmentRef` + `buildCommitmentPayload`'s `supersedes` branch — **Status: DONE**
+- Verifier: Opus, 2 rounds (round 1: GAPS on 1 real item (stale `docs/api/envelope.md` example) + 1 cosmetic → Sonnet fixer closed both → round 2: PASS).
+- Files touched: `src/validation.ts` (+`validateCommitmentHash`), `src/envelope.ts` (both call sites wired, JSDoc updated), `docs/api/envelope.md`, `tests/unit/envelope.test.ts`, `tests/unit/validation.test.ts`.
+- Commit: `6d83b9d` (`feat!:` — behavior break, callers passing an invalid `commitmentHash` string now get `MacpSessionError` instead of silent pass-through) — **local only, not pushed**, same accumulate-toward-closing-PR reasoning as Phase 1, reinforced: this phase is itself a breaking change, so shipping it standalone ahead of Phase 3 would mean two breaking-ish releases where one suffices.
+- Residual, out-of-phase-scope holes flagged by the verifier (not fixed, by design — logging for the closing PR body, not blocking Phase 3):
+  - `ProtoRegistry.encodeKnownPayload` remains an unvalidated wire path for a hand-built `CommitmentPayload` that bypasses `buildCommitmentPayload` entirely (demonstrated live by `tests/unit/proto-registry.test.ts:132`'s `'abc123'` fixture, which is correctly untouched by this phase).
+  - `buildCommitmentRef` validates `commitmentHash` but not `sessionId` (asymmetric; `validateSessionId` exists but isn't called here — plan only asked for the hash).
+  - `src/envelope.ts:122`'s `if (input.supersedes)` is a truthy check, not `!== undefined`; `supersedes: null` (reachable only from JS/decoded payloads, not from TS) silently skips both validation and assignment in the builder, while `canonicalizeCommitmentPayload` (Phase 1) treats `null` as present via `!== undefined` — a builder/hasher inconsistency worth Phase 3 being aware of when building vector-runner payloads.
+- What's next: Phase 3.
 
 ### Phase 3 — vector runner (`tests/vectors/cmt-hash/`, outside the `verify-fixtures` drift gate) — **Status: TODO**
 
