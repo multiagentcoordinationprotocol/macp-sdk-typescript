@@ -6,6 +6,7 @@
 export { Auth, type AuthConfig, type BearerAuthOptions } from './auth';
 export * from './base-session';
 export * from './client';
+export * from './commitment-hash';
 export * from './constants';
 export * from './decision';
 export * from './envelope';
