@@ -34,8 +34,21 @@ Verified against `main` @ `ec51059` (plan's stated baseline).
   - `src/envelope.ts:122`'s `if (input.supersedes)` is a truthy check, not `!== undefined`; `supersedes: null` (reachable only from JS/decoded payloads, not from TS) silently skips both validation and assignment in the builder, while `canonicalizeCommitmentPayload` (Phase 1) treats `null` as present via `!== undefined` — a builder/hasher inconsistency worth Phase 3 being aware of when building vector-runner payloads.
 - What's next: Phase 3.
 
-### Phase 3 — vector runner (`tests/vectors/cmt-hash/`, outside the `verify-fixtures` drift gate) — **Status: TODO**
+### Phase 3 — vector runner (`tests/vectors/cmt-hash/`, outside the `verify-fixtures` drift gate) — **Status: DONE**
+- Verifier: Opus, 1 round PASS (2 non-blocking observations; independently re-derived vector 001 and 005 from RFC 8785 text via a from-scratch scratch implementation, and mutation-tested the runner twice — flipped a hash, flipped a payload field — confirming it isn't vacuous).
+- Files touched: `tests/vectors/cmt-hash/*.json` (6 files, byte-identical to spec repo commit `646c3dd`), `tests/vectors/cmt-hash.test.ts` (23 tests), `.prettierignore`.
+- Post-verify cleanup applied directly (cheap, safe, verifier-recommended, no need for another fixer round): narrowed `.prettierignore`'s `tests/vectors/` to `tests/vectors/cmt-hash/` (the plan's premise that this repo has no prettier config was wrong — `.prettierrc` exists and the vector JSON is already prettier-stable under it) and ran `npm run format` on the test file so it stays inside the CI `format:check` gate.
+- Commit: `5b6d61c` — **local only, not pushed.**
+- Full-suite regression after all 3 phases: 682 passed / 7 skipped (32 files), coverage 96.13/90.99/92.54/96.13 vs floors 94/88/90/94.
+- What's next: **plan complete.** Recommendation from all 3 verifiers (reinforced each phase): ship Phases 1-3 together as **one PR** — `commitmentHash` became public API in Phase 1 and Phase 3 is the proof that had to land before that reached `main`; Phase 2 is itself a breaking change. Per this repo's CLAUDE.md ("never commit or push without explicit instruction") and this session's own standing constraint, holding at local commits `ee131bc`/`d98d12e`/`6d83b9d`/`043dd51`/`5b6d61c` pending explicit go-ahead to push + open the PR (`/ship`).
 
 ## Closing-PR plan
 
-Per Phase 1's verifier recommendation: land Phases 1-3 as **one PR** (public surface appears once, already vector-proven) rather than three. Confirm this at Phase 3's closeout before invoking `/ship`.
+Land Phases 1-3 as **one PR** (public surface appears once, already vector-proven). PR body must call out, per the verifiers:
+1. **Breaking change** (Phase 2, `feat!` commit `6d83b9d`): `buildCommitmentRef`/`buildCommitmentPayload({supersedes})` now throw `MacpSessionError` on a non-`sha256:<64 lowercase hex>` commitmentHash, where they previously passed anything through.
+2. **No new dependency** (Phase 1): hand-written RFC 8785 serializer + `node:crypto`, no JCS library — the frozen 9-field projection has no JSON numbers/arrays so JCS's float-formatting requirement (its only dependency-justifying feature) is unreachable.
+3. **`tests/conformance/` vs `tests/vectors/` split** (Phase 3): vectors live outside the `verify-fixtures` zero-drift gate by design (H13, matches `macp-sdk-python` PR 4 Phase 3) — vector drift is not machine-detected today, revisit if the pack grows. Source pinned at spec commit `646c3dd`.
+4. **Public API surface**: both `commitmentHash` and `canonicalizeCommitmentPayload` are barrel-exported from `src/index.ts`.
+5. **Known residual holes, carried forward, not fixed** (all logged in Phase 2's entry above and in `ASSUMPTIONS.md`): `ProtoRegistry.encodeKnownPayload` remains an unvalidated wire path bypassing `buildCommitmentPayload`; `buildCommitmentRef` validates the hash but not `sessionId`; `src/envelope.ts`'s `if (input.supersedes)` truthy check vs. `canonicalizeCommitmentPayload`'s `!== undefined` check disagree on `supersedes: null` (reachable only from JS/decoded payloads).
+6. **Lone-surrogate D3 consequence**: hashes identically to U+FFFD (Node's UTF-8 encoder substitutes before hashing) — documented in `src/commitment-hash.ts`, not a claimed cross-implementation guarantee.
+7. Cite `src/proto-registry.ts:106-117` as prior art for why D2.2 (`??` materialization) is written the way it is — this codebase already found and fixed the identical proto3-bool-default trap once, on `Commitment.outcome_positive`.
