@@ -1,7 +1,7 @@
 /**
  * RFC-MACP-0013 canonical commitment hash — spec vector runner.
  *
- * Unlike `tests/unit/commitment-hash.test.ts` (Phase 1, internal
+ * Unlike `tests/commitment-hash.test.ts` (Phase 1, internal
  * self-consistency only), this suite replays the RFC's own canonical vectors
  * — copied byte-for-byte from the spec repo's
  * `schemas/conformance/cmt-hash/` (source commit `646c3dd`) — against this

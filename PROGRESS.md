@@ -20,14 +20,14 @@ Verified against `main` @ `ec51059` (plan's stated baseline).
 ### Phase 1 — `src/commitment-hash.ts` — **Status: DONE**
 - Verifier: Opus, 2 rounds (round 1: PASS-with-gaps → Sonnet fixer closed G1-G4/R1 → round 2: PASS, mutation-verified).
 - Files touched: `src/commitment-hash.ts` (new), `tests/commitment-hash.test.ts` (new, 27 tests), `src/index.ts` (+1 barrel line).
-- Commit: `ee131bc` — **local only, not pushed.** Verifier recommendation: accumulate toward the plan's closing PR rather than ship standalone, since `commitmentHash` becomes public API via the barrel before Phase 3 proves it against real spec vectors, and this repo's release-please workflow triggers on every push to `main`.
+- Commit: `ee131bc`. Verifier recommendation: accumulate toward the plan's closing PR rather than ship standalone, since `commitmentHash` becomes public API via the barrel before Phase 3 proves it against real spec vectors, and this repo's release-please workflow triggers on every push to `main`. (Accumulated as planned — shipped together with Phases 2-3 in the closing PR, see bottom of this file.)
 - Informational (not blocking, logged to `ASSUMPTIONS.md`): `canonicalizeCommitmentPayload` is also barrel-exported (public API); `supersedes: null`/non-object hashes identically to an empty-string ref (out-of-contract input, D3-permitted).
 - What's next: Phase 2.
 
 ### Phase 2 — validate `commitmentHash` in `buildCommitmentRef` + `buildCommitmentPayload`'s `supersedes` branch — **Status: DONE**
 - Verifier: Opus, 2 rounds (round 1: GAPS on 1 real item (stale `docs/api/envelope.md` example) + 1 cosmetic → Sonnet fixer closed both → round 2: PASS).
 - Files touched: `src/validation.ts` (+`validateCommitmentHash`), `src/envelope.ts` (both call sites wired, JSDoc updated), `docs/api/envelope.md`, `tests/unit/envelope.test.ts`, `tests/unit/validation.test.ts`.
-- Commit: `6d83b9d` (`feat!:` — behavior break, callers passing an invalid `commitmentHash` string now get `MacpSessionError` instead of silent pass-through) — **local only, not pushed**, same accumulate-toward-closing-PR reasoning as Phase 1, reinforced: this phase is itself a breaking change, so shipping it standalone ahead of Phase 3 would mean two breaking-ish releases where one suffices.
+- Commit: `6d83b9d` (`feat!:` — behavior break, callers passing an invalid `commitmentHash` string now get `MacpSessionError` instead of silent pass-through), same accumulate-toward-closing-PR reasoning as Phase 1, reinforced: this phase is itself a breaking change, so shipping it standalone ahead of Phase 3 would mean two breaking-ish releases where one suffices.
 - Residual, out-of-phase-scope holes flagged by the verifier (not fixed, by design — logging for the closing PR body, not blocking Phase 3):
   - `ProtoRegistry.encodeKnownPayload` remains an unvalidated wire path for a hand-built `CommitmentPayload` that bypasses `buildCommitmentPayload` entirely (demonstrated live by `tests/unit/proto-registry.test.ts:132`'s `'abc123'` fixture, which is correctly untouched by this phase).
   - `buildCommitmentRef` validates `commitmentHash` but not `sessionId` (asymmetric; `validateSessionId` exists but isn't called here — plan only asked for the hash).
@@ -38,9 +38,17 @@ Verified against `main` @ `ec51059` (plan's stated baseline).
 - Verifier: Opus, 1 round PASS (2 non-blocking observations; independently re-derived vector 001 and 005 from RFC 8785 text via a from-scratch scratch implementation, and mutation-tested the runner twice — flipped a hash, flipped a payload field — confirming it isn't vacuous).
 - Files touched: `tests/vectors/cmt-hash/*.json` (6 files, byte-identical to spec repo commit `646c3dd`), `tests/vectors/cmt-hash.test.ts` (23 tests), `.prettierignore`.
 - Post-verify cleanup applied directly (cheap, safe, verifier-recommended, no need for another fixer round): narrowed `.prettierignore`'s `tests/vectors/` to `tests/vectors/cmt-hash/` (the plan's premise that this repo has no prettier config was wrong — `.prettierrc` exists and the vector JSON is already prettier-stable under it) and ran `npm run format` on the test file so it stays inside the CI `format:check` gate.
-- Commit: `5b6d61c` — **local only, not pushed.**
+- Commit: `5b6d61c`.
 - Full-suite regression after all 3 phases: 682 passed / 7 skipped (32 files), coverage 96.13/90.99/92.54/96.13 vs floors 94/88/90/94.
-- What's next: **plan complete.** Recommendation from all 3 verifiers (reinforced each phase): ship Phases 1-3 together as **one PR** — `commitmentHash` became public API in Phase 1 and Phase 3 is the proof that had to land before that reached `main`; Phase 2 is itself a breaking change. Per this repo's CLAUDE.md ("never commit or push without explicit instruction") and this session's own standing constraint, holding at local commits `ee131bc`/`d98d12e`/`6d83b9d`/`043dd51`/`5b6d61c` pending explicit go-ahead to push + open the PR (`/ship`).
+- What's next: **plan complete**, shipped as one PR — see "Ship" section below.
+
+## Ship
+
+- Ship-gate verifier (fresh Opus, full diff `ec51059...HEAD`): **PASS**, with 2 decisions and 4 trivial cleanups (no `src/` changes required). Decisions made and applied directly (not re-verified separately, both low-risk/reversible pre-1.0):
+  - `release-please-config.json`: added `"bump-minor-pre-major": true` so the `feat!` commit bumps `0.6.0` → `0.7.0`, not `1.0.0` — the RFC itself is still a draft, an accidental major would misrepresent stability.
+  - `src/index.ts`: narrowed the commitment-hash barrel export to `commitmentHash` only, dropping `canonicalizeCommitmentPayload` from the public surface — matches `macp-sdk-python`, which keeps its `canonical_projection` equivalent internal. Confirmed both test files already import it directly from `src/commitment-hash` rather than the barrel, so nothing broke.
+  - Trivial cleanups applied in the same pass: this file's and `ASSUMPTIONS.md`'s "local only, not pushed" language, `CLAUDE.md`'s Key Components/Test Structure lists (added `commitment-hash.ts` + the two new test files), `docs/api/types.md`'s `CommitmentRef.commitmentHash` doc (now notes the enforced `sha256:<64 hex>` shape), and a stale path in `tests/vectors/cmt-hash.test.ts`'s top comment.
+  - Non-blocking items for the PR body / follow-up: no compile-time frozen-field-set guard (vs. `macp-sdk-python`'s runtime `_check_frozen_field_set`) if `CommitmentPayload` ever grows a 10th field; validation is syntactic-only (checks shape, not that the hash was actually computed via `commitmentHash()`).
 
 ## Closing-PR plan
 
