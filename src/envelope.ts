@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { DEFAULT_CONFIGURATION_VERSION, DEFAULT_MODE_VERSION, DEFAULT_POLICY_VERSION, MACP_VERSION } from './constants';
+import { validateCommitmentHash } from './validation';
 import type {
   CommitmentPayload,
   CommitmentRef,
@@ -68,9 +69,13 @@ export function inferOutcomePositive(action: string): boolean {
 /**
  * Build a {@link CommitmentRef} pointing at a prior accepted commitment, for
  * use as `buildCommitmentPayload({ supersedes })` (cross-session supersession,
- * RFC-MACP-0001 §7.3). Parity with python-sdk `build_commitment_ref`.
+ * RFC-MACP-0001 §7.3). Use `commitmentHash()` (from `./commitment-hash`) to
+ * produce a valid `commitmentHash` value — this function validates the hash
+ * shape (`sha256:<64 lowercase hex>`) and throws `MacpSessionError` if it
+ * doesn't match. Parity with python-sdk `build_commitment_ref`.
  */
 export function buildCommitmentRef(input: { sessionId: string; commitmentHash: string }): CommitmentRef {
+  validateCommitmentHash(input.commitmentHash);
   return { sessionId: input.sessionId, commitmentHash: input.commitmentHash };
 }
 
@@ -114,7 +119,10 @@ export function buildCommitmentPayload(input: {
     policyVersion: input.policyVersion ?? DEFAULT_POLICY_VERSION,
     outcomePositive: input.outcomePositive ?? inferOutcomePositive(input.action),
   };
-  if (input.supersedes) payload.supersedes = input.supersedes;
+  if (input.supersedes) {
+    validateCommitmentHash(input.supersedes.commitmentHash);
+    payload.supersedes = input.supersedes;
+  }
   return payload;
 }
 
