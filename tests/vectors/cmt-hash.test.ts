@@ -9,11 +9,15 @@
  * independent source of truth: if this SDK's implementation diverges from
  * the RFC, this suite fails even though Phase 1's tests would still pass.
  *
- * Deliberately outside the `verify-fixtures` drift gate (which only globs
- * `tests/conformance/*.json`, flat and non-recursive) — see Phase 3 of the
- * plan for the (Fable-reviewed, already-decided) rationale: a small,
- * append-only vector pack doesn't yet justify extending that gate across
- * three repos. `vitest.config.ts`'s `include` glob (tests, recursively, any
+ * Lives outside `tests/conformance/` because the canonical vectors sit in a
+ * `cmt-hash/` subdirectory upstream, not flat — see
+ * `tests/vectors/cmt-hash/SOURCE.md` for the full provenance and why that
+ * layout rules out both dropping the files flat into `tests/conformance/`
+ * (flagged EXTRA, since canonical keeps them in a subdirectory) and nesting
+ * them at `tests/conformance/cmt-hash/*.json` (invisible to that gate's
+ * non-recursive glob). The vectors themselves ARE covered by
+ * `verify-fixtures`/`sync-fixtures`, bidirectionally, as of this repo's
+ * issue #50 fix. `vitest.config.ts`'s `include` glob (tests, recursively, any
  * "*.test.ts" file) already collects this file with zero config changes.
  */
 import * as fs from 'node:fs';

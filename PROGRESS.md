@@ -85,3 +85,86 @@ pushed fix/supersedes-null-reject 0c522a7
 PR #49 opened: https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/pull/49
 
 merged #49 (squash, b4a68e3), CI green on Node 20/22/24 + verify-fixtures
+
+## Gate cmt-hash vectors follow-up (2026-08-30)
+
+[#50](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/issues/50)
+revisited the deferred cost recorded above (item 3 of "Closing-PR plan": "vector drift is
+not machine-detected today, revisit if the pack grows") and closed it. Plan:
+`plans/gate-cmt-hash-vectors.md`, on branch `feat/gate-cmt-hash-vectors`.
+
+### Phase 1 — extend `verify-fixtures`/`sync-fixtures` to cover `tests/vectors/cmt-hash/` — **Status: DONE**
+
+- Verifier: Opus, PASS in 1 round.
+- Files touched: `Makefile` only — a canonical-subdirectory existence guard plus a second
+  bidirectional diff/EXTRA loop pair (`$(SPEC_CONFORMANCE_DIR)/cmt-hash/*.json` ↔
+  `tests/vectors/cmt-hash/`), mirroring the pre-existing flat `tests/conformance/` pair and
+  feeding the same `drift` flag and exit.
+- Commit: `553feb7`.
+- No CI workflow change needed: `.github/workflows/conformance-fixtures.yml` already runs
+  `make verify-fixtures` against `$GITHUB_WORKSPACE/_spec/schemas/conformance`, and
+  `cmt-hash/` is a subdirectory of exactly that path.
+- What's next: Phase 2.
+
+### Phase 2 — provenance doc + sweep stale "outside the gate" claims — **Status: DONE**
+
+- Commit: the `docs:` commit of this branch (it carries this entry, so it cannot cite its
+  own sha; the squash sha is appended below on merge, as with #45 and #49).
+- Files touched: `tests/vectors/cmt-hash/SOURCE.md` (new — records upstream path, source
+  commit `646c3dd1ec6d2231fc8fc1dc9a570c2394bb3641`, copy date 2026-08-29, why the
+  directory sits outside `tests/conformance/`, how `verify-fixtures`/`sync-fixtures` now
+  keep it honest, and the one residual blind spot: only a purely *additive* deeper
+  canonical tier — e.g. a `cmt-hash/v2/` alongside the existing flat files — is invisible
+  to the gate's non-recursive `*.json` glob; a wholesale *move* of the vectors into a
+  subdirectory goes red, since the canonical-side glob then matches nothing);
+  `tests/vectors/cmt-hash.test.ts` (top docblock, "deliberately outside the drift gate" →
+  now covered); `CLAUDE.md` (Test Structure entry, plus two new Build Commands lines for
+  `make verify-fixtures`/`sync-fixtures` — local-only, gitignored, not part of this PR's
+  diff); this file (this section).
+- The "vector drift is not machine-detected today" line in the Closing-PR plan section
+  above, the Phase 3 heading's "outside the `verify-fixtures` drift gate" wording, and the
+  "Repo map" bullet's "`tests/vectors/` is invisible to it, no Makefile change needed"
+  claim (line 14) were all left as-is — they were true when written and are shipped
+  history. This section supersedes all three: as of `553feb7`, drift in
+  `tests/vectors/cmt-hash/` is machine-detected, and the Makefile was changed to do it.
+- `macp-sdk-python` still carries the original, ungated version of this cost on its
+  committed `main` — a fix is in flight there on `fix/38-gate-cmt-hash-vectors`, using a
+  data-driven `FIXTURE_DIR_PAIRS` loop rather than this repo's duplicated loop pair.
+  Judged an acceptable divergence at the ship gate: that repo's Makefile already has a
+  `help:` target and `##` self-documenting conventions the pair-loop form fits; this one
+  is 88 lines of plain recipes where duplicating a two-loop pattern once is the local
+  idiom. Issue #50's "same shape" is met where it asked — both gate bidirectionally, both
+  carry a `SOURCE.md`, both need no workflow edit, both print the same `DRIFT:`/`EXTRA:`
+  vocabulary. Revisit if a third fixture directory ever appears.
+
+### Ship gate — **Opus, GAPS → fixed → shippable**
+
+Six findings, none breaking; all closed before the PR opened.
+
+- `PROGRESS.md` shipped the over-broad "a deeper canonical layout would go quiet" wording
+  that `SOURCE.md` had already corrected, in the same commit that corrected it. Fixed.
+- Phase 2's entry carried no commit sha. Fixed.
+- `sync-fixtures` copies but never deletes, so after an upstream rename the printed
+  remediation left the gate red and reprinted itself. Both the `Makefile` failure message
+  and `SOURCE.md`'s recipe now say the orphan must be removed by hand.
+- The directory guard covered a *missing* canonical `cmt-hash/` but not a present-but-empty
+  one, which still expanded the glob literally. `[ -e "$f" ] || continue` added to all six
+  loops, flat ones included. Verified this did not convert a real failure into a silent
+  pass — the empty case still goes red via `EXTRA:`.
+- `docs/guides/testing.md` — advertised by `docs/index.md` as the conformance-fixture
+  reference — had never mentioned the Makefile targets and its `tests/` tree omitted
+  `tests/vectors/` entirely. Documented both fixture sets, CI enforcement, and the
+  deletion caveat; refreshed the stale coverage table.
+- The gate itself had no test. Added `tests/unit/fixture-drift-gate.test.ts` (12 cases,
+  commit `af806c0`), driving the real recipes against synthetic trees. The ship verifier
+  called this a follow-up; taken now instead, since an untested drift gate is the same
+  failure class this issue was filed about. Proven non-vacuous by six Makefile mutations
+  — one of which exposed that the `sync-fixtures` guard was uncovered, so a twelfth case
+  was added for it — plus three more run independently at the ship gate (neutering the
+  pre-existing flat DRIFT loop, breaking its accumulation with an early `exit`, and
+  mis-targeting `sync-fixtures`' copy destination), each killed by exactly the case that
+  should catch it.
+
+Final: 699 passed / 7 skipped (33 files), coverage 96.14/91.02/92.54/96.14 vs floors
+94/88/90/94; `check`/`lint`/`format:check`/`verify-fixtures` all exit 0.
+- What's next: none — issue #50 closed by this PR.
