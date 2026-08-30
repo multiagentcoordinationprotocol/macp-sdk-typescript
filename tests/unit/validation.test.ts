@@ -12,6 +12,7 @@ import {
   validateParticipants,
   validateRequiredField,
   validateSessionStart,
+  validateCommitmentHash,
 } from '../../src/validation';
 import { MacpSessionError } from '../../src/errors';
 
@@ -242,6 +243,47 @@ describe('validation', () => {
 
     it('rejects a negative maxSuspendMs', () => {
       expect(() => validateSessionStart({ ...validInput, maxSuspendMs: -1 })).toThrow(MacpSessionError);
+    });
+  });
+
+  describe('validateCommitmentHash', () => {
+    it('accepts sha256: followed by 64 lowercase hex chars', () => {
+      expect(() => validateCommitmentHash('sha256:' + '0'.repeat(64))).not.toThrow();
+      expect(() => validateCommitmentHash('sha256:' + 'ab12cd34'.repeat(8))).not.toThrow();
+    });
+
+    it('rejects a value missing the sha256: prefix', () => {
+      expect(() => validateCommitmentHash('0'.repeat(64))).toThrow(MacpSessionError);
+    });
+
+    it('rejects uppercase hex (case-sensitive)', () => {
+      expect(() => validateCommitmentHash('sha256:' + 'A'.repeat(64))).toThrow(MacpSessionError);
+    });
+
+    it('rejects a hash that is one character short', () => {
+      expect(() => validateCommitmentHash('sha256:' + '0'.repeat(63))).toThrow(MacpSessionError);
+    });
+
+    it('rejects a hash that is one character too long', () => {
+      expect(() => validateCommitmentHash('sha256:' + '0'.repeat(65))).toThrow(MacpSessionError);
+    });
+
+    it('rejects an empty string', () => {
+      expect(() => validateCommitmentHash('')).toThrow(MacpSessionError);
+    });
+
+    it('rejects a whitespace-padded otherwise-valid hash', () => {
+      expect(() => validateCommitmentHash(' sha256:' + '0'.repeat(64))).toThrow(MacpSessionError);
+      expect(() => validateCommitmentHash('sha256:' + '0'.repeat(64) + ' ')).toThrow(MacpSessionError);
+    });
+
+    it('includes the field name and offending value in the error message', () => {
+      expect(() => validateCommitmentHash('abc123', 'myField')).toThrow(/myField/);
+      expect(() => validateCommitmentHash('abc123', 'myField')).toThrow(/abc123/);
+    });
+
+    it('defaults the field name to "commitmentHash" when omitted', () => {
+      expect(() => validateCommitmentHash('abc123')).toThrow(/commitmentHash/);
     });
   });
 });

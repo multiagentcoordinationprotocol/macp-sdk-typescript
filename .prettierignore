@@ -3,3 +3,4 @@ proto/
 coverage/
 docs/
 *.proto
+tests/vectors/cmt-hash/
