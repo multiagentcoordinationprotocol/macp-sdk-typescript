@@ -33,6 +33,16 @@ export class ProposalProjection {
   phase: 'Negotiating' | 'TerminalRejected' | 'Committed' = 'Negotiating';
   commitment?: Record<string, unknown>;
 
+  /**
+   * Apply one envelope to this projection's in-process state.
+   *
+   * Input contract: **accepted-only**, caller-maintained (`Envelope` carries
+   * no acceptance marker). Canonical source: `schemas/conformance/README.md`
+   * "Notes:", RFC-MACP-0007 §5.3, RFC-MACP-0011 §5. Full rationale and failure
+   * mode are documented once, on `BaseProjection.applyEnvelope`
+   * (`src/projections/base.ts`), and duplicated here only as a one-line
+   * pointer so six independent copies of the same prose cannot drift.
+   */
   applyEnvelope(envelope: Envelope, protoRegistry: ProtoRegistry): void {
     if (envelope.mode !== MODE_PROPOSAL) return;
     this.transcript.push(envelope);

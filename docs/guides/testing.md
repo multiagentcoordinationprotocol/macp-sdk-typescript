@@ -253,6 +253,17 @@ each fixture's **accepted** message prefix is encoded via a real
 `ProtoRegistry`, applied to the mode's projection, and the resulting phase,
 resolution, and mode state are asserted against the fixture's expectations.
 
+The harness's `acceptedMessages` filter in
+`tests/conformance/conformance.test.ts` — `fixture.messages.filter((m) =>
+m.expect === 'accept')` — is not an incidental implementation detail — it is
+this harness upholding
+`applyEnvelope`'s accepted-only input contract (see [Projections API ›
+Input contract](../api/projections.md#input-contract)). `applyEnvelope`
+cannot verify that contract itself (`Envelope` carries no acceptance marker),
+so every caller, including this harness, is responsible for filtering before
+replay. `tests/unit/projections/accepted-only-contract.test.ts` demonstrates
+what happens when a caller skips that filtering step.
+
 The fixture-sync contract — what a conformant SDK must replay and how fixtures
 and protos are kept in lockstep with the spec — is canonical in the spec's
 [SDK Parity › Sync Mechanisms](https://github.com/multiagentcoordinationprotocol/multiagentcoordinationprotocol/blob/main/docs/sdk-parity.md#sync-mechanisms)

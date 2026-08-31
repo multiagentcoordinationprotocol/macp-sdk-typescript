@@ -26,6 +26,74 @@ This method:
 3. Decodes the payload via `protoRegistry.decodeKnownPayload()`
 4. Updates internal state based on `messageType`
 
+## Input contract
+
+`applyEnvelope` assumes every envelope passed to it was **accepted** by a
+conforming MACP runtime — i.e. it is part of the session's authoritative
+accepted history, never a submission the runtime rejected. This is a
+**caller-maintained invariant**, not something `applyEnvelope` itself can
+verify: `Envelope` carries no acceptance marker on the wire, so there is no
+field a projection could inspect to tell an accepted envelope from a rejected
+one.
+
+The rule is canonical upstream, in the spec repo's
+`schemas/conformance/README.md` "Notes:" section, verbatim: "SDKs replay only
+`accept` messages through their projections (reject-path fixtures replay
+their accepted *prefix*)." It backs a substantive protocol guarantee —
+[RFC-MACP-0007 (Decision Mode)](https://github.com/multiagentcoordinationprotocol/multiagentcoordinationprotocol/blob/main/rfcs/RFC-MACP-0007-decision-mode.md)
+§5 rule 3 ("the first accepted `Vote` stands") and
+[RFC-MACP-0011 (Quorum Mode)](https://github.com/multiagentcoordinationprotocol/multiagentcoordinationprotocol/blob/main/rfcs/RFC-MACP-0011-quorum-mode.md)
+§5 rule 3 (at most one ballot per participant) both describe what a
+conforming runtime enforces on *accepted* history — so a projection
+reconstructing that history is only correct when it is fed the same set the
+runtime held.
+
+This SDK's own send paths already uphold the invariant: each of the five
+built-in mode sessions has its own private `sendAndTrack` that calls
+`this.projection.applyEnvelope(...)` only after a successful ACK (gated on
+`ack.ok`). `BaseSession`'s own `sendAndTrack` — the equivalent path for custom
+modes built on the ext-mode extension point — does the same. The conformance
+test harness upholds it too, by filtering fixture messages to
+`expect === 'accept'` before replaying them.
+
+**Failure mode if the contract is violated:** feeding `applyEnvelope` raw
+captured or hand-built traffic — including envelopes a runtime rejected —
+replays a timeline no conforming runtime ever held, and the projection
+fabricates state accordingly. For example, a session whose only `Commitment`
+was rejected can still surface `isCommitted === true` and
+`phase === 'Committed'` if that rejected envelope is replayed anyway, making
+an unresolved session look resolved. See
+`tests/unit/projections/accepted-only-contract.test.ts` for an executable
+demonstration, across `DecisionProjection`, `QuorumProjection`, and a custom
+`BaseProjection` subclass.
+
+If you are building your own transport or replay path, filter to accepted
+envelopes yourself before calling `applyEnvelope` — do not rely on
+`applyEnvelope` to reject anything on your behalf.
+
+## Design intent: shared projection instance
+
+`Participant` and the mode session it wraps deliberately share **one**
+projection instance, not two. The session's own `sendAndTrack` applies an
+envelope to that instance locally as soon as its own `send()` call is
+ACKed; the same instance is later handed replayed or live envelopes again via
+`Participant.processMessage` as the transport streams (or re-streams, on
+reconnect) session history. Both paths write into the same object by design —
+this is deliberate topology, not an oversight being disclosed here.
+
+One consequence of that choice: it is what makes a double-apply of the
+initiator's own envelope *reachable* on this SDK's ordinary `Participant`
+happy path — the local apply-on-ACK and the later replay-apply can both land
+on the same instance for the same envelope. This is recorded here as a
+statement of intent so the topology choice is visible and deliberate, not
+implicit.
+
+For comparison: `macp-sdk-python` gives the local apply-on-ACK path and the
+stream-replay path two separate projection instances that never meet, so this
+particular bug class cannot occur there by construction. Neither SDK has
+published a position on which topology is "correct" — this section states
+this SDK's own design intent without asserting that Python's is wrong.
+
 ## BaseProjection (custom modes)
 
 `BaseProjection` is the abstract base for projections of custom (extension)
