@@ -117,6 +117,15 @@ export class HttpTransportAdapter implements TransportAdapter {
             if (itemSeq > this.lastSeq) {
               this.lastSeq = itemSeq;
             }
+            // Normalize message_id -> messageId before yielding: without
+            // this, `raw` is the raw snake_case JSON straight off the wire,
+            // so `raw.messageId` is `undefined` and the projection's
+            // redelivery guard (`if (envelope.messageId)`,
+            // `src/projections/base.ts`) short-circuits — every polled
+            // envelope looks id-less and skips dedup entirely, leaving HTTP
+            // polling silently unprotected against RFC-MACP-0006 §3.2
+            // redelivery.
+            const messageId = (item.message_id as string) ?? (item.messageId as string) ?? '';
             yield {
               messageType: (item.message_type as string) ?? (item.messageType as string) ?? '',
               sender: (item.sender as string) ?? '',
@@ -125,7 +134,7 @@ export class HttpTransportAdapter implements TransportAdapter {
                   ? (item.payload as Record<string, unknown>)
                   : this.tryParsePayload(item.payload as Buffer | Uint8Array | string),
               proposalId: (item.proposal_id as string) ?? (item.proposalId as string),
-              raw: item as unknown as Envelope,
+              raw: { ...item, messageId } as unknown as Envelope,
               seq: this.seq++,
             };
           }

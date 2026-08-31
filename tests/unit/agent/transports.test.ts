@@ -2,6 +2,8 @@ import { describe, it, expect, vi } from 'vitest';
 import { GrpcTransportAdapter, HttpTransportAdapter, type HttpPollingConfig } from '../../../src/agent/transports';
 import type { Envelope } from '../../../src/types';
 import { MODE_DECISION } from '../../../src/constants';
+import { ProtoRegistry } from '../../../src/proto-registry';
+import { DecisionProjection } from '../../../src/projections/decision';
 
 function makeEnvelope(overrides?: Partial<Envelope>): Envelope {
   return {
@@ -425,5 +427,100 @@ describe('HttpTransportAdapter', () => {
     expect(fetchCall[1].headers['Authorization']).toBeUndefined();
 
     vi.unstubAllGlobals();
+  });
+
+  // Plan: plans/rfc-0007-first-vote-stands.md Phase 2, Approach step 6. The
+  // array (Python-style) branch builds `raw` directly off raw snake_case JSON
+  // (`item.message_type` etc.) — without normalizing `message_id ->
+  // messageId`, `raw.messageId` is `undefined`, so a projection's mandatory
+  // `if (envelope.messageId)` redelivery guard (src/projections/base.ts)
+  // short-circuits and every polled envelope looks id-less, skipping dedup
+  // entirely. These two tests pin the fix.
+  describe('array (Python-style) branch: message_id normalization', () => {
+    it('normalizes item.message_id into raw.messageId', async () => {
+      const mockFetch = vi.fn().mockImplementation(async () => ({
+        ok: true,
+        json: async () => [
+          {
+            message_id: 'poll-msg-1',
+            message_type: 'Proposal',
+            sender: 'agent-a',
+            payload: { proposalId: 'p1', option: 'deploy' },
+            seq: 0,
+          },
+        ],
+      }));
+
+      vi.stubGlobal('fetch', mockFetch);
+
+      const config: HttpPollingConfig = {
+        baseUrl: 'http://localhost:3000',
+        sessionId: 'session-1',
+        participantId: 'agent-1',
+        pollIntervalMs: 10,
+      };
+
+      const adapter = new HttpTransportAdapter(config);
+      const messages = [];
+      for await (const msg of adapter.start()) {
+        messages.push(msg);
+        await adapter.stop();
+        break;
+      }
+
+      expect(messages).toHaveLength(1);
+      expect((messages[0]!.raw as unknown as Envelope).messageId).toBe('poll-msg-1');
+
+      vi.unstubAllGlobals();
+    });
+
+    it('a redelivered polled envelope (same message_id) is deduped once fed to a projection', async () => {
+      // The adapter itself does not dedup — `message_id` dedup is a
+      // projection-level guard (src/projections/base.ts). This test proves
+      // the normalization above is sufficient for that guard to actually see
+      // a real id for HTTP-polled envelopes, closing the gap described above.
+      const registry = new ProtoRegistry();
+      const encoded = registry.encodeKnownPayload(MODE_DECISION, 'Proposal', { proposalId: 'p1', option: 'deploy' });
+
+      let callCount = 0;
+      const mockFetch = vi.fn().mockImplementation(async () => {
+        callCount++;
+        const item = {
+          mode: MODE_DECISION,
+          message_id: 'poll-msg-dup',
+          message_type: 'Proposal',
+          sender: 'agent-a',
+          payload: encoded,
+          seq: callCount - 1,
+        };
+        // Same message_id delivered on two successive polls (redelivery).
+        return { ok: true, json: async () => [item] };
+      });
+
+      vi.stubGlobal('fetch', mockFetch);
+
+      const config: HttpPollingConfig = {
+        baseUrl: 'http://localhost:3000',
+        sessionId: 'session-1',
+        participantId: 'agent-1',
+        pollIntervalMs: 10,
+      };
+
+      const adapter = new HttpTransportAdapter(config);
+      const projection = new DecisionProjection();
+      let seen = 0;
+      for await (const msg of adapter.start()) {
+        projection.applyEnvelope(msg.raw as unknown as Envelope, registry);
+        seen++;
+        if (seen >= 2) {
+          await adapter.stop();
+          break;
+        }
+      }
+
+      expect(projection.transcript).toHaveLength(1);
+
+      vi.unstubAllGlobals();
+    });
   });
 });

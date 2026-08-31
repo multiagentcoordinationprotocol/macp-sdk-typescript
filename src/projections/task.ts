@@ -1,4 +1,6 @@
 import { MODE_TASK } from '../constants';
+import { logger } from '../logging';
+import type { ProjectionAnomaly } from './base';
 import type { Envelope } from '../types';
 import type { ProtoRegistry } from '../proto-registry';
 
@@ -43,12 +45,58 @@ export class TaskProjection {
   readonly updates: TaskUpdateRecord[] = [];
   readonly completions: TaskCompletionRecord[] = [];
   readonly failures: TaskFailureRecord[] = [];
+  /**
+   * The session's accepted history, one envelope per unique `message_id`. See
+   * `BaseProjection.transcript` (`src/projections/base.ts`) for the full
+   * redelivery-idempotence contract (RFC-MACP-0006 §3.2); duplicated here
+   * only as a one-line pointer.
+   */
   readonly transcript: Envelope[] = [];
+  /**
+   * Cardinality anomalies recorded while replaying this projection's accepted
+   * transcript. See `BaseProjection.anomalies` (`src/projections/base.ts`)
+   * for the canonical description; duplicated here only as a one-line
+   * pointer. No built-in detection populates this for Task mode.
+   */
+  readonly anomalies: ProjectionAnomaly[] = [];
   phase: 'Pending' | 'Requested' | 'InProgress' | 'Completed' | 'Failed' | 'Committed' = 'Pending';
   commitment?: Record<string, unknown>;
+  /**
+   * `message_id`s already applied to this projection. See
+   * `BaseProjection.seenMessageIds` (`src/projections/base.ts`) for the full
+   * redelivery-idempotence rationale (RFC-MACP-0006 §3.2); duplicated here
+   * only as a one-line pointer.
+   */
+  private readonly seenMessageIds = new Set<string>();
 
+  /**
+   * Apply one envelope to this projection's in-process state.
+   *
+   * Input contract: **accepted-only**, caller-maintained (`Envelope` carries
+   * no acceptance marker). Canonical source: `schemas/conformance/README.md`
+   * "Notes:", RFC-MACP-0007 §5.3, RFC-MACP-0011 §5. Full rationale and failure
+   * mode are documented once, on `BaseProjection.applyEnvelope`
+   * (`src/projections/base.ts`), and duplicated here only as a one-line
+   * pointer so six independent copies of the same prose cannot drift.
+   *
+   * Redelivery idempotence: a redelivered envelope (same `message_id`) is a
+   * non-event — not appended to `transcript`, not passed to the `switch`.
+   * See `BaseProjection.applyEnvelope` for the full RFC-MACP-0006 §3.2
+   * citation; duplicated here only as a one-line pointer.
+   */
   applyEnvelope(envelope: Envelope, protoRegistry: ProtoRegistry): void {
     if (envelope.mode !== MODE_TASK) return;
+    if (envelope.messageId) {
+      if (this.seenMessageIds.has(envelope.messageId)) {
+        logger.debug('projection redelivery ignored', {
+          messageId: envelope.messageId,
+          mode: envelope.mode,
+          messageType: envelope.messageType,
+        });
+        return;
+      }
+      this.seenMessageIds.add(envelope.messageId);
+    }
     this.transcript.push(envelope);
     const payload = protoRegistry.decodeKnownPayload(envelope.mode, envelope.messageType, envelope.payload);
     switch (envelope.messageType) {
@@ -132,6 +180,15 @@ export class TaskProjection {
       default:
         break;
     }
+  }
+
+  /**
+   * True once at least one `ProjectionAnomaly` has been recorded. See
+   * `BaseProjection.hasAnomalies` (`src/projections/base.ts`) for the
+   * canonical description; duplicated here only as a one-line pointer.
+   */
+  get hasAnomalies(): boolean {
+    return this.anomalies.length > 0;
   }
 
   get isCommitted(): boolean {

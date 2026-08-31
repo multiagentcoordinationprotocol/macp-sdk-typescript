@@ -1,4 +1,6 @@
 import { MODE_DECISION } from '../constants';
+import { logger } from '../logging';
+import type { ProjectionAnomaly } from './base';
 import type { Envelope } from '../types';
 import type { ProtoRegistry } from '../proto-registry';
 
@@ -36,12 +38,59 @@ export class DecisionProjection {
   readonly evaluations: DecisionEvaluationRecord[] = [];
   readonly objections: DecisionObjectionRecord[] = [];
   readonly votes = new Map<string, Map<string, DecisionVoteRecord>>();
+  /**
+   * The session's accepted history, one envelope per unique `message_id`. See
+   * `BaseProjection.transcript` (`src/projections/base.ts`) for the full
+   * redelivery-idempotence contract (RFC-MACP-0006 §3.2); duplicated here
+   * only as a one-line pointer.
+   */
   readonly transcript: Envelope[] = [];
+  /**
+   * Cardinality anomalies recorded while replaying this projection's accepted
+   * transcript (e.g. a duplicate `Vote` from the same sender for the same
+   * `proposal_id`). See `BaseProjection.anomalies` (`src/projections/base.ts`)
+   * for the canonical description; duplicated here only as a one-line
+   * pointer.
+   */
+  readonly anomalies: ProjectionAnomaly[] = [];
   phase: 'Proposal' | 'Evaluation' | 'Voting' | 'Committed' = 'Proposal';
   commitment?: Record<string, unknown>;
+  /**
+   * `message_id`s already applied to this projection. See
+   * `BaseProjection.seenMessageIds` (`src/projections/base.ts`) for the full
+   * redelivery-idempotence rationale (RFC-MACP-0006 §3.2); duplicated here
+   * only as a one-line pointer.
+   */
+  private readonly seenMessageIds = new Set<string>();
 
+  /**
+   * Apply one envelope to this projection's in-process state.
+   *
+   * Input contract: **accepted-only**, caller-maintained (`Envelope` carries
+   * no acceptance marker). Canonical source: `schemas/conformance/README.md`
+   * "Notes:", RFC-MACP-0007 §5.3, RFC-MACP-0011 §5. Full rationale and failure
+   * mode are documented once, on `BaseProjection.applyEnvelope`
+   * (`src/projections/base.ts`), and duplicated here only as a one-line
+   * pointer so six independent copies of the same prose cannot drift.
+   *
+   * Redelivery idempotence: a redelivered envelope (same `message_id`) is a
+   * non-event — not appended to `transcript`, not passed to the `switch`.
+   * See `BaseProjection.applyEnvelope` for the full RFC-MACP-0006 §3.2
+   * citation; duplicated here only as a one-line pointer.
+   */
   applyEnvelope(envelope: Envelope, protoRegistry: ProtoRegistry): void {
     if (envelope.mode !== MODE_DECISION) return;
+    if (envelope.messageId) {
+      if (this.seenMessageIds.has(envelope.messageId)) {
+        logger.debug('projection redelivery ignored', {
+          messageId: envelope.messageId,
+          mode: envelope.mode,
+          messageType: envelope.messageType,
+        });
+        return;
+      }
+      this.seenMessageIds.add(envelope.messageId);
+    }
     this.transcript.push(envelope);
     const payload = protoRegistry.decodeKnownPayload(envelope.mode, envelope.messageType, envelope.payload);
     switch (envelope.messageType) {
@@ -69,6 +118,25 @@ export class DecisionProjection {
       case 'Vote': {
         const record = payload as { proposalId: string; vote: string; reason?: string };
         const bySender = this.votes.get(record.proposalId) ?? new Map<string, DecisionVoteRecord>();
+        const kept = bySender.get(envelope.sender);
+        if (kept !== undefined) {
+          // RFC-MACP-0007 §5 item 3: the first accepted Vote stands. A conforming
+          // runtime NACKs the duplicate (macp-runtime decision.rs), so reaching
+          // here means the transcript was not filtered to a conforming
+          // runtime's accepted history.
+          const anomaly: ProjectionAnomaly = {
+            kind: 'duplicate_vote',
+            mode: envelope.mode,
+            messageType: envelope.messageType,
+            messageId: envelope.messageId,
+            sender: envelope.sender,
+            subjectId: record.proposalId,
+            detail: `sender ${envelope.sender} already voted '${kept.vote}' on proposal ${record.proposalId}; discarded '${record.vote}'`,
+          };
+          this.anomalies.push(anomaly);
+          logger.warn('projection anomaly', anomaly);
+          break;
+        }
         bySender.set(envelope.sender, { ...record, sender: envelope.sender });
         this.votes.set(record.proposalId, bySender);
         this.phase = 'Voting';
@@ -82,6 +150,15 @@ export class DecisionProjection {
       default:
         break;
     }
+  }
+
+  /**
+   * True once at least one `ProjectionAnomaly` has been recorded. See
+   * `BaseProjection.hasAnomalies` (`src/projections/base.ts`) for the
+   * canonical description; duplicated here only as a one-line pointer.
+   */
+  get hasAnomalies(): boolean {
+    return this.anomalies.length > 0;
   }
 
   get isCommitted(): boolean {

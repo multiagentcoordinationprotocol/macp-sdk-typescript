@@ -1,8 +1,10 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { describe, it, expect } from 'vitest';
+import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
 import { buildEnvelope } from '../../src/envelope';
+import { _resetLoggingForTests, configureLogging, type LogSink } from '../../src/logging';
 import { ProtoRegistry } from '../../src/proto-registry';
+import { duplicateAcceptedBallots } from './duplicate-ballots';
 import {
   MODE_DECISION,
   MODE_PROPOSAL,
@@ -27,7 +29,7 @@ import {
   UNKNOWN_POLICY_VERSION,
   INVALID_POLICY_DEFINITION,
 } from '../../src/constants';
-import { BaseProjection } from '../../src/projections/base';
+import { BaseProjection, type ProjectionAnomaly } from '../../src/projections/base';
 import { DecisionProjection } from '../../src/projections/decision';
 import { ProposalProjection } from '../../src/projections/proposal';
 import { TaskProjection } from '../../src/projections/task';
@@ -71,6 +73,13 @@ type ProjectionLike = {
   applyEnvelope(envelope: ReturnType<typeof buildEnvelope>, registry: ProtoRegistry): void;
   phase: string;
   commitment?: Record<string, unknown>;
+  // Phase 6 (issue #55): optional because this local `ProjectionLike` is
+  // structurally distinct from `src/agent/types.ts`'s exported interface of
+  // the same name — see that file for the deliberate divergence. Only
+  // `DecisionProjection` and `QuorumProjection` populate `anomalies` today;
+  // every fixture must still replay with zero, so an empty array/undefined
+  // is the passing case for the other four mode projections.
+  anomalies?: readonly ProjectionAnomaly[];
 };
 
 // Shape of expected_mode_state.votes (decision mode). Named alias so the `as`
@@ -194,6 +203,28 @@ const fixtureFiles = fs
   .sort();
 
 describe('conformance: projection replay', () => {
+  // Phase 6 (issue #55): the array (`anomalies`) and the log
+  // (`logger.warn('projection anomaly', ...)`) are independent channels —
+  // both must be silent across every canonical fixture replay. An injected
+  // sink lets each fixture's `it()` assert zero 'projection anomaly' warn
+  // calls without touching global logging state between tests.
+  let sink: LogSink & ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    sink = vi.fn();
+    // Pin the level: configureLogging({ sink }) alone leaves the level to
+    // MACP_LOG_LEVEL, and under `error`/`silent` emit() short-circuits so the
+    // sink is never called -- the zero-warn assertion below would then pass
+    // against an empty array for the wrong reason, silently collapsing the
+    // two independent channels into one. afterEach's _resetLoggingForTests()
+    // restores the env-derived level.
+    configureLogging({ level: 'warn', sink });
+  });
+
+  afterEach(() => {
+    _resetLoggingForTests();
+  });
+
   for (const file of fixtureFiles) {
     const fixtureName = path.basename(file, '.json');
     const fixture: Fixture = JSON.parse(fs.readFileSync(path.join(FIXTURE_DIR, file), 'utf8'));
@@ -234,6 +265,20 @@ describe('conformance: projection replay', () => {
       const transcript = (projection as unknown as { transcript: unknown[] }).transcript;
       expect(transcript.length).toBe(acceptedMessages.length);
 
+      // Phase 6 (issue #55): every canonical fixture must replay with ZERO
+      // anomalies. `DecisionProjection`/`QuorumProjection` are the only two
+      // that populate `anomalies` today; the other four are always `[]`/
+      // `undefined` here. A non-empty array means either a fixture regressed
+      // to carrying a duplicate accepted Vote/ballot (see the sibling
+      // 'conformance: no duplicate accepted vote or ballot' describe below,
+      // which should have already caught it) or a projection is
+      // over-flagging a conforming transcript.
+      const anomalies = projection.anomalies ?? [];
+      expect(
+        anomalies,
+        `${fixtureName}: expected zero projection anomalies, found ${JSON.stringify(anomalies)}`,
+      ).toEqual([]);
+
       // Commitment presence is driven solely by the terminal state:
       // RESOLVED ⇒ committed. Identical rule to the python harness.
       if (fixture.expected_final_state === 'Resolved') {
@@ -266,6 +311,43 @@ describe('conformance: projection replay', () => {
           }
         }
       }
+
+      // Phase 6 (issue #55): the log channel is independent of the
+      // `anomalies` array above and must be silent too — no
+      // `logger.warn('projection anomaly', ...)` for a conforming replay.
+      const anomalyWarnCalls = sink.mock.calls.filter(
+        ([level, args]) => level === 'warn' && args[0] === 'projection anomaly',
+      );
+      expect(
+        anomalyWarnCalls,
+        `${fixtureName}: expected zero 'projection anomaly' warn logs, found ${JSON.stringify(anomalyWarnCalls)}`,
+      ).toEqual([]);
+    });
+  }
+});
+
+// Phase 6 (issue #55): no canonical fixture may carry a duplicate *accepted*
+// Vote (Decision) or ballot (Quorum, collapsed across Approve/Reject/Abstain)
+// from the same sender for the same subject — a conforming runtime never
+// produces one. If this ever fails, the fix belongs upstream in the spec
+// repo's `schemas/conformance/` directory: `tests/conformance/*.json` here
+// are vendored copies gated bidirectionally by `make verify-fixtures`, so a
+// local edit to quiet this guard would just fail that gate as DRIFT instead.
+describe('conformance: no duplicate accepted vote or ballot', () => {
+  for (const file of fixtureFiles) {
+    const fixtureName = path.basename(file, '.json');
+    const fixture: Fixture = JSON.parse(fs.readFileSync(path.join(FIXTURE_DIR, file), 'utf8'));
+
+    it(`${fixtureName}: no accepted message duplicates a Vote or ballot`, () => {
+      const duplicates = duplicateAcceptedBallots(fixture.messages);
+      const description = duplicates
+        .map((d) => `sender=${d.sender} id=${d.id} messageType=${d.messageType}`)
+        .join(', ');
+      expect(
+        duplicates,
+        `${fixtureName} has duplicate accepted Vote/ballot(s): ${description} — fixtures are canonical; ` +
+          'fix upstream in the spec repo, never locally',
+      ).toEqual([]);
     });
   }
 });

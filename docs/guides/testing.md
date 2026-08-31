@@ -16,7 +16,7 @@ a live runtime (see [Integration Tests](#integration-tests) below).
 ```
 tests/
 ├── unit/
-│   ├── projections/            # Per-mode projection state machines (5 files)
+│   ├── projections/            # Per-mode projection state machines (5 files) + accepted-only-contract.test.ts + message-id-dedup.test.ts
 │   ├── sessions/               # Per-mode session helpers (5 files) + session-id-validation.test.ts
 │   ├── agent/                  # Dispatcher, participant, strategies, transports, runner, cancel-callback
 │   ├── helpers/
@@ -27,6 +27,7 @@ tests/
 │   ├── commitment-hash-frozen-fields.test.ts  # Runs real tsc over mutated CommitmentPayload copies
 │   ├── client-stream.test.ts   # MacpStream data path (openStream, responses, read, close)
 │   ├── client-unary.test.ts    # Full unary RPC surface + metadata/deadline dispatch matrix
+│   ├── conformance-guard.test.ts  # duplicateAcceptedBallots() over synthetic input
 │   ├── envelope.test.ts        # Envelope builder functions
 │   ├── errors.test.ts          # Error class hierarchy
 │   ├── fixture-drift-gate.test.ts  # Drives the real `make verify-fixtures`/`sync-fixtures` recipes
@@ -37,7 +38,8 @@ tests/
 │   ├── validation.test.ts      # Runtime-adjacent payload validation
 │   └── watchers.test.ts        # Registry/roots/signal/policy/session-lifecycle watchers
 ├── conformance/
-│   ├── conformance.test.ts     # Fixture-driven projection replay harness
+│   ├── conformance.test.ts     # Fixture-driven projection replay harness + anomaly/duplicate guards
+│   ├── duplicate-ballots.ts    # duplicateAcceptedBallots() — non-test module, imported by both the harness and conformance-guard.test.ts
 │   ├── schema.json             # Fixture schema (shared with the spec repo)
 │   └── *_happy_path.json / *_reject_paths.json / …   # Per-mode fixtures + ext.multi_round.v1
 ├── vectors/
@@ -54,12 +56,12 @@ tests/
 `vitest.config.ts` enforces v8 coverage thresholds over `src/**` (pure
 type/barrel files are excluded so they don't skew the function percentage):
 
-| Metric | Floor | Measured (2026-08 suite) |
-|--------|-------|--------------------------|
-| Lines | 92 | 94.60 |
-| Branches | 81 | 83.87 |
-| Functions | 90 | 92.28 |
-| Statements | 91 | 93.13 |
+| Metric | Floor | Measured (2026-08-31 suite) |
+|--------|-------|-----------------------------|
+| Lines | 93 | 95.65 |
+| Branches | 83 | 85.28 |
+| Functions | 90 | 92.65 |
+| Statements | 92 | 94.13 |
 
 The convention: **floors are the current measured value minus 2 percentage
 points**, and they are raised when new tests land. CI gates on these via
@@ -165,6 +167,17 @@ loop end to end (with a fake transport):
   `proposalId` to `<sessionId>-kickoff` and `option` to `"decide"`, and
   accepts the snake_case `proposal_id` spelling.
 
+The file's `makeIncomingMessage` helper mints a **distinct** `messageId` per
+call. Since `applyEnvelope` (`src/projections/base.ts`) dedups by
+`message_id`, reusing one hardcoded id across multiple
+messages in the same test would silently drop every message after the first
+from the real projection instance the session applies to — invisible to
+tests that only assert handler calls, since `processMessage` dispatches
+handlers *after* applying to the projection. `'two distinct envelopes both
+land on the projection (not silently deduped)'` is the regression test for
+this: it asserts projection state (`evaluations.length`), not just handler
+invocation counts.
+
 ## Writing Projection Tests
 
 Projections are pure state machines — they accept envelopes and update internal state. This makes them ideal for unit testing without any I/O:
@@ -244,6 +257,83 @@ For each projection:
 - **Query helpers**: Test convenience methods with edge cases
 - **Commitment handling**: Verify terminal state
 - **Mode isolation**: Envelopes for other modes are ignored
+- **Redelivery idempotence**: applying the same `message_id` twice must not
+  double-append to `transcript` or to any accumulate-on-apply site (see
+  `tests/unit/projections/message-id-dedup.test.ts`, and [Projections API ›
+  Redelivery](../api/projections.md#redelivery-message_id-dedup))
+- **Anomalies surface**: `anomalies` starts empty and `hasAnomalies` starts
+  `false` on every projection; only `DecisionProjection` (duplicate `Vote`)
+  and `QuorumProjection` (duplicate ballot) populate it (see [Projections API
+  › Anomalies](../api/projections.md#anomalies))
+
+### Testing redelivery (`message_id` dedup)
+
+`tests/unit/projections/message-id-dedup.test.ts` covers `applyEnvelope`'s
+RFC-MACP-0006 §3.2 redelivery idempotence across all six entry points (the
+five built-in mode projections plus a third-party `BaseProjection` subclass).
+The pattern to copy for a new accumulate-on-apply site:
+
+```typescript
+it('redelivery does not duplicate the <site>', () => {
+  const projection = new SomeProjection();
+  const envelope = buildEnvelope({
+    mode: MODE_SOME_MODE,
+    messageType: 'SomeMessageType',
+    sessionId: 'test-session',
+    sender: 'sender',
+    messageId: 'm-reused', // explicit, REUSED — never buildEnvelope's auto-minted id
+    payload: registry.encodeKnownPayload(MODE_SOME_MODE, 'SomeMessageType', { ... }),
+  });
+  projection.applyEnvelope(envelope, registry);
+  projection.applyEnvelope(envelope, registry); // redelivery
+  expect(projection.someAccumulateSite).toHaveLength(1);
+});
+```
+
+Two traps this file guards against, worth remembering when adding coverage
+elsewhere:
+- **Always pass an explicit, reused `messageId`.** `buildEnvelope` auto-mints
+  a fresh id per call when one isn't given, so two calls without an explicit
+  shared id exercise the *cardinality* path, not the *dedup* path — the test
+  would pass while testing nothing.
+- **Empty `messageId` (`''`) must never be deduped** — the guard is gated on
+  `if (envelope.messageId)`. A test asserting the debug log line must use
+  `configureLogging({ level: 'debug', sink })`; the SDK's default level
+  (`warn`) suppresses `debug` entirely, so a test left at the default level
+  passes vacuously regardless of whether the log call fires.
+
+### Testing the anomalies surface
+
+`tests/unit/projections/anomalies.test.ts` covers the `anomalies` surface:
+types, the `anomalies` field, the `hasAnomalies` getter, and
+`BaseProjection.recordAnomaly`. `BaseProjection.recordAnomaly` has no
+built-in-mode caller — the five built-in mode projections do NOT extend
+`BaseProjection` and inline their own two lines at their duplicate-detection
+call sites instead (see [Projections API ›
+Anomalies](../api/projections.md#anomalies)) — so the tests exercise
+`recordAnomaly` through a synthetic third-party `BaseProjection` subclass
+instead.
+
+Two things worth copying when Phases 4-5 add real detection (Decision `Vote`,
+Quorum ballots), or when testing a custom ext-mode's own anomaly detection:
+
+- **Test the array and the `logger.warn` call as separate assertions in
+  separate tests**, not combined in one test with the array assertion first.
+  If an assertion earlier in a test throws, later assertions in the same test
+  body never run — so a mutation that breaks only the log call can look like
+  it also "breaks" an array assertion that was never actually re-verified,
+  and vice versa. Splitting them into sibling `it()`s (mirrored in
+  `anomalies.test.ts`: "... (array half only)" / "... (sink half only)")
+  makes each half's non-vacuity independently provable: deleting the `push`
+  fails only the array-half tests, deleting `logger.warn` fails only the
+  sink-half tests.
+- **Construct a fresh instance per test and assert non-sharing explicitly.**
+  `anomalies` (like `transcript`) is a `readonly` instance field initialized
+  in a property initializer, but `readonly` does not prevent two instances
+  from accidentally sharing the same array if a future refactor moves the
+  initializer to a shared location (e.g. a static or prototype default).
+  Assert `a.anomalies !== b.anomalies` across two instances, not just that
+  lengths differ.
 
 ## Conformance Tests
 
@@ -252,6 +342,17 @@ For each projection:
 each fixture's **accepted** message prefix is encoded via a real
 `ProtoRegistry`, applied to the mode's projection, and the resulting phase,
 resolution, and mode state are asserted against the fixture's expectations.
+
+The harness's `acceptedMessages` filter in
+`tests/conformance/conformance.test.ts` — `fixture.messages.filter((m) =>
+m.expect === 'accept')` — is not an incidental implementation detail — it is
+this harness upholding
+`applyEnvelope`'s accepted-only input contract (see [Projections API ›
+Input contract](../api/projections.md#input-contract)). `applyEnvelope`
+cannot verify that contract itself (`Envelope` carries no acceptance marker),
+so every caller, including this harness, is responsible for filtering before
+replay. `tests/unit/projections/accepted-only-contract.test.ts` demonstrates
+what happens when a caller skips that filtering step.
 
 The fixture-sync contract — what a conformant SDK must replay and how fixtures
 and protos are kept in lockstep with the spec — is canonical in the spec's
@@ -278,6 +379,39 @@ Harness behaviours worth knowing:
   [runtime testing guide](https://github.com/multiagentcoordinationprotocol/macp-runtime/blob/main/docs/testing.md)).
   The suite carries explicit `it.skip` markers documenting that
   split rather than pretending to cover it.
+- **Zero anomalies, zero anomaly warnings, on every canonical fixture.**
+  After the transcript-length assertion, each replay also asserts
+  `projection.anomalies` is empty and that no `logger.warn('projection
+  anomaly', ...)` fired during that replay (an injected sink, reset per
+  fixture, makes the log channel observable). The array and the log are
+  independent channels — see [Projections API ›
+  Anomalies](../api/projections.md#anomalies) — and both must be silent for a
+  conforming transcript. A non-empty result here means either a fixture
+  regressed to carrying a duplicate accepted Vote/ballot (the next bullet
+  should already have caught that) or a projection is over-flagging.
+- **No duplicate accepted Vote or ballot in any fixture.** A sibling
+  `describe` (`conformance: no duplicate accepted vote or ballot`) runs
+  `duplicateAcceptedBallots` (`tests/conformance/duplicate-ballots.ts`) over
+  every fixture's messages and asserts `[]`. The predicate is scoped to
+  `expect === 'accept'` — a *rejected* duplicate is exactly the missing
+  upstream fixture this SDK has requested from the spec repo
+  ([multiagentcoordinationprotocol#84](https://github.com/multiagentcoordinationprotocol/multiagentcoordinationprotocol/issues/84);
+  a `decision_reject_paths.json`/`quorum_reject_paths.json` case with
+  `"expect": "reject"` / `"expected_error_code": "INVALID_ENVELOPE"` for a
+  duplicate Vote/ballot), and this guard must welcome that fixture landing,
+  not treat it as a violation. The predicate lives in its own non-test
+  module, not in `conformance.test.ts`, so `tests/unit/conformance-guard.test.ts`
+  can unit-test it against synthetic input without re-registering
+  `conformance.test.ts`'s three module-scope `describe` blocks. See that
+  module's docblock for why the ballot arm must be gated on the message's own
+  `payload_type` rather than on `message_type` name alone — `Reject` is
+  defined identically-named in both Proposal and Quorum mode, and both are
+  live in the canonical corpus.
+- **Fixtures are canonical — never hand-edit `tests/conformance/*.json`.**
+  If either guard above ever fails against a real fixture, the fix belongs
+  upstream in the spec repo; `make verify-fixtures` diffs this SDK's copies
+  against the canonical source bidirectionally, so a local edit would just
+  fail that gate as `DRIFT` instead of fixing anything.
 
 ### Fixture Drift Gate
 
