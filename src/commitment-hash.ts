@@ -127,6 +127,54 @@ function jcsBoolean(value: unknown): string {
 }
 
 /**
+ * The exact `CommitmentPayload` member set that `canonicalizeCommitmentPayload`
+ * below projects and hashes — RFC-MACP-0013's frozen field set, expressed as a
+ * type rather than a runtime array because the projection is a hand-unrolled
+ * string builder with no runtime field list to compare against.
+ */
+type HashedCommitmentField =
+  | 'action'
+  | 'authorityScope'
+  | 'commitmentId'
+  | 'configurationVersion'
+  | 'modeVersion'
+  | 'outcomePositive'
+  | 'policyVersion'
+  | 'reason'
+  | 'supersedes';
+
+/** Fails to instantiate — a `tsc` error — for any `T` that is not `never`. */
+type AssertNever<T extends never> = T;
+
+/**
+ * Compile-time frozen-field-set guard (parity with macp-sdk-python's runtime
+ * `_check_frozen_field_set`, which this SDK previously had no equivalent of).
+ *
+ * `canonicalizeCommitmentPayload` hard-codes its member list. Without this
+ * alias, a `CommitmentPayload` that grew a tenth field would keep hashing only
+ * nine — no compile error, no runtime error, just a hash that silently omits
+ * new protocol data. Adding such a field is itself a protocol MINOR bump per
+ * this module's header, so the intended workflow when this alias goes red is:
+ * project the new field into the member list below (in RFC 8785 §3.2.3
+ * code-unit order), publish new spec vectors, then extend
+ * `HashedCommitmentField` — never to widen the union alone.
+ *
+ * Both directions are checked. A field ADDED to `CommitmentPayload` and not
+ * listed above leaves the first `Exclude` non-empty; a field REMOVED from
+ * `CommitmentPayload` while still listed above (and so still emitted, as an
+ * empty string, by the projection) leaves the second non-empty. Either way
+ * `AssertNever`'s `T extends never` constraint fails and `npm run check` — and
+ * therefore CI and `prepublishOnly` — goes red on this line.
+ *
+ * Zero runtime cost: this is a type alias, erased at compile time. It is
+ * intentionally never referenced, which is what the disable comment is for.
+ */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+type _CommitmentFieldSetIsFrozen = AssertNever<
+  Exclude<keyof CommitmentPayload, HashedCommitmentField> | Exclude<HashedCommitmentField, keyof CommitmentPayload>
+>;
+
+/**
  * Projects a `CommitmentPayload` (this SDK's camelCase shape) to its RFC
  * 8785 canonical JSON string (snake_case, D2.1) and serializes it directly
  * — no intermediate object graph — in the fixed member order below.

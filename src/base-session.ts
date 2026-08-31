@@ -44,7 +44,7 @@ export abstract class BaseSession<P extends BaseProjection> {
 
   constructor(client: MacpClient, options: BaseSessionOptions = {}) {
     this.client = client;
-    if (options.sessionId) validateSessionId(options.sessionId);
+    if (options.sessionId !== undefined) validateSessionId(options.sessionId);
     this.sessionId = options.sessionId ?? newSessionId();
     this.modeVersion = options.modeVersion ?? DEFAULT_MODE_VERSION;
     this.configurationVersion = options.configurationVersion ?? DEFAULT_CONFIGURATION_VERSION;
