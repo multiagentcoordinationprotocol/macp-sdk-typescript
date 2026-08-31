@@ -84,6 +84,14 @@ value automatically; the standalone builder keeps the `'policy.default'` default
 for backward compatibility (pass `policyVersion: ''` to opt into empty-echo —
 `''` is not coalesced by the default).
 
+When `supersedes` is provided (any non-`undefined` value), it must be a
+`CommitmentRef` object — `null` or any other non-object value throws
+`MacpSessionError` rather than being silently dropped. A well-formed object's
+`commitmentHash` is then validated the same way as in `buildCommitmentRef`
+(`sha256:<64 lowercase hex>`, else throws `MacpSessionError`) — build it with
+`buildCommitmentRef()` (see below) rather than constructing a `CommitmentRef`
+by hand.
+
 ## `inferOutcomePositive(action)`
 
 Infers a commitment's outcome polarity from its action string: returns `false`
@@ -102,12 +110,16 @@ inferOutcomePositive('deployment.rejected'); // false
 
 Builds a `CommitmentRef` pointing at a prior accepted commitment, for use as
 `buildCommitmentPayload({ supersedes })` (cross-session supersession,
-RFC-MACP-0001 §7.3).
+RFC-MACP-0001 §7.3). Validates that `commitmentHash` has the shape
+`sha256:<64 lowercase hex>` and throws `MacpSessionError` if it doesn't — use
+`commitmentHash()` (from `./commitment-hash`) to produce a valid value from the
+prior `CommitmentPayload`.
 
 ```typescript
-import { buildCommitmentRef } from 'macp-sdk-typescript';
+import { commitmentHash, buildCommitmentRef } from 'macp-sdk-typescript';
 
-const ref = buildCommitmentRef({ sessionId: 'old-session', commitmentHash: 'abc123' });
+const hash = commitmentHash(priorCommitmentPayload); // 'sha256:' + 64 lowercase hex chars
+const ref = buildCommitmentRef({ sessionId: 'old-session', commitmentHash: hash });
 ```
 
 ## `buildSignalPayload(input)` / `buildProgressPayload(input)`

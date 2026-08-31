@@ -4,6 +4,22 @@ All notable changes to `macp-sdk-typescript` are documented here. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the
 project uses [Semantic Versioning](https://semver.org/).
 
+## [0.7.0](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/compare/v0.6.0...v0.7.0) (2026-08-30)
+
+
+### ⚠ BREAKING CHANGES
+
+* RFC-MACP-0013 canonical commitment hash ([#45](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/issues/45))
+
+### Features
+
+* RFC-MACP-0013 canonical commitment hash ([#45](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/issues/45)) ([2af3c51](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/commit/2af3c5156e5831a4d2767175fd8f3154e34ec1af))
+
+
+### Bug Fixes
+
+* reject non-object supersedes instead of silently dropping it ([#49](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/issues/49)) ([b4a68e3](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/commit/b4a68e3f6059d968dabc3f6b43c5e8033fb4957c))
+
 ## [0.6.0](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/compare/v0.5.0...v0.6.0) (2026-07-10)
 
 

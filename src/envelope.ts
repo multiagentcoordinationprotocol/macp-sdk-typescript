@@ -1,5 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { DEFAULT_CONFIGURATION_VERSION, DEFAULT_MODE_VERSION, DEFAULT_POLICY_VERSION, MACP_VERSION } from './constants';
+import { MacpSessionError } from './errors';
+import { validateCommitmentHash } from './validation';
 import type {
   CommitmentPayload,
   CommitmentRef,
@@ -68,9 +70,13 @@ export function inferOutcomePositive(action: string): boolean {
 /**
  * Build a {@link CommitmentRef} pointing at a prior accepted commitment, for
  * use as `buildCommitmentPayload({ supersedes })` (cross-session supersession,
- * RFC-MACP-0001 §7.3). Parity with python-sdk `build_commitment_ref`.
+ * RFC-MACP-0001 §7.3). Use `commitmentHash()` (from `./commitment-hash`) to
+ * produce a valid `commitmentHash` value — this function validates the hash
+ * shape (`sha256:<64 lowercase hex>`) and throws `MacpSessionError` if it
+ * doesn't match. Parity with python-sdk `build_commitment_ref`.
  */
 export function buildCommitmentRef(input: { sessionId: string; commitmentHash: string }): CommitmentRef {
+  validateCommitmentHash(input.commitmentHash);
   return { sessionId: input.sessionId, commitmentHash: input.commitmentHash };
 }
 
@@ -100,7 +106,11 @@ export function buildCommitmentPayload(input: {
   /**
    * Cross-session supersession (RFC-MACP-0001 §7.3): reference to the prior
    * commitment this one supersedes. Distinct from proposal-mode
-   * `supersedesProposalId`. Absent by default. Backward-compatible.
+   * `supersedesProposalId`. Absent by default. Backward-compatible. A
+   * non-`undefined` value that isn't a `CommitmentRef` object (e.g. `null`,
+   * from a caller bypassing the type system) throws `MacpSessionError`
+   * rather than being silently dropped — see RFC-MACP-0013 reconcile,
+   * 2026-08-30.
    */
   supersedes?: CommitmentRef;
 }): CommitmentPayload {
@@ -114,7 +124,16 @@ export function buildCommitmentPayload(input: {
     policyVersion: input.policyVersion ?? DEFAULT_POLICY_VERSION,
     outcomePositive: input.outcomePositive ?? inferOutcomePositive(input.action),
   };
-  if (input.supersedes) payload.supersedes = input.supersedes;
+  if (input.supersedes !== undefined) {
+    if (typeof input.supersedes !== 'object' || input.supersedes === null) {
+      // `String()`, not `JSON.stringify()`: the latter throws on a bigint,
+      // which would replace this deliberate `MacpSessionError` with an
+      // unrelated `TypeError` for that one input shape.
+      throw new MacpSessionError(`supersedes must be a CommitmentRef object, got: ${String(input.supersedes)}`);
+    }
+    validateCommitmentHash(input.supersedes.commitmentHash);
+    payload.supersedes = input.supersedes;
+  }
   return payload;
 }
 

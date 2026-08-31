@@ -28,6 +28,7 @@ tests/
 │   ├── client-unary.test.ts    # Full unary RPC surface + metadata/deadline dispatch matrix
 │   ├── envelope.test.ts        # Envelope builder functions
 │   ├── errors.test.ts          # Error class hierarchy
+│   ├── fixture-drift-gate.test.ts  # Drives the real `make verify-fixtures`/`sync-fixtures` recipes
 │   ├── logging.test.ts         # Structured logger + configureLogging()
 │   ├── policy.test.ts          # Policy builders
 │   ├── proto-registry.test.ts  # Protobuf encode/decode roundtrips
@@ -38,6 +39,10 @@ tests/
 │   ├── conformance.test.ts     # Fixture-driven projection replay harness
 │   ├── schema.json             # Fixture schema (shared with the spec repo)
 │   └── *_happy_path.json / *_reject_paths.json / …   # Per-mode fixtures + ext.multi_round.v1
+├── vectors/
+│   ├── cmt-hash.test.ts        # Spec-vector runner replaying RFC-MACP-0013's canonical vectors
+│   └── cmt-hash/               # Vendored vectors + SOURCE.md (provenance, gated by verify-fixtures)
+├── commitment-hash.test.ts     # RFC-MACP-0013 commitment hash: determinism, JCS, D3
 └── integration/
     ├── README.md               # Runtime setup + bearer envs
     └── runtime.test.ts         # Full-surface tests against a live runtime
@@ -48,12 +53,12 @@ tests/
 `vitest.config.ts` enforces v8 coverage thresholds over `src/**` (pure
 type/barrel files are excluded so they don't skew the function percentage):
 
-| Metric | Floor | Measured (2026-07 suite) |
+| Metric | Floor | Measured (2026-08 suite) |
 |--------|-------|--------------------------|
-| Lines | 94 | 96.05 |
-| Branches | 88 | 90.77 |
-| Functions | 90 | 92.44 |
-| Statements | 94 | 96.05 |
+| Lines | 94 | 96.14 |
+| Branches | 88 | 91.02 |
+| Functions | 90 | 92.54 |
+| Statements | 94 | 96.14 |
 
 The convention: **floors are the current measured value minus 2 percentage
 points**, and they are raised when new tests land. CI gates on these via
@@ -258,6 +263,35 @@ Harness behaviours worth knowing:
   [runtime testing guide](https://github.com/multiagentcoordinationprotocol/macp-runtime/blob/main/docs/testing.md)).
   The suite carries explicit `it.skip` markers documenting that
   split rather than pretending to cover it.
+
+### Fixture Drift Gate
+
+`make verify-fixtures` diffs this SDK's vendored fixtures against the spec repo's
+canonical copies and fails if either has drifted; `make sync-fixtures` refreshes
+the vendored copies from a local spec checkout. Both targets cover **two** fixture
+sets in one invocation:
+
+- `tests/conformance/*.json` against `$(SPEC_CONFORMANCE_DIR)/*.json` (flat).
+- `tests/vectors/cmt-hash/*.json` against `$(SPEC_CONFORMANCE_DIR)/cmt-hash/*.json`
+  (the RFC-MACP-0013 commitment-hash vectors — see
+  [`tests/vectors/cmt-hash/SOURCE.md`](../../tests/vectors/cmt-hash/SOURCE.md) for
+  that directory's provenance).
+
+`verify-fixtures` reports every problem across both sets before exiting — a
+canonical file that differs from (or is missing from) the vendored copy prints
+`DRIFT:`, and a vendored file with no canonical source prints `EXTRA:`. CI runs
+this gate on every PR via `.github/workflows/conformance-fixtures.yml`, so a
+spec-side fixture or vector change that isn't synced here fails the build.
+
+`sync-fixtures` copies but never deletes: if a canonical file is renamed or
+removed upstream, the sync leaves the orphaned vendored file in place and
+`verify-fixtures` keeps reporting it as `EXTRA:` until it's removed by hand.
+
+```bash
+make verify-fixtures                                    # uses the default sibling-checkout path
+make verify-fixtures SPEC_CONFORMANCE_DIR=/path/to/schemas/conformance
+make sync-fixtures SPEC_CONFORMANCE_DIR=/path/to/schemas/conformance
+```
 
 ## Proto Registry Tests
 

@@ -195,6 +195,12 @@ interface CommitmentRef {
 }
 ```
 
+`commitmentHash` must be a canonical RFC-MACP-0013 hash — `sha256:` followed by
+64 lowercase hex digits, as produced by `commitmentHash()` (see
+`src/commitment-hash.ts`). `buildCommitmentRef` and `buildCommitmentPayload`'s
+`supersedes` field both enforce this shape and throw `MacpSessionError`
+otherwise.
+
 ### `SignalPayload`
 
 ```typescript

@@ -13,6 +13,9 @@ import {
   serializeMessage,
 } from '../../src/envelope';
 import { MACP_VERSION } from '../../src/constants';
+import { MacpSessionError } from '../../src/errors';
+
+const VALID_HASH = 'sha256:' + '0'.repeat(64);
 
 describe('envelope builders', () => {
   describe('buildEnvelope', () => {
@@ -155,13 +158,13 @@ describe('envelope builders', () => {
         action: 'deploy',
         authorityScope: 'ops',
         reason: 'revised',
-        supersedes: { sessionId: 'prior-session', commitmentHash: 'abc123' },
+        supersedes: { sessionId: 'prior-session', commitmentHash: VALID_HASH },
       });
-      expect(payload.supersedes).toEqual({ sessionId: 'prior-session', commitmentHash: 'abc123' });
+      expect(payload.supersedes).toEqual({ sessionId: 'prior-session', commitmentHash: VALID_HASH });
     });
 
     it('accepts a CommitmentRef built by buildCommitmentRef', () => {
-      const ref = buildCommitmentRef({ sessionId: 'prior-session', commitmentHash: 'abc123' });
+      const ref = buildCommitmentRef({ sessionId: 'prior-session', commitmentHash: VALID_HASH });
       const payload = buildCommitmentPayload({
         action: 'deploy',
         authorityScope: 'ops',
@@ -170,12 +173,102 @@ describe('envelope builders', () => {
       });
       expect(payload.supersedes).toEqual(ref);
     });
+
+    it('throws MacpSessionError when supersedes has an invalid commitmentHash', () => {
+      expect(() =>
+        buildCommitmentPayload({
+          action: 'deploy',
+          authorityScope: 'ops',
+          reason: 'revised',
+          supersedes: { sessionId: 's', commitmentHash: 'abc123' },
+        }),
+      ).toThrow(MacpSessionError);
+    });
+
+    it('succeeds when supersedes has a valid-shaped commitmentHash', () => {
+      const payload = buildCommitmentPayload({
+        action: 'deploy',
+        authorityScope: 'ops',
+        reason: 'revised',
+        supersedes: { sessionId: 's', commitmentHash: VALID_HASH },
+      });
+      expect(payload.supersedes).toEqual({ sessionId: 's', commitmentHash: VALID_HASH });
+    });
+
+    it('throws MacpSessionError when supersedes is null (bypassing the type system)', () => {
+      expect(() =>
+        buildCommitmentPayload({
+          action: 'deploy',
+          authorityScope: 'ops',
+          reason: 'revised',
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- exercising an out-of-contract caller who bypasses TS
+          supersedes: null as any,
+        }),
+      ).toThrow(MacpSessionError);
+    });
+
+    it('throws MacpSessionError when supersedes is a non-object primitive (bypassing the type system)', () => {
+      expect(() =>
+        buildCommitmentPayload({
+          action: 'deploy',
+          authorityScope: 'ops',
+          reason: 'revised',
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- exercising an out-of-contract caller who bypasses TS
+          supersedes: 'oops' as any,
+        }),
+      ).toThrow(MacpSessionError);
+    });
+
+    it('throws MacpSessionError when supersedes is a bigint (bypassing the type system)', () => {
+      expect(() =>
+        buildCommitmentPayload({
+          action: 'deploy',
+          authorityScope: 'ops',
+          reason: 'revised',
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- exercising an out-of-contract caller who bypasses TS
+          supersedes: 10n as any,
+        }),
+      ).toThrow(MacpSessionError);
+    });
+
+    it('throws MacpSessionError when supersedes is an array (object shape, but not a CommitmentRef)', () => {
+      expect(() =>
+        buildCommitmentPayload({
+          action: 'deploy',
+          authorityScope: 'ops',
+          reason: 'revised',
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- exercising an out-of-contract caller who bypasses TS
+          supersedes: [] as any,
+        }),
+      ).toThrow(MacpSessionError);
+    });
+
+    it('throws MacpSessionError when supersedes is an empty object (object shape, but not a CommitmentRef)', () => {
+      expect(() =>
+        buildCommitmentPayload({
+          action: 'deploy',
+          authorityScope: 'ops',
+          reason: 'revised',
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- exercising an out-of-contract caller who bypasses TS
+          supersedes: {} as any,
+        }),
+      ).toThrow(MacpSessionError);
+    });
   });
 
   describe('buildCommitmentRef', () => {
     it('builds a CommitmentRef from sessionId + commitmentHash', () => {
-      const ref = buildCommitmentRef({ sessionId: 's1', commitmentHash: 'hash-1' });
-      expect(ref).toEqual({ sessionId: 's1', commitmentHash: 'hash-1' });
+      const ref = buildCommitmentRef({ sessionId: 's1', commitmentHash: VALID_HASH });
+      expect(ref).toEqual({ sessionId: 's1', commitmentHash: VALID_HASH });
+    });
+
+    it('throws MacpSessionError for an invalid commitmentHash shape', () => {
+      expect(() => buildCommitmentRef({ sessionId: 's', commitmentHash: 'abc123' })).toThrow(MacpSessionError);
+    });
+
+    it('succeeds and returns the expected object for a valid-shaped commitmentHash', () => {
+      const ref = buildCommitmentRef({ sessionId: 's', commitmentHash: VALID_HASH });
+      expect(ref).toEqual({ sessionId: 's', commitmentHash: VALID_HASH });
     });
   });
 

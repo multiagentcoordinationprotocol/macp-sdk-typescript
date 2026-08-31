@@ -6,6 +6,12 @@
 export { Auth, type AuthConfig, type BearerAuthOptions } from './auth';
 export * from './base-session';
 export * from './client';
+// Commitment hash: export only `commitmentHash`. `canonicalizeCommitmentPayload`
+// is the projection/JCS half of the algorithm — importable from the
+// `./commitment-hash` submodule (as the vector-runner tests do) but kept off
+// the top-level surface to match python-sdk's public API, which does not
+// expose its `canonical_projection` equivalent either.
+export { commitmentHash } from './commitment-hash';
 export * from './constants';
 export * from './decision';
 export * from './envelope';

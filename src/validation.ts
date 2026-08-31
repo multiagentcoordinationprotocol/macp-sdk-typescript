@@ -95,6 +95,14 @@ export function validateRequiredField(fieldName: string, value: string): void {
   }
 }
 
+const COMMITMENT_HASH_RE = /^sha256:[0-9a-f]{64}$/;
+
+export function validateCommitmentHash(value: string, field = 'commitmentHash'): void {
+  if (!COMMITMENT_HASH_RE.test(value)) {
+    throw new MacpSessionError(`${field} must be 'sha256:' followed by 64 lowercase hex characters, got: ${value}`);
+  }
+}
+
 export function validateSessionStart(input: {
   intent: string;
   participants: string[];
