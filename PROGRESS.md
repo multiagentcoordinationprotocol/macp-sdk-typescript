@@ -731,3 +731,58 @@ by the git-status check above.
 - What's next: issue #55's plan is complete across all 7 phases. Ship gate
   (commit, PR, CI) is the user's call — not run in this pass per explicit
   instruction not to commit or push.
+
+---
+
+## Merged checkpoint — issue #55, RFC-MACP-0007 first-vote-stands (2026-08-31)
+
+Shipped as [#61](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/pull/61),
+squash-merged to `main` as `ac407c3`. Issue #55 auto-closed. All 7 phases
+`DONE`. 26 files, +3518 / −69.
+
+**End-of-plan closeout (Opus, report-only) — what it found beyond the phase
+gates:**
+
+- All six gates green across the accumulated diff: 39 files, 841 passed / 7
+  skipped, coverage 94.13 / 85.28 / 92.65 / 95.65 against floors 92 / 83 / 90 /
+  93. The gate was proven live by forcing it red (`--coverage.thresholds.lines=99`
+  → exit 1), not by observing it green.
+- **Phase 2 dedup and Phase 4/5 cardinality are non-vacuous in both directions.**
+  Five mutations, each with a distinct signature: deleting the dedup guard fails
+  25 tests but leaves every genuine-duplicate test green; deleting the Decision
+  guard fails exactly 7 and leaves every dedup test green; deleting the Quorum
+  guard fails 16, likewise; keying Quorum on `sender + vote` fails 15 while the
+  same-type `Approve`→`Approve` test still passes; moving the dedup guard after
+  `transcript.push` fails 14, including the replay-equivalence test. Neither
+  guard can mask the other.
+- **One docs survivor the phase criteria could not have caught:**
+  `docs/guides/testing.md`'s coverage table was still pre-Phase-7. Phase 7's AC6
+  named only `CLAUDE.md`. Fixed in `6568d45`.
+- **End-to-end, against real projections + real `ProtoRegistry`:** the Quorum
+  fabricated-quorum bug is dead — `Reject(alice)` → redelivery → `Approve(alice)`
+  under `requiredApprovals: 1` now yields `hasQuorum false` where last-wins gave
+  `true`; `transcript.length` excludes the redelivery; the anomaly carries all
+  seven fields with the *discarded* envelope's `messageId`; replaying the
+  transcript into a fresh projection reproduces `anomalies` and `ballots`
+  deep-equal.
+- **Integration tests were NOT run.** No `macp-runtime` image existed and
+  building one exhausted the host disk. What that leaves unverified: Phases 4/5
+  are structurally unreachable through a conforming runtime (it NACKs the
+  duplicate), so nothing is lost there — but **Phase 2's initiator echo is
+  genuinely cross-boundary** and is covered only by unit tests with fake
+  transports. That a real runtime re-emits the identical `message_id` on replay
+  is inferred from RFC-MACP-0006 §3.2 and from runtime source, never observed
+  here.
+
+**Post-merge:** release-please opened
+[#62](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/pull/62)
+for **0.8.0** — the breaking change resolving to a minor on 0.x under
+`bump-minor-pre-major: true`, exactly as `DECISIONS.md` predicted. Not merged;
+cutting the release is a separate call.
+
+**Cross-repo state at merge time:** `macp-sdk-python` has independently shipped
+the matching contract — same seven fields in the same order
+(`base_projection.py:42-48`), same `"duplicate_vote"` / `"duplicate_ballot"` wire
+values, same dedup gating before `transcript` append, and the same first-ballot
+citation hedge (`quorum.py:95-98`). Open follow-ups: this repo's #58, #59, #60;
+spec #81, #82, #83, #84; runtime #125; python #43.
