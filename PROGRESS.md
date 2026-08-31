@@ -173,3 +173,93 @@ pushed feat/gate-cmt-hash-vectors fd7aedd98c99297bdcb89380489b9e9dc38a31a8
 PR #51 opened: https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/pull/51
 
 merged #51 (squash, a6f6ffa), CI green on Node 20/22/24 + verify-fixtures
+
+## Backlog wrap (2026-08-31)
+
+Closed out everything still open on the tracker: the two issues the RFC-MACP-0013
+`/reconcile` pass had filed but not fixed, and both stale Dependabot PRs.
+
+### #48 — empty-string `sessionId` bypassed validation — **Status: DONE** (`5e4dc25`, PR #52)
+
+`if (options.sessionId)` was a truthy check, so an explicit `''` skipped
+`validateSessionId` — and `'' ?? newSessionId()` is `''`, not a fresh id, because
+empty string is not nullish. An invalid session id reached the wire. All six
+sites now guard on `!== undefined`, converging on the form `base-session.ts:92`
+already used for `maxSuspendMs` rather than inventing a new one. Audited for
+siblings first: those six were the only truthy-guarded validation calls in `src/`.
+
+### #47 — frozen-field-set guard for `CommitmentPayload` — **Status: DONE** (`5e4dc25`, PR #52)
+
+A type alias that fails `tsc` in both directions — a field added to
+`CommitmentPayload` but not projected, or removed from it while the projection
+still emits it. Zero runtime cost; parity with macp-sdk-python's runtime
+`_check_frozen_field_set`. The docblock pins the intended workflow when it goes
+red (project the field, publish new vectors, *then* widen the union — never
+widen the union alone), because the tempting fix is the wrong one.
+
+Testing a type alias needs the compiler, not the runtime, so
+`tests/unit/commitment-hash-frozen-fields.test.ts` runs the real `tsc` over
+mutated copies of the real `src/types.ts`. Only the two-file closure is copied
+(`types.ts` has no imports), so the temp project needs no `node_modules` beside
+it — `typeRoots` points back at this repo. Three `tsc` runs, ~0.7s.
+
+Both files proven non-vacuous before the PR opened: reintroducing the truthy
+guard fails exactly the six empty-string cases and nothing else; deleting the
+type alias kills both mutation cases while the control still passes.
+
+### Dependabot #42 (actions) — **Status: MERGED** (`9b5fdc8`)
+
+Green as filed, only stale — needed `gh pr update-branch` against a base that had
+moved four commits, then merged as-is.
+
+### Dependabot #44 (dev-dep majors) — **Status: CLOSED, superseded by PR #54** (`95f6274`)
+
+Red on all three Node legs since 2026-08-01, and could never have gone green: the
+group bumped `typescript` to `^7.0.2` while leaving `@typescript-eslint/*` at
+`^8`, whose peer range is `typescript >=4.8.4 <6.1.0`. `npm ci` died on ERESOLVE
+before a test ran. The failure was in the group's own composition, not here.
+
+No stable typescript-eslint supports TypeScript 7 (8.68.0 is latest, same peer
+range), so #54 took `typescript` to `^6.0.3` — the highest the linter can peer
+against — with eslint ^10.9.1, vitest + coverage-v8 ^4.1.11, @types/node ^26.4.0,
+and the `@typescript-eslint/*` floor raised to ^8.68.0 for eslint 10. Revisit 7.x
+when typescript-eslint widens the range.
+
+Two real breakages, both fixed rather than suppressed:
+
+- `src/watchers.ts` — TS 6 + @types/node 26 pull in `lib.esnext.disposable`,
+  making `AsyncGenerator` extend `AsyncDisposable`. Native `async function*`
+  generators get that free; the hand-rolled iterator from
+  `serverStreamToAsyncGenerator` did not. Implemented `[Symbol.asyncDispose]`
+  (cancels the gRPC stream, same as `return()`) instead of casting the error
+  away — watcher streams now also work under `await using`.
+- **Coverage floors moved DOWN, and that is not rot.** Vitest 4 rewrote the v8
+  provider to remap through a rolldown AST instead of `v8-to-istanbul` and
+  deleted `ignoreEmptyLines`; there is no flag that restores the v3 numbers (I
+  checked the installed package — the option is gone). The same 726 tests measure
+  93.13/83.87/92.28/94.60 where v3 read 96.14/91.02/92.54/96.14, because the new
+  mapping counts branches the old one missed: optional chaining, default
+  parameters, logical short-circuits. Floors recalibrated to 91/81/90/92 on the
+  documented measured-minus-2pp convention. Since a lowered floor in a diff is
+  indistinguishable from a real regression, both `vitest.config.ts` and a new
+  "The v3 → v4 measurement break" section in `docs/guides/testing.md` state
+  outright that v3 and v4 percentages are different rulers and the old figures
+  must not be recovered by widening `exclude`.
+
+Also took `npm audit fix` while the lockfile was already being rewritten
+(brace-expansion 5.0.7 → 5.0.9, GHSA-mh99-v99m-4gvg / GHSA-rgw5-rvv9-x895, via
+eslint 10 → minimatch 10; dev-only). `npm audit` is clean at 0. Lockfile
+regenerated with npm 11.19.0.
+
+### Known follow-up, deliberately deferred
+
+Vitest 4 warns that `vitest.config.ts` uses ESM syntax in a file loaded as
+CommonJS and that Vite's `configLoader: 'native'` will become the default in a
+future major. The fix is renaming to `.mts`, which touches eight references
+across `package.json`, `README.md`, `docs/`, and two test docblocks — too wide to
+bury in a dependency bump, and harmless until Vite flips the default.
+
+Final: 726 passed / 7 skipped (35 files); `check`/`lint`/`format:check`/
+`verify-fixtures`/`build` all exit 0; CI green on Node 20/22/24 for both PRs.
+- What's next: tracker is empty. Release PR #53 (0.7.1) is open and NOT merged —
+  merging it cuts a GitHub release and publishes to npm, which is the user's call.
