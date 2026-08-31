@@ -45,7 +45,19 @@ function makeMockTransport(messages: IncomingMessage[]): TransportAdapter {
   };
 }
 
+// Each call mints a DISTINCT messageId. Before Phase 2's projection-level
+// `message_id` dedup (see src/projections/base.ts), every envelope this
+// helper built shared the hardcoded id 'msg-1' — harmless only because
+// `processMessage` dispatches handlers AFTER applying to the projection, and
+// every test here asserts handler calls, never projection state, so the
+// (until-now theoretical) collision was invisible. Under dedup, two calls
+// sharing one id would have the second silently dropped by the projection's
+// redelivery guard. See the "dedup regression" test below for the case that
+// would have caught it.
+let nextMessageId = 0;
+
 function makeIncomingMessage(messageType: string, payload: Record<string, unknown> = {}): IncomingMessage {
+  nextMessageId += 1;
   return {
     messageType,
     sender: 'agent-a',
@@ -54,7 +66,7 @@ function makeIncomingMessage(messageType: string, payload: Record<string, unknow
       macpVersion: '1.0',
       mode: MODE_DECISION,
       messageType,
-      messageId: 'msg-1',
+      messageId: `msg-${nextMessageId}`,
       sessionId: '550e8400-e29b-41d4-a716-446655440000',
       sender: 'agent-a',
       timestampUnixMs: String(Date.now()),
@@ -304,6 +316,34 @@ describe('Participant', () => {
 
       expect(proposalHandler).toHaveBeenCalledOnce();
       expect(evaluationHandler).toHaveBeenCalledOnce();
+    });
+
+    // Dedup regression (see the `makeIncomingMessage` comment above): two
+    // distinct envelopes that happen to share a message type must BOTH land
+    // on the real projection instance the session applies to. Handler
+    // dispatch assertions alone (as in 'processes multiple messages' above)
+    // would not have caught a stale `makeIncomingMessage` still minting one
+    // shared id — this asserts projection *state*, not just handler calls.
+    it('two distinct envelopes both land on the projection (not silently deduped)', async () => {
+      const client = makeMockClient();
+      const messages = [
+        makeIncomingMessage('Evaluation', { proposalId: 'p1', recommendation: 'approve', confidence: 0.9 }),
+        makeIncomingMessage('Evaluation', { proposalId: 'p1', recommendation: 'reject', confidence: 0.4 }),
+      ];
+      const transport = makeMockTransport(messages);
+
+      const participant = new Participant({
+        participantId: 'agent-1',
+        sessionId: '550e8400-e29b-41d4-a716-446655440000',
+        mode: MODE_DECISION,
+        client,
+        transport,
+      });
+
+      await participant.run();
+
+      const projection = participant.projection as unknown as { evaluations: unknown[] };
+      expect(projection.evaluations).toHaveLength(2);
     });
 
     it('does not dispatch to unregistered handlers', async () => {

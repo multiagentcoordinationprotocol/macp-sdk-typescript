@@ -16,7 +16,7 @@ a live runtime (see [Integration Tests](#integration-tests) below).
 ```
 tests/
 ├── unit/
-│   ├── projections/            # Per-mode projection state machines (5 files)
+│   ├── projections/            # Per-mode projection state machines (5 files) + accepted-only-contract.test.ts + message-id-dedup.test.ts
 │   ├── sessions/               # Per-mode session helpers (5 files) + session-id-validation.test.ts
 │   ├── agent/                  # Dispatcher, participant, strategies, transports, runner, cancel-callback
 │   ├── helpers/
@@ -165,6 +165,17 @@ loop end to end (with a fake transport):
   `proposalId` to `<sessionId>-kickoff` and `option` to `"decide"`, and
   accepts the snake_case `proposal_id` spelling.
 
+The file's `makeIncomingMessage` helper mints a **distinct** `messageId` per
+call. Since `applyEnvelope` (`src/projections/base.ts`) dedups by
+`message_id`, reusing one hardcoded id across multiple
+messages in the same test would silently drop every message after the first
+from the real projection instance the session applies to — invisible to
+tests that only assert handler calls, since `processMessage` dispatches
+handlers *after* applying to the projection. `'two distinct envelopes both
+land on the projection (not silently deduped)'` is the regression test for
+this: it asserts projection state (`evaluations.length`), not just handler
+invocation counts.
+
 ## Writing Projection Tests
 
 Projections are pure state machines — they accept envelopes and update internal state. This makes them ideal for unit testing without any I/O:
@@ -244,6 +255,46 @@ For each projection:
 - **Query helpers**: Test convenience methods with edge cases
 - **Commitment handling**: Verify terminal state
 - **Mode isolation**: Envelopes for other modes are ignored
+- **Redelivery idempotence**: applying the same `message_id` twice must not
+  double-append to `transcript` or to any accumulate-on-apply site (see
+  `tests/unit/projections/message-id-dedup.test.ts`, and [Projections API ›
+  Redelivery](../api/projections.md#redelivery-message_id-dedup))
+
+### Testing redelivery (`message_id` dedup)
+
+`tests/unit/projections/message-id-dedup.test.ts` covers `applyEnvelope`'s
+RFC-MACP-0006 §3.2 redelivery idempotence across all six entry points (the
+five built-in mode projections plus a third-party `BaseProjection` subclass).
+The pattern to copy for a new accumulate-on-apply site:
+
+```typescript
+it('redelivery does not duplicate the <site>', () => {
+  const projection = new SomeProjection();
+  const envelope = buildEnvelope({
+    mode: MODE_SOME_MODE,
+    messageType: 'SomeMessageType',
+    sessionId: 'test-session',
+    sender: 'sender',
+    messageId: 'm-reused', // explicit, REUSED — never buildEnvelope's auto-minted id
+    payload: registry.encodeKnownPayload(MODE_SOME_MODE, 'SomeMessageType', { ... }),
+  });
+  projection.applyEnvelope(envelope, registry);
+  projection.applyEnvelope(envelope, registry); // redelivery
+  expect(projection.someAccumulateSite).toHaveLength(1);
+});
+```
+
+Two traps this file guards against, worth remembering when adding coverage
+elsewhere:
+- **Always pass an explicit, reused `messageId`.** `buildEnvelope` auto-mints
+  a fresh id per call when one isn't given, so two calls without an explicit
+  shared id exercise the *cardinality* path, not the *dedup* path — the test
+  would pass while testing nothing.
+- **Empty `messageId` (`''`) must never be deduped** — the guard is gated on
+  `if (envelope.messageId)`. A test asserting the debug log line must use
+  `configureLogging({ level: 'debug', sink })`; the SDK's default level
+  (`warn`) suppresses `debug` entirely, so a test left at the default level
+  passes vacuously regardless of whether the log call fires.
 
 ## Conformance Tests
 

@@ -1,3 +1,4 @@
+import { logger } from '../logging';
 import type { ProtoRegistry } from '../proto-registry';
 import type { Envelope } from '../types';
 
@@ -9,9 +10,32 @@ import type { Envelope } from '../types';
  * handled here so custom modes get the common lifecycle for free.
  */
 export abstract class BaseProjection {
+  /**
+   * The session's accepted history as a conforming runtime holds it: one
+   * envelope per unique `message_id`, in application order. Redelivered
+   * envelopes (same `message_id` — expected under MACP's at-least-once
+   * delivery, RFC-MACP-0001 §8, and normatively idempotent per RFC-MACP-0006
+   * §3.2 Redelivery) and envelopes for other modes are not appended; a
+   * redelivery is logged at debug level and has no effect on projection
+   * state.
+   */
   readonly transcript: Envelope[] = [];
   phase: string = '';
   commitment?: Record<string, unknown>;
+
+  /**
+   * `message_id`s already applied to this projection, used to make
+   * `applyEnvelope` idempotent under redelivery (RFC-MACP-0006 §3.2:
+   * "A consumer that accumulates state per envelope ... MUST be idempotent
+   * with respect to `message_id`", `:136`). Deliberately unbounded: this
+   * class already retains every full envelope (payload bytes included) in
+   * `transcript`, so a set of id strings is strictly dominated by that; the
+   * runtime keeps an unbounded per-message dedup set itself
+   * (`macp-runtime/crates/macp-modes/src/step.rs:48/:89`, field declared at
+   * `crates/macp-core/src/session.rs:69`), and sessions are TTL-bounded by
+   * protocol.
+   */
+  private readonly seenMessageIds = new Set<string>();
 
   protected abstract readonly mode: string;
 
@@ -75,6 +99,27 @@ export abstract class BaseProjection {
    */
   applyEnvelope(envelope: Envelope, protoRegistry: ProtoRegistry): void {
     if (envelope.mode !== this.mode) return;
+
+    // RFC-MACP-0006 §3.2 Redelivery (`:94`, `:134`-`:136`): a runtime MAY echo
+    // back accepted envelopes, a redelivery MUST NOT advance sequence position
+    // or count a second time against cardinality, and a consumer that
+    // accumulates state per envelope MUST be idempotent w.r.t. `message_id`.
+    // The `if (envelope.messageId)` guard is mandatory: an empty/absent id
+    // must apply WITHOUT dedup, or a feed of empty-id envelopes collapses to
+    // one. This is architecturally expected (RFC-MACP-0001:306 at-least-once
+    // delivery), not an anomaly — hence `debug`, never `warn`.
+    if (envelope.messageId) {
+      if (this.seenMessageIds.has(envelope.messageId)) {
+        logger.debug('projection redelivery ignored', {
+          messageId: envelope.messageId,
+          mode: envelope.mode,
+          messageType: envelope.messageType,
+        });
+        return;
+      }
+      this.seenMessageIds.add(envelope.messageId);
+    }
+
     this.transcript.push(envelope);
 
     if (envelope.messageType === 'Commitment') {

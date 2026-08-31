@@ -1,4 +1,5 @@
 import { MODE_DECISION } from '../constants';
+import { logger } from '../logging';
 import type { Envelope } from '../types';
 import type { ProtoRegistry } from '../proto-registry';
 
@@ -36,9 +37,22 @@ export class DecisionProjection {
   readonly evaluations: DecisionEvaluationRecord[] = [];
   readonly objections: DecisionObjectionRecord[] = [];
   readonly votes = new Map<string, Map<string, DecisionVoteRecord>>();
+  /**
+   * The session's accepted history, one envelope per unique `message_id`. See
+   * `BaseProjection.transcript` (`src/projections/base.ts`) for the full
+   * redelivery-idempotence contract (RFC-MACP-0006 §3.2); duplicated here
+   * only as a one-line pointer.
+   */
   readonly transcript: Envelope[] = [];
   phase: 'Proposal' | 'Evaluation' | 'Voting' | 'Committed' = 'Proposal';
   commitment?: Record<string, unknown>;
+  /**
+   * `message_id`s already applied to this projection. See
+   * `BaseProjection.seenMessageIds` (`src/projections/base.ts`) for the full
+   * redelivery-idempotence rationale (RFC-MACP-0006 §3.2); duplicated here
+   * only as a one-line pointer.
+   */
+  private readonly seenMessageIds = new Set<string>();
 
   /**
    * Apply one envelope to this projection's in-process state.
@@ -49,9 +63,25 @@ export class DecisionProjection {
    * mode are documented once, on `BaseProjection.applyEnvelope`
    * (`src/projections/base.ts`), and duplicated here only as a one-line
    * pointer so six independent copies of the same prose cannot drift.
+   *
+   * Redelivery idempotence: a redelivered envelope (same `message_id`) is a
+   * non-event — not appended to `transcript`, not passed to the `switch`.
+   * See `BaseProjection.applyEnvelope` for the full RFC-MACP-0006 §3.2
+   * citation; duplicated here only as a one-line pointer.
    */
   applyEnvelope(envelope: Envelope, protoRegistry: ProtoRegistry): void {
     if (envelope.mode !== MODE_DECISION) return;
+    if (envelope.messageId) {
+      if (this.seenMessageIds.has(envelope.messageId)) {
+        logger.debug('projection redelivery ignored', {
+          messageId: envelope.messageId,
+          mode: envelope.mode,
+          messageType: envelope.messageType,
+        });
+        return;
+      }
+      this.seenMessageIds.add(envelope.messageId);
+    }
     this.transcript.push(envelope);
     const payload = protoRegistry.decodeKnownPayload(envelope.mode, envelope.messageType, envelope.payload);
     switch (envelope.messageType) {

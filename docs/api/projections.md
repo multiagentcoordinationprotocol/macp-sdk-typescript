@@ -8,7 +8,7 @@ All projections share:
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `transcript` | `Envelope[]` | All accepted envelopes applied to this projection |
+| `transcript` | `Envelope[]` | The session's accepted history as a conforming runtime holds it: one envelope per unique `message_id`, in application order. See [Redelivery](#redelivery-message_id-dedup) below. |
 | `phase` | string literal union | Current session phase |
 | `commitment` | `Record<string, unknown> \| undefined` | Commitment payload, set on Commitment |
 | `isCommitted` | `boolean` (getter) | `true` once a Commitment has been applied |
@@ -70,6 +70,91 @@ demonstration, across `DecisionProjection`, `QuorumProjection`, and a custom
 If you are building your own transport or replay path, filter to accepted
 envelopes yourself before calling `applyEnvelope` — do not rely on
 `applyEnvelope` to reject anything on your behalf.
+
+There is also an implicit **one projection per session** contract: the
+`message_id` dedup key described below is global to the projection instance,
+not scoped to `(sessionId, message_id)` — `applyEnvelope` never inspects
+`envelope.sessionId`. Feeding the transcripts of two different sessions into
+one projection instance can therefore silently drop envelopes whose
+`message_id`s happen to collide across sessions. This mirrors the runtime's
+own dedup set, which is likewise kept per session, so the fix is to give each
+session its own projection instance, not to widen the dedup key.
+
+## Redelivery (`message_id` dedup)
+
+`applyEnvelope` is idempotent with respect to `message_id`: applying the same
+envelope (identical `message_id`) more than once has no effect after the
+first application — it is not appended to `transcript`, and it is not passed
+to the mode-specific switch/`applyMode`. This is required by
+[RFC-MACP-0006 (Transport Bindings)](https://github.com/multiagentcoordinationprotocol/multiagentcoordinationprotocol/blob/main/rfcs/RFC-MACP-0006-transport-bindings.md)
+§3.2 Redelivery:
+
+- A runtime **MAY** echo back accepted client-submitted envelopes on the
+  stream as part of the authoritative accepted sequence (`:94`) — this is why
+  a redelivered envelope is expected traffic, not a defect to route around.
+- A redelivery **MUST NOT** advance the client's sequence position (`:134`)
+  or count a second time against any Mode cardinality rule — "a second" means
+  a distinct `message_id`, never the same envelope arriving twice (`:135`).
+- A consumer that accumulates state per envelope — appending to a list,
+  incrementing a counter — **MUST** be idempotent with respect to
+  `message_id` (`:136`).
+
+This closes a live gap on the `Participant` happy path: the [shared
+projection instance](#design-intent-shared-projection-instance) below means
+every initiator envelope is naturally applied twice — once locally on ACK via
+the mode session's own `sendAndTrack`, and again when the transport replays
+accepted history. Before this dedup, that double-apply silently corrupted
+every accumulate-on-apply site (Decision `evaluations`/`objections`, Proposal
+`accepts`/`rejections`, Task `updates`/`completions`/`failures`).
+
+Key properties:
+
+- **Empty/absent `message_id` is never deduped.** The guard is gated on
+  `if (envelope.messageId)`; an id-less envelope always applies. This matters
+  for hand-built envelopes from callers who don't set `messageId` — treating
+  every one of them as "the same message" would collapse a whole feed into
+  one entry.
+- **A redelivery is not an anomaly.** MACP's transport is at-least-once by
+  design ([RFC-MACP-0001](https://github.com/multiagentcoordinationprotocol/multiagentcoordinationprotocol/blob/main/rfcs/RFC-MACP-0001-core-envelope.md)
+  §8), so a redelivery is logged at `debug`, never `warn` — there is no
+  anomaly-tracking surface on projections today that a redelivery could be
+  mistakenly reported through.
+- **The dedup set is unbounded, deliberately.** The projection already
+  retains every full envelope (payload bytes included) in `transcript`, so a
+  `Set<string>` of ids is strictly dominated by that; sessions are also
+  TTL-bounded by protocol.
+- **`GrpcTransportAdapter`** is covered end to end (it is the path the
+  [shared projection instance](#design-intent-shared-projection-instance)
+  below is about). **`HttpTransportAdapter`'s array (Python-style polling)
+  branch** normalizes `message_id` → `messageId` before yielding,
+  specifically so this guard can see a real id for polled envelopes too.
+
+### What changed
+
+Before this dedup, `applyEnvelope` appended every envelope that reached it
+(past the mode check) unconditionally — a second delivery of the same
+`message_id` was pushed onto `transcript` again, and passed to `applyMode`
+again. If you were relying on `transcript` as an exact receipt of everything
+you handed to `applyEnvelope`, that reading was already unreliable before
+this change, for two independent reasons:
+
+- `applyEnvelope` has **always** silently dropped envelopes for a different
+  mode (the `if (envelope.mode !== this.mode) return;` guard predates this
+  change) — so "an exact receipt of everything handed in" was never the
+  contract, dedup or not.
+- On this SDK's own `Participant` happy path, the
+  [shared projection instance](#design-intent-shared-projection-instance)
+  below means the initiator's own envelope is naturally applied twice — once
+  locally on ACK via the mode session's `sendAndTrack`, once again via
+  replayed transport history — so a consumer treating `transcript` as a raw
+  receipt was already getting corrupted data (each such envelope duplicated)
+  before this fix landed, not after it.
+
+If you genuinely need a raw receipt of every envelope you passed to
+`applyEnvelope`, keep your own list of what you passed in — you already hold
+those envelopes at the call site. `transcript` is deliberately not that list,
+before or after this change; it is the runtime's accepted, deduplicated
+history.
 
 ## Design intent: shared projection instance
 
