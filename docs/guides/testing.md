@@ -17,13 +17,14 @@ a live runtime (see [Integration Tests](#integration-tests) below).
 tests/
 ├── unit/
 │   ├── projections/            # Per-mode projection state machines (5 files)
-│   ├── sessions/               # Per-mode session helpers (5 files)
+│   ├── sessions/               # Per-mode session helpers (5 files) + session-id-validation.test.ts
 │   ├── agent/                  # Dispatcher, participant, strategies, transports, runner, cancel-callback
 │   ├── helpers/
 │   │   └── grpc-stub.ts        # stubUnary() — shared gRPC stubbing helper (not a test file)
 │   ├── auth.test.ts            # Auth factory, identity guard, metadata
 │   ├── base-session.test.ts    # BaseSession extension point + BaseProjection outcome table
 │   ├── client.test.ts          # TLS guard, sender-identity enforcement, public exports
+│   ├── commitment-hash-frozen-fields.test.ts  # Runs real tsc over mutated CommitmentPayload copies
 │   ├── client-stream.test.ts   # MacpStream data path (openStream, responses, read, close)
 │   ├── client-unary.test.ts    # Full unary RPC surface + metadata/deadline dispatch matrix
 │   ├── envelope.test.ts        # Envelope builder functions
@@ -55,15 +56,29 @@ type/barrel files are excluded so they don't skew the function percentage):
 
 | Metric | Floor | Measured (2026-08 suite) |
 |--------|-------|--------------------------|
-| Lines | 94 | 96.14 |
-| Branches | 88 | 91.02 |
-| Functions | 90 | 92.54 |
-| Statements | 94 | 96.14 |
+| Lines | 92 | 94.60 |
+| Branches | 81 | 83.87 |
+| Functions | 90 | 92.28 |
+| Statements | 91 | 93.13 |
 
 The convention: **floors are the current measured value minus 2 percentage
 points**, and they are raised when new tests land. CI gates on these via
 `npm run test:coverage` — if coverage drops below a floor, the run fails.
 The `json`/`json-summary` reporters feed the sticky PR coverage comment in CI.
+
+### The v3 → v4 measurement break
+
+These numbers are lower than the floors this table carried before 2026-08
+(94 / 88 / 90 / 94) even though no test was removed. Vitest 4 rewrote the v8
+coverage provider to remap through a rolldown AST instead of `v8-to-istanbul`,
+and dropped the `ignoreEmptyLines` option along with it. The new mapping counts
+branches the old one missed — optional chaining, default parameters, logical
+short-circuits — so the same suite measures stricter.
+
+The practical consequence: **v3-era and v4-era percentages are not comparable.**
+A number from a pre-2026-08 run, a PR coverage comment, or an old PROGRESS.md
+entry is on a different ruler. Do not read the drop as a regression, and do not
+try to recover the old figures by widening `exclude`.
 
 ## Client Transport Tests
 
