@@ -263,3 +263,18 @@ Final: 726 passed / 7 skipped (35 files); `check`/`lint`/`format:check`/
 `verify-fixtures`/`build` all exit 0; CI green on Node 20/22/24 for both PRs.
 - What's next: tracker is empty. Release PR #53 (0.7.1) is open and NOT merged —
   merging it cuts a GitHub release and publishes to npm, which is the user's call.
+
+### Release 0.7.1 — **Status: PUBLISHED** (2026-08-31)
+
+Supersedes the "What's next" line above: PR #53 was merged on the user's explicit
+instruction. It was `BEHIND` (cut before #54 landed), so the branch was updated
+against the new toolchain first and CI re-run — green on Node 20/22/24 — rather
+than merging on stale checks. Its diff was version bumps plus CHANGELOG only, so
+it could not have reverted the dependency work.
+
+Merged as `c19c8b8`; release-please cut tag `v0.7.1`; the publish workflow ran
+`prepublishOnly` (check + lint + format:check + test + build) against the exact
+published tree and `npm publish --provenance --access public` succeeded.
+`macp-sdk-typescript@0.7.1` is live on npmjs.org, and `sdk-released` dispatched
+to macp-playground. (`npm view` lagged a few minutes on 0.7.0 before propagating.)
+- What's next: none. No open issues, no open PRs.
