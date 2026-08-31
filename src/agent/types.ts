@@ -52,7 +52,7 @@ export interface ProjectionLike {
   readonly phase: string;
   readonly transcript: Envelope[];
   /**
-   * Spec-violation observations recorded by the projection, in transcript order.
+   * Cardinality anomalies observed and discarded by the projection, in transcript order.
    *
    * OPTIONAL, and it must STAY optional. `ProjectionLike` is structurally
    * implementable by consumers — test fakes, custom transports, alternative

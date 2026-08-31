@@ -353,16 +353,16 @@ mode-specific message types. The five built-in projections below pre-date
 | Property | Type |
 |----------|------|
 | `requests` | `Map<string, ApprovalRequestRecord>` |
-| `ballots` | `Map<string, Map<string, BallotRecord>>` |
+| `ballots` | `Map<string, Map<string, BallotRecord>>` — requestId → sender → the sender's **first** accepted ballot (`Approve`/`Reject`/`Abstain`) for that request. A later ballot of any type from the same sender for the same request is discarded and recorded in [`anomalies`](#anomalies) instead of overwriting the entry. [RFC-MACP-0011](https://github.com/multiagentcoordinationprotocol/multiagentcoordinationprotocol/blob/main/rfcs/RFC-MACP-0011-quorum-mode.md) §5 rule 3 caps *how many* ballots a sender may cast; it is silent on *which* stands — first-wins here is an inference from parity with RFC-MACP-0007 §5 item 3 plus runtime-enforced behaviour, not a direct RFC-0011 citation; see [Anomalies](#anomalies). |
 
 | Method | Returns | Description |
 |--------|---------|-------------|
-| `approvalCount(requestId)` | `number` | Count of approve ballots |
-| `rejectionCount(requestId)` | `number` | Count of reject ballots |
-| `abstentionCount(requestId)` | `number` | Count of abstain ballots |
+| `approvalCount(requestId)` | `number` | Count of approve ballots, computed from `ballots` — a discarded duplicate is never counted; see the `ballots` row above and [Anomalies](#anomalies) |
+| `rejectionCount(requestId)` | `number` | Count of reject ballots, computed from `ballots` — same duplicate exclusion as `approvalCount` |
+| `abstentionCount(requestId)` | `number` | Count of abstain ballots, computed from `ballots` — same duplicate exclusion as `approvalCount` |
 | `hasQuorum(requestId)` | `boolean` | Approvals >= required threshold |
 | `threshold(requestId)` | `number` | Required approvals for this request |
-| `remainingVotesNeeded(requestId)` | `number` | max(0, required - approvalCount) |
+| `remainingVotesNeeded(requestId)` | `number` | max(0, required - approvalCount) — derived from `approvalCount`, so it inherits the same duplicate exclusion; see the `ballots` row above and [Anomalies](#anomalies) |
 | `votedSenders(requestId)` | `string[]` | Senders who have voted |
 | `commitmentReady(requestId)` | `boolean` | Quorum reached and not yet committed |
 | `isThresholdUnreachable(requestId, totalEligible)` | `boolean` | Even if all remaining eligible voters approve, the threshold cannot be met |

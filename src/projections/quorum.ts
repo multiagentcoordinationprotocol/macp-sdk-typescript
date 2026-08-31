@@ -91,17 +91,17 @@ export class QuorumProjection {
       }
       case 'Approve': {
         const record = payload as { requestId: string; reason?: string };
-        this.setBallot(record.requestId, envelope.sender, 'approve', record.reason);
+        this.setBallot(envelope, record.requestId, 'approve', record.reason);
         break;
       }
       case 'Reject': {
         const record = payload as { requestId: string; reason?: string };
-        this.setBallot(record.requestId, envelope.sender, 'reject', record.reason);
+        this.setBallot(envelope, record.requestId, 'reject', record.reason);
         break;
       }
       case 'Abstain': {
         const record = payload as { requestId: string; reason?: string };
-        this.setBallot(record.requestId, envelope.sender, 'abstain', record.reason);
+        this.setBallot(envelope, record.requestId, 'abstain', record.reason);
         break;
       }
       case 'Commitment': {
@@ -135,9 +135,39 @@ export class QuorumProjection {
     return val !== undefined ? Boolean(val) : true;
   }
 
-  private setBallot(requestId: string, sender: string, vote: BallotRecord['vote'], reason?: string): void {
+  private setBallot(envelope: Envelope, requestId: string, vote: BallotRecord['vote'], reason?: string): void {
     const senderMap = this.ballots.get(requestId) ?? new Map<string, BallotRecord>();
-    senderMap.set(sender, { requestId, vote, reason, sender });
+    const kept = senderMap.get(envelope.sender);
+    if (kept !== undefined) {
+      // RFC-MACP-0011 §5 rule 3 (`:67`): participation is MAY (a participant need
+      // not cast a ballot), but the cap of one ballot per participant ACROSS
+      // Approve, Reject, and Abstain is enforced under §5's opening sentence,
+      // "Implementations MUST enforce the following:" (`:63`). Do NOT phrase this
+      // as "a participant MUST cast at most one ballot" — RFC-0011 puts the MUST
+      // on the implementation, not the participant (contrast RFC-MACP-0007 §5.3,
+      // which puts it directly on the participant; same obligation, different
+      // addressee). A later ballot of a *different* type is still a duplicate,
+      // not a change of vote, so this guard is keyed on the sender ALONE within
+      // the request — never on sender + vote. macp-runtime enforces this
+      // identically in all three arms (quorum.rs:164/184/204).
+      // Keeping the sender's FIRST ballot (rather than the last) is not stated
+      // by RFC-0011 either; it is parity with RFC-MACP-0007 §5 item 3's
+      // explicit first-stands rule for `Vote`, plus macp-runtime's enforced
+      // first-wins behaviour.
+      const anomaly: ProjectionAnomaly = {
+        kind: 'duplicate_ballot',
+        mode: envelope.mode,
+        messageType: envelope.messageType,
+        messageId: envelope.messageId,
+        sender: envelope.sender,
+        subjectId: requestId,
+        detail: `sender ${envelope.sender} already cast '${kept.vote}' on request ${requestId}; discarded '${vote}'`,
+      };
+      this.anomalies.push(anomaly);
+      logger.warn('projection anomaly', anomaly);
+      return;
+    }
+    senderMap.set(envelope.sender, { requestId, vote, reason, sender: envelope.sender });
     this.ballots.set(requestId, senderMap);
   }
 

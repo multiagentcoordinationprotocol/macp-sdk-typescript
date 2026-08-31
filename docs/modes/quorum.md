@@ -88,23 +88,35 @@ await session.abstain({
 });
 ```
 
-### Vote Override
+### Ballot Cardinality
 
-If the same sender votes again, their new vote **replaces** the previous one:
+Per [RFC-MACP-0011](https://github.com/multiagentcoordinationprotocol/multiagentcoordinationprotocol/blob/main/rfcs/RFC-MACP-0011-quorum-mode.md)
+§5 rule 3, each eligible participant may cast **at most one ballot across
+`Approve`, `Reject`, and `Abstain`** for a given `requestId`. Casting a ballot
+at all is optional (`MAY`) — but the cap of one is enforced under §5's opening
+sentence, "Implementations MUST enforce the following:", which puts the `MUST`
+on the implementation rather than the participant directly (contrast
+[RFC-MACP-0007](https://github.com/multiagentcoordinationprotocol/multiagentcoordinationprotocol/blob/main/rfcs/RFC-MACP-0007-decision-mode.md)
+§5 item 3, which states the same-strength obligation directly on the
+participant for `Vote`). A conforming runtime **rejects** a second ballot from
+the same sender for the same request, regardless of type — a `Reject` after an
+earlier `Abstain` is a duplicate ballot, not a change of vote.
 
-```typescript
-// Bob initially rejects
-await session.reject({ requestId: 'r1', sender: 'bob', auth: Auth.devAgent('bob') });
+RFC-MACP-0011 §5 rule 3 caps *how many* ballots a sender may have; it does not
+say *which of two* stands if a second one is somehow observed — that is
+outside what the rule states. This SDK's projection keeps the sender's
+**first** accepted ballot and discards any later one, in parity with
+RFC-MACP-0007 §5 item 3's explicit first-stands rule for `Vote` and with
+`macp-runtime`'s behavior (it enforces first-wins identically in all three
+ballot arms). That first-wins choice is an inference from parity and observed
+runtime behavior, not a direct RFC-MACP-0011 citation — a spec clarification
+will be requested upstream to close this gap.
 
-// Performance fix deployed, Bob changes to approve
-await session.approve({
-  requestId: 'r1',
-  reason: 'regression fixed',
-  sender: 'bob',
-  auth: Auth.devAgent('bob'),
-});
-// Bob's rejection is replaced by approval
-```
+A discarded duplicate is recorded in
+[`anomalies`](../api/projections.md#anomalies) as a `duplicate_ballot`, naming
+both the kept and the discarded ballot type. Reaching this path at all means
+the transcript was not filtered to a conforming runtime's *accepted*
+history — see [Input contract](../api/projections.md#input-contract).
 
 ## QuorumProjection
 
@@ -155,10 +167,13 @@ session.projection.isPositiveOutcome;            // undefined until committed; t
 ## RFC Validation Rules
 
 The runtime enforces the cross-message rules — at most one `ApprovalRequest`
-per session (base v1), `requiredApprovals` within `(0, participant count]`, one
-ballot per participant (latest replaces earlier), commitment eligibility only
-once the threshold is reached or provably unreachable, and coordinator-only
-Commitment. The normative rule set lives in RFC-MACP-0011 §4; the
+per session (base v1), `requiredApprovals` within `(0, participant count]`, at
+most one ballot per participant across `Approve`/`Reject`/`Abstain` (the
+runtime **rejects** a second ballot from the same sender; the first accepted
+ballot stands — see [Ballot Cardinality](#ballot-cardinality) above),
+commitment eligibility only once the threshold is reached or provably
+unreachable, and coordinator-only Commitment. The normative rule set lives in
+RFC-MACP-0011 §4; the
 [runtime modes guide › Quorum Mode](https://github.com/multiagentcoordinationprotocol/macp-runtime/blob/main/docs/modes.md#quorum-mode)
 documents validation as implemented.
 
