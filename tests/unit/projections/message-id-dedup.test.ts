@@ -109,6 +109,12 @@ const MODE_CASES = [
 ] as const;
 
 describe.each(MODE_CASES)('$name — applyEnvelope message_id dedup', ({ mode, factory, messageType, payload }) => {
+  // RFC-MACP-0006 §3.2 Redelivery point 3 is the normative hook for these two
+  // tests: "A consumer that accumulates state per envelope -- appending to a
+  // list, incrementing a counter -- MUST be idempotent with respect to
+  // `message_id`. Re-applying a redelivered envelope MUST NOT change derived
+  // state." `transcript` is a list appended to per envelope, so growth on
+  // redelivery is a direct violation, independent of anything this SDK asserts.
   it('applying the SAME envelope object twice yields transcript.length === 1', () => {
     const projection = factory();
     const envelope = makeEnvelope(mode, messageType, payload, { messageId: 'm-dup' });

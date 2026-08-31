@@ -405,10 +405,21 @@ describe('QuorumProjection', () => {
      * projection reproduces `ballots` and `anomalies` deep-equal to the
      * original — including that a redelivery (same `messageId`) leaves no
      * trace to replay, while a genuine duplicate (different `messageId`)
-     * does. This test does not uniquely catch guard-placement regressions:
-     * other tests in this suite (e.g. the reachability-pair tests above)
-     * assert the same duplicate/redelivery distinction directly and would
-     * also fail such a mutation.
+     * does.
+     *
+     * The invariant it pins is RECONSTRUCTIBILITY: `anomalies` must be
+     * derivable from `transcript` alone. An anomaly recorded for an envelope
+     * that never entered the transcript is unreconstructible — the projection
+     * would hold state its own history cannot explain.
+     *
+     * Deliberately makes NO claim about being the only test that catches a
+     * given mutation. Reconstructibility is a property of the code; "uniquely
+     * caught" is a property of the test file at one moment, and goes stale the
+     * next time anyone adds a test. Three implementations measured the same
+     * mutation against their own suites and got three different counts, none
+     * of which transferred — so the count is not worth recording, and an
+     * overstated comment is what gets a test deleted by the next person who
+     * checks the claim and finds it hollow.
      */
     it('replaying a projection’s own transcript into a fresh projection reproduces identical ballots and anomalies', () => {
       projection.applyEnvelope(

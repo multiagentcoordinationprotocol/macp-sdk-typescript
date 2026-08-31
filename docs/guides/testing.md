@@ -27,6 +27,7 @@ tests/
 │   ├── commitment-hash-frozen-fields.test.ts  # Runs real tsc over mutated CommitmentPayload copies
 │   ├── client-stream.test.ts   # MacpStream data path (openStream, responses, read, close)
 │   ├── client-unary.test.ts    # Full unary RPC surface + metadata/deadline dispatch matrix
+│   ├── conformance-guard.test.ts  # duplicateAcceptedBallots() over synthetic input
 │   ├── envelope.test.ts        # Envelope builder functions
 │   ├── errors.test.ts          # Error class hierarchy
 │   ├── fixture-drift-gate.test.ts  # Drives the real `make verify-fixtures`/`sync-fixtures` recipes
@@ -37,7 +38,8 @@ tests/
 │   ├── validation.test.ts      # Runtime-adjacent payload validation
 │   └── watchers.test.ts        # Registry/roots/signal/policy/session-lifecycle watchers
 ├── conformance/
-│   ├── conformance.test.ts     # Fixture-driven projection replay harness
+│   ├── conformance.test.ts     # Fixture-driven projection replay harness + anomaly/duplicate guards
+│   ├── duplicate-ballots.ts    # duplicateAcceptedBallots() — non-test module, imported by both the harness and conformance-guard.test.ts
 │   ├── schema.json             # Fixture schema (shared with the spec repo)
 │   └── *_happy_path.json / *_reject_paths.json / …   # Per-mode fixtures + ext.multi_round.v1
 ├── vectors/
@@ -377,6 +379,38 @@ Harness behaviours worth knowing:
   [runtime testing guide](https://github.com/multiagentcoordinationprotocol/macp-runtime/blob/main/docs/testing.md)).
   The suite carries explicit `it.skip` markers documenting that
   split rather than pretending to cover it.
+- **Zero anomalies, zero anomaly warnings, on every canonical fixture.**
+  After the transcript-length assertion, each replay also asserts
+  `projection.anomalies` is empty and that no `logger.warn('projection
+  anomaly', ...)` fired during that replay (an injected sink, reset per
+  fixture, makes the log channel observable). The array and the log are
+  independent channels — see [Projections API ›
+  Anomalies](../api/projections.md#anomalies) — and both must be silent for a
+  conforming transcript. A non-empty result here means either a fixture
+  regressed to carrying a duplicate accepted Vote/ballot (the next bullet
+  should already have caught that) or a projection is over-flagging.
+- **No duplicate accepted Vote or ballot in any fixture.** A sibling
+  `describe` (`conformance: no duplicate accepted vote or ballot`) runs
+  `duplicateAcceptedBallots` (`tests/conformance/duplicate-ballots.ts`) over
+  every fixture's messages and asserts `[]`. The predicate is scoped to
+  `expect === 'accept'` — a *rejected* duplicate is exactly the missing
+  upstream fixture this SDK has requested from the spec repo (a
+  `decision_reject_paths.json`/`quorum_reject_paths.json` case with
+  `"expect": "reject"` / `"expected_error_code": "INVALID_ENVELOPE"` for a
+  duplicate Vote/ballot), and this guard must welcome that fixture landing,
+  not treat it as a violation. The predicate lives in its own non-test
+  module, not in `conformance.test.ts`, so `tests/unit/conformance-guard.test.ts`
+  can unit-test it against synthetic input without re-registering
+  `conformance.test.ts`'s three module-scope `describe` blocks. See that
+  module's docblock for why the ballot arm must be gated on the message's own
+  `payload_type` rather than on `message_type` name alone — `Reject` is
+  defined identically-named in both Proposal and Quorum mode, and both are
+  live in the canonical corpus.
+- **Fixtures are canonical — never hand-edit `tests/conformance/*.json`.**
+  If either guard above ever fails against a real fixture, the fix belongs
+  upstream in the spec repo; `make verify-fixtures` diffs this SDK's copies
+  against the canonical source bidirectionally, so a local edit would just
+  fail that gate as `DRIFT` instead of fixing anything.
 
 ### Fixture Drift Gate
 
