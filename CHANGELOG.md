@@ -4,6 +4,17 @@ All notable changes to `macp-sdk-typescript` are documented here. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the
 project uses [Semantic Versioning](https://semver.org/).
 
+## [0.8.0](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/compare/v0.7.1...v0.8.0) (2026-08-31)
+
+
+### ⚠ BREAKING CHANGES
+
+* **projections:** DecisionProjection and QuorumProjection now keep the FIRST accepted Vote/ballot per sender (per proposal_id / request_id) and discard later ones, where they previously kept the last. For a transcript containing a genuine duplicate, derived state changes — most consequentially QuorumProjection.hasQuorum(), which could previously be fabricated by a single sender voting twice under requiredApprovals: 1. Conforming transcripts are unaffected. The discarded message is recorded on the new `anomalies` surface.
+
+### Features
+
+* **projections:** the first accepted vote or ballot stands ([#61](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/issues/61)) ([ac407c3](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/commit/ac407c3767e785b2a1cf82e1ae735a9ebf1138be))
+
 ## [0.7.1](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/compare/v0.7.0...v0.7.1) (2026-08-31)
 
 
