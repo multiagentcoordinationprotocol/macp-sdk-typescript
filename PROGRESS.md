@@ -786,3 +786,51 @@ the matching contract — same seven fields in the same order
 values, same dedup gating before `transcript` append, and the same first-ballot
 citation hedge (`quorum.py:95-98`). Open follow-ups: this repo's #58, #59, #60;
 spec #81, #82, #83, #84; runtime #125; python #43.
+
+---
+
+## Release checkpoint — 0.8.0 shipped, cross-repo wrap (2026-08-31)
+
+Supersedes the "Not merged; cutting the release is a separate call" line that
+closes the section above — the release was cut the same day.
+
+**This repo.** [#62](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/pull/62)
+squash-merged as `0cba4bf`; `main` is at **0.8.0**. The first merge attempt
+failed on "head branch is not up to date" — the `ad25789` checkpoint push had
+landed underneath it — so the branch was updated and CI re-run before merging.
+GitHub release `v0.8.0` created; the Publish workflow succeeded in 44s, with
+`prepublishOnly` (check + lint + format:check + test + build) acting as the
+release gate against the exact published tree.
+
+**The registry lag was not a failed publish, and was not accepted as green
+without checking.** Immediately after the workflow reported success,
+`npm view macp-sdk-typescript version` still returned `0.7.1`. Every job step
+was `success`, which on its own proves nothing — so the `npm publish` step log
+was extracted rather than trusted: it carries `+ macp-sdk-typescript@0.8.0`,
+provenance signed to sigstore (logIndex 2667703754), and npm's own line *"Your
+package is being processed and may take a few minutes to become available."*
+Propagation, not failure. A poller confirmed `0.8.0` at ~60s;
+`npm view macp-sdk-typescript dist-tags` now reads `{ latest: '0.8.0' }`.
+
+**Cross-SDK parity is now released, not just merged.** `macp-sdk-python` shipped
+**0.8.0** to PyPI from its own session, and its issue #43 (the Python twin of
+#55) is CLOSED. Both SDKs carry the same contract at the same version number.
+
+**`macp-runtime`.** Two PRs merged: `#124` (tier-3 integration de-flake,
+test-only, 15/15 checks) as `9d372be`, and the `v0.7.1` release PR `#123` as
+`08ff766`.
+
+`#123` was reported `MERGEABLE/BLOCKED` and it would have been wrong to force it
+with `--admin`. The actual cause: both of its workflow runs sat at
+`action_required` with 0s duration, so none of the 12 required status contexts
+ever reported and branch protection held the PR. Nothing was failing. A
+`gh pr update-branch` — which also pulled in `#124` under `strict: true` — pushed
+as an authorized actor and CI started normally, 15/15 green. **This recurs on
+every release-plz PR in that repo**, because release-plz's own push cannot
+trigger workflows; the durable fix is a workflow/token config change owned by
+that repo, deliberately not made from here.
+
+**Open across the org at wrap:** zero PRs in all four repos. Issues remaining are
+the deliberate follow-ups, all filed while shipping #55 and none of them
+regressions: this repo's #58, #59, #60; spec #84 (reject-path duplicate
+fixtures); runtime #125 (is the one-ApprovalRequest-per-session cap permanent?).
