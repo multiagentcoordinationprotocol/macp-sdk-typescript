@@ -105,6 +105,14 @@ function serverStreamToAsyncGenerator<T>(stream: grpc.ClientReadableStream<T>): 
       stream.cancel();
       throw err;
     },
+    // Required since TypeScript 6 / @types/node 26, which make `AsyncGenerator`
+    // extend `AsyncDisposable` (lib.esnext.disposable). Native `async function*`
+    // generators get this for free; this hand-rolled one has to declare it. It
+    // also makes every watcher stream usable with `await using`, which cancels
+    // the underlying gRPC stream on scope exit exactly like `return()` does.
+    async [Symbol.asyncDispose](): Promise<void> {
+      stream.cancel();
+    },
   };
 }
 
