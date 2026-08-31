@@ -14,14 +14,25 @@ export default defineConfig({
       // `json` + `json-summary` feed the PR coverage comment in CI
       // (davelosert/vitest-coverage-report-action).
       reporter: ['text', 'html', 'json-summary', 'json'],
-      // Calibrated against the 2026-07 suite (lines 96.05, branches 90.77,
-      // functions 92.44, statements 96.05). Floors are current - 2pp; raise
-      // them when new tests land. CI gates on these via `npm run test:coverage`.
+      // Recalibrated 2026-08 for @vitest/coverage-v8 v4 (lines 94.60, branches
+      // 83.87, functions 92.28, statements 93.13). Floors are current - 2pp;
+      // raise them when new tests land. CI gates on these via
+      // `npm run test:coverage`.
+      //
+      // These numbers are LOWER than the v3-era floors (94/88/90/94) even
+      // though not a single test was removed — the v8 provider was rewritten
+      // in Vitest 4 to remap coverage through a rolldown AST instead of
+      // v8-to-istanbul, and the old `ignoreEmptyLines` escape hatch was
+      // deleted along with it. The new mapping sees branches the old one
+      // missed (optional chaining, default parameters, logical short-circuits),
+      // so the same suite measures stricter. Treat the v3 and v4 series as two
+      // different rulers: do NOT read the drop as a coverage regression, and do
+      // NOT try to restore the old numbers by loosening `exclude`.
       thresholds: {
-        lines: 94,
-        branches: 88,
+        lines: 92,
+        branches: 81,
         functions: 90,
-        statements: 94,
+        statements: 91,
       },
     },
   },
