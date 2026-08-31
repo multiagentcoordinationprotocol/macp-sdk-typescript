@@ -305,3 +305,104 @@ the action by SHA, logged `client-id: ***`, minted the token, and completed with
 - What's next: issue #55 (filed by the spec-repo session — Decision/Quorum
   projections are last-vote-wins where RFC-MACP-0007 §5.3 now says first stands).
   Not started; surfaced to the user.
+
+## Issue #55 — first vote stands (RFC-MACP-0007 §5.3 / RFC-MACP-0011 §5)
+
+Plan: `plans/rfc-0007-first-vote-stands.md` (7 phases), branch `fix/55-first-vote-stands`.
+Phases accumulate into ONE PR — shipping first-wins without the anomalies surface
+would release a tally change with no way to observe it.
+
+### Planning — three passes, each found real defects in the one before
+
+- **v1** found the second pinned test (`quorum.test.ts:102`, which with
+  `requiredApprovals: 1` lets a duplicate ballot FABRICATE QUORUM), three doc
+  passages documenting last-wins, and that spec PR #79's own commit message argues
+  against citing it as compelling this change.
+- **v2** dropped the `first-wins.ts` seam as pure indirection once the API was
+  decided, found the conformance harness's own shadowed `ProjectionLike`
+  (`conformance.test.ts:70`, structurally distinct from `src/agent/types.ts`'s
+  despite the identical name), and inverted its own stderr acceptance criterion
+  after actually reading `logging.ts`.
+- **Adversarial reverify** returned GAPS with **25 items**, including a code path I
+  had cited that the plan itself contradicts two paragraphs away, two doc-cleanup
+  greps that would pass green while the misleading prose survived, and a predicate
+  that would have re-run the entire conformance suite inside a unit test file.
+
+### The finding that reordered the plan
+
+Issue #55 is about vote cardinality. Verifying a peer's at-least-once argument
+turned up that **redelivery is live on the standard happy path today**: each mode
+session's `sendAndTrack` applies on ACK, then `GrpcTransportAdapter.start()`
+subscribes with full history replay, and `Participant.processMessage` applies the
+same `message_id` to the SAME projection instance. Every initiator envelope is
+applied twice on `main`.
+
+Map-keyed records mask it. **Seven accumulate-on-apply sites do not** — Decision
+`evaluations`/`objections`, Proposal `accepts`/`rejections`, Task
+`updates`/`completions`/`failures`. Task is the mode nobody in the issue thread
+looked at, which is the argument for a base-level dedup guard rather than seven
+per-site patches.
+
+Consequence: had first-wins + anomalies shipped without `message_id` dedup, the
+initiator's own vote would be flagged `duplicate_vote` with a WARNING on the flow
+every agent uses. Dedup became Phase 2, ahead of all detection.
+
+This finding went upstream and is now the recorded justification for
+RFC-MACP-0006 §3.2's new **Redelivery** subsection (spec PR #80, `110add2`,
+1.4.0-draft) — on the stronger grounds that RFC-MACP-0006 §3.2 sanctions the echo
+and no conforming runtime can prevent it, so this was never one SDK's ordering
+quirk. `:136` now names our seven sites almost literally; `:135` makes "the anomaly
+must not fire on redelivery" a citable clause rather than a design preference.
+
+### Cross-SDK coordination
+
+Ran against `macp-sdk-python` throughout. Independent analyses converged on the
+same observability shape (passive `anomalies` array + warn log, no callback, no
+strict mode) and the same dedup placement. The seven-field record is a frozen
+cross-SDK contract. Their count correction (2 → 7 sites) fixed my undercount; my
+fixture count (17, not 18) fixed theirs. Divergence documented rather than
+smoothed: our `Participant` and mode session share ONE projection instance, theirs
+are two instances on two paths that never meet — so their protection is accidental
+and ours is now stated intent.
+
+### Phase 1 — accepted-only input contract — **Status: DONE** (`3fa2346`)
+
+Verifier: Opus, 2 rounds. Round 1 GAPS (7 items), round 2 PASS.
+
+Round-1 gaps, all closed: `BaseSession.sendAndTrack` misattributed as the mode
+sessions' send path in the one canonical docblock the other five defer to (none of
+the five extends it); a doc paragraph that would have become false inside its own
+PR; `file.ts:NNN` citations baked into shipped source, one of them scheduled to
+rot in this same PR; a design-intent section that stated a position then retracted
+it; an ext-mode assertion that only checked constructor defaults; and a committed
+test whose `describe` title referenced a gitignored plan in CI output.
+
+The `BaseSession` misattribution is the same error I made twice before. Root cause:
+the plan-edit pass corrected the Context section but left Phase 1's Approach step
+carrying the stale citation, so the plan contradicted itself and the executor
+followed the half it was pointed at. **Fixed at the source with an explicit
+"do not cite this" warning so the remaining six phases cannot inherit it.**
+Correcting a fact in one place in a 949-line plan is not correcting it.
+
+Deliberate divergences from the plan, both recorded rather than silently taken:
+- Plan Approach step 1 instructs citing `conformance.test.ts:213` etc. literally;
+  symbol references were used instead, to satisfy the "citations will rot" gap.
+  `grep -rn '\.ts:[0-9]' src/` went 3 → 0, so the fragile practice is gone rather
+  than corrected in place.
+- The `feat!` semver `ASSUMPTIONS.md` entry is Phase 7 content that landed in
+  Phase 1's diff. Left in place — it is logged where `/reconcile` will find it and
+  moving it gains nothing.
+
+Known cosmetic item deferred to Phase 4's docs pass: the five mode docblocks and
+the `describe` title use bare "§5.3", but RFC-MACP-0007 has no literal `### 5.3`
+heading (it is item 3 under §5). `base.ts` explains this; the others do not.
+
+Coverage unchanged at 93.13/83.87/92.28/94.60 with byte-identical absolute counts
+— correct for a comment-only phase, with the consequence worth naming that
+**nothing in CI guards those six docblocks**; delete all six and the suite stays
+green. Enforced by review, not by tests.
+
+729 passed / 7 skipped (36 files); check/lint/format:check/verify-fixtures/build
+all exit 0.
+- What's next: Phase 2 — `message_id` dedup at all six entry points, gating
+  `transcript`. First real behavior change; fixes the seven double-counting sites.
