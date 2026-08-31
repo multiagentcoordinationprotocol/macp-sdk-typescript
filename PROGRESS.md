@@ -278,3 +278,30 @@ published tree and `npm publish --provenance --access public` succeeded.
 `macp-sdk-typescript@0.7.1` is live on npmjs.org, and `sdk-released` dispatched
 to macp-playground. (`npm view` lagged a few minutes on 0.7.0 before propagating.)
 - What's next: none. No open issues, no open PRs.
+
+### `app-id` deprecation + action re-pin — **Status: DONE** (`d752176`, PR #56)
+
+Every run of the three token-minting workflows was printing an
+`actions/create-github-app-token` deprecation annotation for the `app-id` input.
+
+Behaviour-neutral by inspection of the action at the pinned commit, not by
+inference from the annotation text: `main.js` does
+`core.getInput("client-id") || core.getInput("app-id")` and hands the result to
+`createAppAuth({appId: ...})`, so both inputs are one code path. GitHub accepts
+the numeric App ID or the Client ID as the JWT issuer, so `MACP_BOT_APP_ID` keeps
+its value and no secret was rotated. Each of the three sites carries a comment
+saying so — `client-id: ${{ secrets.MACP_BOT_APP_ID }}` otherwise reads as a
+copy-paste error.
+
+Also re-pinned the action to `bcd2ba4` (v3.2.0). Dependabot's #42 had moved it
+from `@v2` to `@v3`, a floating tag, breaking this repo's convention that all
+third-party actions are SHA-pinned; it was the last unpinned one. The two
+`macp-ci` reusable workflows stay on `@v1` — first-party, out of scope.
+
+Verified end to end rather than assumed: `release-please.yml` fires on every push
+to `main`, so the merge itself exercised one call site. Run `33413547575` resolved
+the action by SHA, logged `client-id: ***`, minted the token, and completed with
+**zero annotations**.
+- What's next: issue #55 (filed by the spec-repo session — Decision/Quorum
+  projections are last-vote-wins where RFC-MACP-0007 §5.3 now says first stands).
+  Not started; surfaced to the user.
