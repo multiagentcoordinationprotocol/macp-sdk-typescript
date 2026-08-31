@@ -13,6 +13,8 @@ All projections share:
 | `commitment` | `Record<string, unknown> \| undefined` | Commitment payload, set on Commitment |
 | `isCommitted` | `boolean` (getter) | `true` once a Commitment has been applied |
 | `isPositiveOutcome` | `boolean \| undefined` (getter) | Commitment's `outcomePositive`; `undefined` before commit, `true` when the field is absent |
+| `anomalies` | `ProjectionAnomaly[]` | Cardinality anomalies recorded while replaying the accepted transcript. See [Anomalies](#anomalies) below. |
+| `hasAnomalies` | `boolean` (getter) | `true` once at least one anomaly has been recorded |
 
 All projections implement:
 
@@ -156,6 +158,74 @@ those envelopes at the call site. `transcript` is deliberately not that list,
 before or after this change; it is the runtime's accepted, deduplicated
 history.
 
+## Anomalies
+
+`ProjectionAnomalyKind` and `ProjectionAnomaly` — exported from the package
+root, together with the `anomalies` field and `hasAnomalies` getter on every
+projection — record cardinality anomalies observed while replaying an
+accepted transcript. Like `transcript`, `anomalies` is `readonly` at the
+field level only — that keeps a consumer from rebinding the property to a
+different array, it does not make the array itself immutable; `.push()` onto
+`anomalies` works exactly like `.push()` onto `transcript`.
+
+```typescript
+export type ProjectionAnomalyKind = 'duplicate_vote' | 'duplicate_ballot';
+
+export interface ProjectionAnomaly {
+  kind: ProjectionAnomalyKind;
+  mode: string;
+  messageType: string;
+  messageId: string;
+  sender: string;
+  /** proposal_id (Decision) or request_id (Quorum) the duplicate targeted */
+  subjectId: string;
+  detail: string;
+}
+```
+
+This is a **cross-SDK frozen contract**, agreed with `macp-sdk-python` (same
+seven fields, snake_case there) — do not add, rename, or remove a field
+without cross-SDK agreement.
+
+**What an anomaly means — deliberately narrow, agreed wording across both
+SDKs:** an anomaly records that a second distinct `Vote` from this sender for
+this proposal (`duplicate_vote`, RFC-MACP-0007 §5.3), or a second distinct
+ballot across `Approve`/`Reject`/`Abstain` from this sender for this request
+(`duplicate_ballot`, RFC-MACP-0011 §5 rule 3), **was observed and discarded —
+the first stands.** (RFC-MACP-0011 §5 rule 3 caps *how many* ballots and is
+silent on *which of two* stands; first-ballot-wins here is parity with
+RFC-MACP-0007 §5.3 plus runtime-enforced behaviour.) It does **not**, and
+structurally cannot, claim "this transcript violates the spec": a projection
+has no way to tell a genuinely non-conforming source from a conforming source
+fed through an unfiltered loader, because acceptance is not a wire property
+(see [Input contract](#input-contract) above). Do not read more into an
+anomaly than what was observed and what this projection did about it.
+
+**Only `DecisionProjection` and `QuorumProjection` populate `anomalies`
+today** — a duplicate `Vote` and a duplicate ballot, respectively. The other
+three built-in projections (`ProposalProjection`, `TaskProjection`,
+`HandoffProjection`) expose the same field and getter for a uniform surface,
+but nothing currently writes to them.
+
+Recording an anomaly does two things:
+1. Pushes the `ProjectionAnomaly` onto `anomalies` — the canonical, cross-SDK
+   agreed semantic. Read this array; it is what you should build logic on.
+2. Emits `logger.warn('projection anomaly', anomaly)` — this half is
+   **explicitly non-contractual observability and may differ per SDK.**
+   `logger.warn` is visible by default (this SDK's default log level is
+   `warn`, see `src/logging.ts`): observing and discarding a duplicate is
+   deliberately not silent. If you need to quiet the log line without losing
+   the `anomalies` array, raise the log level —
+   `configureLogging({ level: 'error' })` or the `MACP_LOG_LEVEL` environment
+   variable.
+
+`BaseProjection` also exposes a `protected recordAnomaly(anomaly)` helper
+that does both of the above, for custom (ext-mode) projections built on
+`BaseProjection`. The built-in `DecisionProjection` and `QuorumProjection` do
+not extend `BaseProjection` (see [BaseProjection
+(custom modes)](#baseprojection-custom-modes) below) and inline the same two
+lines directly at their duplicate-detection call sites instead.
+
 ## Design intent: shared projection instance
 
 `Participant` and the mode session it wraps deliberately share **one**
@@ -175,9 +245,17 @@ implicit.
 
 For comparison: `macp-sdk-python` gives the local apply-on-ACK path and the
 stream-replay path two separate projection instances that never meet, so this
-particular bug class cannot occur there by construction. Neither SDK has
+particular bug class cannot occur there by construction. Concretely, Python's
+`Participant` never constructs a session-backed projection at all — its
+session-driven and stream-driven projections are separate objects on separate
+paths that never meet, whereas this SDK's `Participant` and its mode session
+deliberately share the one instance described above. Neither SDK has
 published a position on which topology is "correct" — this section states
-this SDK's own design intent without asserting that Python's is wrong.
+this SDK's own design intent without asserting that Python's is wrong. The
+point of stating both sides explicitly (Python documents the reciprocal
+statement on its side) is that this asymmetry is a known, load-bearing
+difference between the two SDKs, not something either could quietly refactor
+away without noticing.
 
 ## BaseProjection (custom modes)
 

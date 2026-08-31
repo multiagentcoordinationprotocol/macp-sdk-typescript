@@ -1,5 +1,6 @@
 import { MODE_PROPOSAL } from '../constants';
 import { logger } from '../logging';
+import type { ProjectionAnomaly } from './base';
 import type { Envelope } from '../types';
 import type { ProtoRegistry } from '../proto-registry';
 
@@ -37,6 +38,13 @@ export class ProposalProjection {
    * only as a one-line pointer.
    */
   readonly transcript: Envelope[] = [];
+  /**
+   * Cardinality anomalies recorded while replaying this projection's accepted
+   * transcript. See `BaseProjection.anomalies` (`src/projections/base.ts`)
+   * for the canonical description; duplicated here only as a one-line
+   * pointer. No built-in detection populates this for Proposal mode.
+   */
+  readonly anomalies: ProjectionAnomaly[] = [];
   phase: 'Negotiating' | 'TerminalRejected' | 'Committed' = 'Negotiating';
   commitment?: Record<string, unknown>;
   /**
@@ -142,6 +150,15 @@ export class ProposalProjection {
       default:
         break;
     }
+  }
+
+  /**
+   * True once at least one `ProjectionAnomaly` has been recorded. See
+   * `BaseProjection.hasAnomalies` (`src/projections/base.ts`) for the
+   * canonical description; duplicated here only as a one-line pointer.
+   */
+  get hasAnomalies(): boolean {
+    return this.anomalies.length > 0;
   }
 
   get isCommitted(): boolean {

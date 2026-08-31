@@ -1,5 +1,6 @@
 import { MODE_DECISION } from '../constants';
 import { logger } from '../logging';
+import type { ProjectionAnomaly } from './base';
 import type { Envelope } from '../types';
 import type { ProtoRegistry } from '../proto-registry';
 
@@ -44,6 +45,14 @@ export class DecisionProjection {
    * only as a one-line pointer.
    */
   readonly transcript: Envelope[] = [];
+  /**
+   * Cardinality anomalies recorded while replaying this projection's accepted
+   * transcript (e.g. a duplicate `Vote` from the same sender for the same
+   * `proposal_id`). See `BaseProjection.anomalies` (`src/projections/base.ts`)
+   * for the canonical description; duplicated here only as a one-line
+   * pointer.
+   */
+  readonly anomalies: ProjectionAnomaly[] = [];
   phase: 'Proposal' | 'Evaluation' | 'Voting' | 'Committed' = 'Proposal';
   commitment?: Record<string, unknown>;
   /**
@@ -122,6 +131,15 @@ export class DecisionProjection {
       default:
         break;
     }
+  }
+
+  /**
+   * True once at least one `ProjectionAnomaly` has been recorded. See
+   * `BaseProjection.hasAnomalies` (`src/projections/base.ts`) for the
+   * canonical description; duplicated here only as a one-line pointer.
+   */
+  get hasAnomalies(): boolean {
+    return this.anomalies.length > 0;
   }
 
   get isCommitted(): boolean {

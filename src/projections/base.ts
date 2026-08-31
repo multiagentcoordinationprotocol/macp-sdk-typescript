@@ -3,6 +3,98 @@ import type { ProtoRegistry } from '../proto-registry';
 import type { Envelope } from '../types';
 
 /**
+ * The kind of cardinality anomaly a projection recorded while replaying an
+ * accepted transcript. Cross-SDK frozen contract (`macp-sdk-python` adopted
+ * the identical field set, snake_case there) — do not add a kind without
+ * cross-SDK agreement.
+ */
+export type ProjectionAnomalyKind = 'duplicate_vote' | 'duplicate_ballot';
+
+/**
+ * A recorded observation that a second distinct `Vote` from this sender for
+ * this proposal (RFC-MACP-0007 §5.3), or a second distinct ballot across
+ * `Approve`/`Reject`/`Abstain` from this sender for this request
+ * (RFC-MACP-0011 §5 rule 3), was observed and discarded — the first stands.
+ * (RFC-MACP-0011 §5 rule 3 caps *how many* ballots and is silent on *which of
+ * two* stands; first-ballot-wins here is parity with RFC-MACP-0007 §5.3 plus
+ * runtime-enforced behaviour.)
+ *
+ * **Deliberately narrow claim — do not overclaim "this transcript violates
+ * the spec".** A projection cannot tell a genuinely non-conforming source
+ * from a conforming source fed through an unfiltered loader, because
+ * acceptance is not a wire property (`Envelope` carries no acceptance
+ * marker — see `applyEnvelope`'s "Input contract: accepted-only" docblock).
+ * An anomaly records only what was observed and what this projection did
+ * about it (discarded the second one, kept the first); it does not, and
+ * structurally cannot, assert that a conforming runtime was actually
+ * bypassed. Both `macp-sdk-python` and this SDK state it in these terms —
+ * agreed cross-SDK wording, not a style preference.
+ *
+ * Cross-SDK frozen contract, seven fields (camelCase here, snake_case in
+ * `macp-sdk-python`). Do not add, rename, or remove a field without
+ * cross-SDK agreement.
+ *
+ * Only `DecisionProjection` and `QuorumProjection` populate this today.
+ */
+export interface ProjectionAnomaly {
+  kind: ProjectionAnomalyKind;
+  mode: string;
+  messageType: string;
+  messageId: string;
+  sender: string;
+  /** `proposal_id` (Decision) or `request_id` (Quorum) the duplicate targeted. */
+  subjectId: string;
+  /**
+   * Human-readable detail. For a cross-type Quorum duplicate, `messageType`
+   * is what distinguishes the discarded ballot's type (Approve/Reject/Abstain)
+   * from the kept one — `detail` should name both.
+   */
+  detail: string;
+}
+
+/**
+ * The exact `ProjectionAnomaly` member set this alias guards against drift.
+ * Expressed as a type rather than a runtime array because there is no
+ * runtime field list to compare it against — parity with
+ * `commitment-hash.ts`'s `HashedCommitmentField` (issue #47).
+ */
+type FrozenProjectionAnomalyField = 'kind' | 'mode' | 'messageType' | 'messageId' | 'sender' | 'subjectId' | 'detail';
+
+/** Fails to instantiate — a `tsc` error — for any `T` that is not `never`. */
+type AssertNever<T extends never> = T;
+
+/**
+ * Compile-time frozen-field-set guard for `ProjectionAnomaly` (same shape as
+ * `commitment-hash.ts`'s `_CommitmentFieldSetIsFrozen`, issue #47).
+ *
+ * `ProjectionAnomaly` is a **cross-SDK frozen contract**, agreed with
+ * `macp-sdk-python` (same seven fields, snake_case there). Nothing else in
+ * this file enumerates the field set at compile time, so without this alias,
+ * a field added to or removed from `ProjectionAnomaly` would compile clean
+ * and silently drift the two SDKs apart — no `tsc` error, no runtime error,
+ * just a wire shape the two implementations no longer agree on.
+ *
+ * Both directions are checked. A field ADDED to `ProjectionAnomaly` and not
+ * listed in `FrozenProjectionAnomalyField` leaves the first `Exclude`
+ * non-empty; a field REMOVED from `ProjectionAnomaly` while still listed
+ * above leaves the second non-empty. Either way `AssertNever`'s `T extends
+ * never` constraint fails and `npm run check` — and therefore CI — goes red
+ * on this line.
+ *
+ * Intended workflow when this goes red: agree the field change with
+ * `macp-sdk-python` first, then update `FrozenProjectionAnomalyField` to
+ * match — never widen it alone just to make the error go away.
+ *
+ * Zero runtime cost: this is a type alias, erased at compile time. It is
+ * intentionally never referenced, which is what the disable comment is for.
+ */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+type _ProjectionAnomalyFieldSetIsFrozen = AssertNever<
+  | Exclude<keyof ProjectionAnomaly, FrozenProjectionAnomalyField>
+  | Exclude<FrozenProjectionAnomalyField, keyof ProjectionAnomaly>
+>;
+
+/**
  * Abstract base for in-process mode-state tracking — parity with python-sdk's
  * `macp_sdk.base_projection.BaseProjection`. Maintains a shared transcript,
  * phase string, and commitment payload; subclasses override `applyMode`
@@ -37,7 +129,32 @@ export abstract class BaseProjection {
    */
   private readonly seenMessageIds = new Set<string>();
 
+  /**
+   * Cardinality anomalies recorded while replaying this projection's
+   * accepted transcript (e.g. a duplicate vote or ballot from the same
+   * sender). See `ProjectionAnomaly`. Empty unless a subclass calls
+   * `recordAnomaly`. NOTE: as of this SDK's built-in modes, nothing calls
+   * `recordAnomaly` — `DecisionProjection` and `QuorumProjection` do not
+   * extend `BaseProjection` (see the class docblock) and inline their own
+   * two lines instead. This field and `recordAnomaly` exist for ext-mode
+   * `BaseProjection` subclasses outside this repo.
+   */
+  readonly anomalies: ProjectionAnomaly[] = [];
+
   protected abstract readonly mode: string;
+
+  /**
+   * True once at least one `ProjectionAnomaly` has been recorded — i.e. this
+   * projection observed and discarded a duplicate vote or ballot from the
+   * same sender (see `anomalies` above). This getter is exactly
+   * `anomalies.length > 0`; it never asserts "this transcript violates the
+   * spec" (see `ProjectionAnomaly`'s docblock, and `applyEnvelope`'s "Input
+   * contract: accepted-only" section above, for why a projection cannot make
+   * that claim).
+   */
+  get hasAnomalies(): boolean {
+    return this.anomalies.length > 0;
+  }
 
   get isCommitted(): boolean {
     return this.commitment !== undefined;
@@ -137,4 +254,20 @@ export abstract class BaseProjection {
 
   /** Handle a mode-specific (non-Commitment) envelope. */
   protected abstract applyMode(envelope: Envelope, protoRegistry: ProtoRegistry): void;
+
+  /**
+   * Record a cardinality anomaly: push it onto `anomalies` and emit it via
+   * `logger.warn('projection anomaly', anomaly)`. The `anomalies` array is
+   * the canonical, cross-SDK-agreed semantic; the log call is explicitly
+   * NON-contractual observability and may differ per SDK. `logger.warn` is
+   * visible by default (this SDK's default log level is `warn`,
+   * `src/logging.ts`) — observing and discarding a duplicate is deliberately
+   * not silent. To quiet it without losing the `anomalies` array, configure a
+   * higher level: `configureLogging({ level: 'error' })` or the
+   * `MACP_LOG_LEVEL` environment variable.
+   */
+  protected recordAnomaly(anomaly: ProjectionAnomaly): void {
+    this.anomalies.push(anomaly);
+    logger.warn('projection anomaly', anomaly);
+  }
 }

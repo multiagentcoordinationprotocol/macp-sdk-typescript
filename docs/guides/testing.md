@@ -259,6 +259,10 @@ For each projection:
   double-append to `transcript` or to any accumulate-on-apply site (see
   `tests/unit/projections/message-id-dedup.test.ts`, and [Projections API ›
   Redelivery](../api/projections.md#redelivery-message_id-dedup))
+- **Anomalies surface**: `anomalies` starts empty and `hasAnomalies` starts
+  `false` on every projection; only `DecisionProjection` (duplicate `Vote`)
+  and `QuorumProjection` (duplicate ballot) populate it (see [Projections API
+  › Anomalies](../api/projections.md#anomalies))
 
 ### Testing redelivery (`message_id` dedup)
 
@@ -295,6 +299,39 @@ elsewhere:
   `configureLogging({ level: 'debug', sink })`; the SDK's default level
   (`warn`) suppresses `debug` entirely, so a test left at the default level
   passes vacuously regardless of whether the log call fires.
+
+### Testing the anomalies surface
+
+`tests/unit/projections/anomalies.test.ts` covers the `anomalies` surface:
+types, the `anomalies` field, the `hasAnomalies` getter, and
+`BaseProjection.recordAnomaly`. `BaseProjection.recordAnomaly` has no
+built-in-mode caller — the five built-in mode projections do NOT extend
+`BaseProjection` and inline their own two lines at their duplicate-detection
+call sites instead (see [Projections API ›
+Anomalies](../api/projections.md#anomalies)) — so the tests exercise
+`recordAnomaly` through a synthetic third-party `BaseProjection` subclass
+instead.
+
+Two things worth copying when Phases 4-5 add real detection (Decision `Vote`,
+Quorum ballots), or when testing a custom ext-mode's own anomaly detection:
+
+- **Test the array and the `logger.warn` call as separate assertions in
+  separate tests**, not combined in one test with the array assertion first.
+  If an assertion earlier in a test throws, later assertions in the same test
+  body never run — so a mutation that breaks only the log call can look like
+  it also "breaks" an array assertion that was never actually re-verified,
+  and vice versa. Splitting them into sibling `it()`s (mirrored in
+  `anomalies.test.ts`: "... (array half only)" / "... (sink half only)")
+  makes each half's non-vacuity independently provable: deleting the `push`
+  fails only the array-half tests, deleting `logger.warn` fails only the
+  sink-half tests.
+- **Construct a fresh instance per test and assert non-sharing explicitly.**
+  `anomalies` (like `transcript`) is a `readonly` instance field initialized
+  in a property initializer, but `readonly` does not prevent two instances
+  from accidentally sharing the same array if a future refactor moves the
+  initializer to a shared location (e.g. a static or prototype default).
+  Assert `a.anomalies !== b.anomalies` across two instances, not just that
+  lengths differ.
 
 ## Conformance Tests
 
