@@ -834,3 +834,24 @@ that repo, deliberately not made from here.
 the deliberate follow-ups, all filed while shipping #55 and none of them
 regressions: this repo's #58, #59, #60; spec #84 (reject-path duplicate
 fixtures); runtime #125 (is the one-ApprovalRequest-per-session cap permanent?).
+
+**Runtime v0.7.1 did land, and "hung" was a bad call I had to retract.** After
+`#123` merged, its `release-plz` run sat in-flight for ~36 minutes with the
+run's `updated_at` frozen at creation time. That was read as a hang and a
+cancellation was nearly issued. The refutation was one query: past runs on that
+same workflow include a 32m48s success, a 29m and a 15m — and *every* one of
+them reports `updated_at` frozen until completion. The frozen timestamp is that
+workflow's normal reporting, not a liveness signal, so it could not have
+distinguished hung from slow. Both runs completed `success`; all seven crates
+are tagged `*-v0.7.1` and published (macp-pb, macp-core, macp-auth, macp-policy,
+macp-modes, macp-storage, macp-runtime), and `macp-runtime-v0.7.1` is the latest
+GitHub release.
+
+One PR was deliberately **not** merged. `release-plz` opened
+[runtime #126](https://github.com/multiagentcoordinationprotocol/macp-runtime/pull/126),
+another "chore: release v0.7.1", at 21:04 — the first of the two queued runs
+finishing against pre-bump head `9d372be` while the second had already cut the
+release from `08ff766`. `origin/main` was already at `version = "0.7.1"`, so
+merging it would have re-applied a released bump and duplicated the changelog
+entries `#123` landed. Closed with the reasoning recorded on the PR. "Merge all
+open PRs" does not mean merge an artifact of a race in the release tooling.
