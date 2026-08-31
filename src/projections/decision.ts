@@ -118,6 +118,25 @@ export class DecisionProjection {
       case 'Vote': {
         const record = payload as { proposalId: string; vote: string; reason?: string };
         const bySender = this.votes.get(record.proposalId) ?? new Map<string, DecisionVoteRecord>();
+        const kept = bySender.get(envelope.sender);
+        if (kept !== undefined) {
+          // RFC-MACP-0007 §5 item 3: the first accepted Vote stands. A conforming
+          // runtime NACKs the duplicate (macp-runtime decision.rs), so reaching
+          // here means the transcript was not filtered to a conforming
+          // runtime's accepted history.
+          const anomaly: ProjectionAnomaly = {
+            kind: 'duplicate_vote',
+            mode: envelope.mode,
+            messageType: envelope.messageType,
+            messageId: envelope.messageId,
+            sender: envelope.sender,
+            subjectId: record.proposalId,
+            detail: `sender ${envelope.sender} already voted '${kept.vote}' on proposal ${record.proposalId}; discarded '${record.vote}'`,
+          };
+          this.anomalies.push(anomaly);
+          logger.warn('projection anomaly', anomaly);
+          break;
+        }
         bySender.set(envelope.sender, { ...record, sender: envelope.sender });
         this.votes.set(record.proposalId, bySender);
         this.phase = 'Voting';

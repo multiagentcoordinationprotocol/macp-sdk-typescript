@@ -324,12 +324,14 @@ describe('redelivery does not duplicate an accumulate-on-apply site', () => {
 
 // ── THE PRIORITY REGRESSION ────────────────────────────────────────────────
 //
-// A redelivery must NOT be treated as a duplicate/anomaly. `ProjectionAnomaly`
-// doesn't exist yet (Phase 3), so this is written now over `evaluations` as a
-// placeholder and is EXTENDED in Phases 4-5 to cover votes and ballots. This
-// is the assertion that would fail loudly if a later "simplification" turned
-// dedup into anomaly detection.
-describe('THE PRIORITY REGRESSION: a redelivery is not a duplicate/anomaly (placeholder, extended in Phases 4-5)', () => {
+// A redelivery must NOT be treated as a duplicate/anomaly. This is the
+// assertion that would fail loudly if a later "simplification" turned dedup
+// into anomaly detection. It is written here over `evaluations`; the
+// equivalent coverage for votes lives in
+// `tests/unit/projections/decision.test.ts`, in the "the reachability pair
+// (redelivery vs. genuine duplicate)" and "duplicate_vote anomaly logging"
+// describes.
+describe('THE PRIORITY REGRESSION: a redelivery is not a duplicate/anomaly', () => {
   it('a redelivered Evaluation emits no warn and leaves evaluations.length === 1', () => {
     const sink: LogSink = vi.fn();
     configureLogging({ sink }); // default level 'warn' — a warn call would still reach this sink

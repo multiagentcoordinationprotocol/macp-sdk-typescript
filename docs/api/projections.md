@@ -275,11 +275,11 @@ mode-specific message types. The five built-in projections below pre-date
 | `proposals` | `Map<string, DecisionProposalRecord>` |
 | `evaluations` | `DecisionEvaluationRecord[]` |
 | `objections` | `DecisionObjectionRecord[]` |
-| `votes` | `Map<string, Map<string, DecisionVoteRecord>>` |
+| `votes` | `Map<string, Map<string, DecisionVoteRecord>>` — proposal_id → sender → the sender's **first** accepted `Vote` for that proposal. A later `Vote` from the same sender for the same proposal is discarded and recorded in [`anomalies`](#anomalies) instead of overwriting the entry ([RFC-MACP-0007](https://github.com/multiagentcoordinationprotocol/multiagentcoordinationprotocol/blob/main/rfcs/RFC-MACP-0007-decision-mode.md) §5 item 3). |
 
 | Method | Returns | Description |
 |--------|---------|-------------|
-| `voteTotals()` | `Record<string, number>` | Positive vote counts per proposal |
+| `voteTotals()` | `Record<string, number>` | Positive vote counts per proposal, computed from `votes` — a discarded duplicate is never counted; see the `votes` row above and [Anomalies](#anomalies) |
 | `majorityWinner()` | `string \| undefined` | Proposal whose positive votes exceed 50% of all non-abstain votes |
 | `voteRatio(proposalId)` | `number` | Approve ratio, excluding abstains from the denominator |
 | `hasBlockingObjection(proposalId?)` | `boolean` | Has a **critical**-severity objection (only critical blocks per [RFC-MACP-0004 (Security)](https://github.com/multiagentcoordinationprotocol/multiagentcoordinationprotocol/blob/main/rfcs/RFC-MACP-0004-security.md)); omit the ID to check all proposals |

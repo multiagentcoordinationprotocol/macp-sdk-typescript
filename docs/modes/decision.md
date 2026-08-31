@@ -188,17 +188,28 @@ session.projection.isCommitted;        // true once a Commitment is applied
 session.projection.isPositiveOutcome;  // undefined until committed; then outcomePositive (default true)
 ```
 
-### Vote Deduplication
+### Vote Cardinality
 
-If the same sender votes twice on the same proposal, the later vote replaces the earlier one.
+Per [RFC-MACP-0007](https://github.com/multiagentcoordinationprotocol/multiagentcoordinationprotocol/blob/main/rfcs/RFC-MACP-0007-decision-mode.md)
+§5 item 3, the first `Vote` a sender casts for a given `proposal_id` stands;
+any later `Vote` from the same sender for the same proposal is discarded and
+recorded in [`anomalies`](../api/projections.md#anomalies) as a
+`duplicate_vote`. A conforming runtime NACKs the second `Vote` outright, so
+reaching this path means the transcript was not filtered to a conforming
+runtime's *accepted* history (a hand-built fixture, a captured/edited
+transcript, an in-development runtime, or a client-side simulation) — see
+[Input contract](../api/projections.md#input-contract).
 
 ## RFC Validation Rules
 
 The runtime enforces the cross-message rules — unique `proposal_id`s,
-Evaluation/Objection/Vote referencing an existing proposal, one Vote per
-participant per proposal (latest wins), commitment authority, and at least one
-proposal before resolution. The SDK validates only field formats client-side
-(vote/recommendation/severity values, confidence range, required fields). The
+Evaluation/Objection/Vote referencing an existing proposal, at most one Vote
+per participant per proposal (the runtime **rejects** a second Vote from the
+same sender; it does not accept and overwrite it — see
+[Vote Cardinality](#vote-cardinality) above), commitment authority, and at
+least one proposal before resolution. The SDK validates only field formats
+client-side (vote/recommendation/severity values, confidence range, required
+fields). The
 normative rule set lives in RFC-MACP-0007 §4; the
 [runtime modes guide › Decision Mode](https://github.com/multiagentcoordinationprotocol/macp-runtime/blob/main/docs/modes.md#decision-mode)
 documents validation as implemented, including the NACK codes each rejection

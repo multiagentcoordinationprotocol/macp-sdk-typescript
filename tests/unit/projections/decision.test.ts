@@ -1,10 +1,12 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { DecisionProjection } from '../../../src/projections/decision';
 import { ProtoRegistry } from '../../../src/proto-registry';
 import { buildEnvelope } from '../../../src/envelope';
 import { MODE_DECISION } from '../../../src/constants';
+import { configureLogging, _resetLoggingForTests } from '../../../src/logging';
 
 const registry = new ProtoRegistry();
+const EXPECTED_KIND = 'duplicate_vote';
 
 function makeEnvelope(messageType: string, payload: Record<string, unknown>, sender = 'agent-a') {
   return buildEnvelope({
@@ -130,13 +132,188 @@ describe('DecisionProjection', () => {
     expect(projection.transcript).toHaveLength(0);
   });
 
-  it('deduplicates votes by sender per proposal', () => {
+  it('the first accepted vote stands; a second Vote from the same sender is discarded as a duplicate_vote anomaly', () => {
+    projection.applyEnvelope(makeEnvelope('Proposal', { proposalId: 'p1', option: 'a' }), registry);
+    projection.applyEnvelope(makeEnvelope('Vote', { proposalId: 'p1', vote: 'reject' }, 'alice'), registry);
+    const secondVote = makeEnvelope('Vote', { proposalId: 'p1', vote: 'approve' }, 'alice');
+    projection.applyEnvelope(secondVote, registry);
+
+    expect(projection.voteTotals()['p1']).toBe(0);
+    expect(projection.votes.get('p1')?.size).toBe(1);
+    expect(projection.votes.get('p1')?.get('alice')?.vote).toBe('reject');
+    expect(projection.anomalies).toHaveLength(1);
+    expect(projection.anomalies[0]).toMatchObject({
+      kind: EXPECTED_KIND,
+      mode: MODE_DECISION,
+      messageType: 'Vote',
+      messageId: secondVote.messageId,
+      sender: 'alice',
+      subjectId: 'p1',
+    });
+    expect(projection.anomalies[0].detail).toContain("'reject'");
+    expect(projection.anomalies[0].detail).toContain("'approve'");
+  });
+
+  it('order-based, not value-based: whichever Vote arrives first stands', () => {
+    projection.applyEnvelope(makeEnvelope('Proposal', { proposalId: 'p1', option: 'a' }), registry);
+    projection.applyEnvelope(makeEnvelope('Vote', { proposalId: 'p1', vote: 'approve' }, 'alice'), registry);
+    projection.applyEnvelope(makeEnvelope('Vote', { proposalId: 'p1', vote: 'reject' }, 'alice'), registry);
+
+    expect(projection.voteTotals()['p1']).toBe(1);
+    expect(projection.votes.get('p1')?.get('alice')?.vote).toBe('approve');
+    expect(projection.anomalies).toHaveLength(1);
+  });
+
+  it('voteRatio under a duplicate vote records the anomaly but leaves the ratio at its correct conforming value', () => {
+    projection.applyEnvelope(makeEnvelope('Proposal', { proposalId: 'p1', option: 'a' }), registry);
+    projection.applyEnvelope(makeEnvelope('Vote', { proposalId: 'p1', vote: 'approve' }, 'alice'), registry);
+    projection.applyEnvelope(makeEnvelope('Vote', { proposalId: 'p1', vote: 'approve' }, 'alice'), registry);
+    projection.applyEnvelope(makeEnvelope('Vote', { proposalId: 'p1', vote: 'reject' }, 'bob'), registry);
+
+    expect(projection.voteRatio('p1')).toBe(0.5);
+    expect(projection.anomalies).toHaveLength(1);
+  });
+
+  it('majorityWinner under a duplicate vote records the anomaly but leaves the winner at its correct conforming value', () => {
+    projection.applyEnvelope(makeEnvelope('Proposal', { proposalId: 'p1', option: 'a' }), registry);
+    projection.applyEnvelope(makeEnvelope('Proposal', { proposalId: 'p2', option: 'b' }), registry);
+    projection.applyEnvelope(makeEnvelope('Vote', { proposalId: 'p1', vote: 'approve' }, 'alice'), registry);
+    // Duplicate: alice's second vote on p1 must not inflate p1's count or the
+    // non-abstain denominator.
+    projection.applyEnvelope(makeEnvelope('Vote', { proposalId: 'p1', vote: 'approve' }, 'alice'), registry);
+    projection.applyEnvelope(makeEnvelope('Vote', { proposalId: 'p2', vote: 'approve' }, 'bob'), registry);
+    projection.applyEnvelope(makeEnvelope('Vote', { proposalId: 'p2', vote: 'approve' }, 'carol'), registry);
+
+    expect(projection.majorityWinner()).toBe('p2');
+    expect(projection.anomalies).toHaveLength(1);
+  });
+
+  it('scopes duplicate detection per proposal_id: the same sender voting once on two proposals records nothing', () => {
+    projection.applyEnvelope(makeEnvelope('Proposal', { proposalId: 'p1', option: 'a' }), registry);
+    projection.applyEnvelope(makeEnvelope('Proposal', { proposalId: 'p2', option: 'b' }), registry);
+    projection.applyEnvelope(makeEnvelope('Vote', { proposalId: 'p1', vote: 'approve' }, 'alice'), registry);
+    projection.applyEnvelope(makeEnvelope('Vote', { proposalId: 'p2', vote: 'reject' }, 'alice'), registry);
+
+    expect(projection.voteTotals()['p1']).toBe(1);
+    expect(projection.voteTotals()['p2']).toBe(0);
+    expect(projection.votes.get('p1')?.get('alice')?.vote).toBe('approve');
+    expect(projection.votes.get('p2')?.get('alice')?.vote).toBe('reject');
+    expect(projection.anomalies).toHaveLength(0);
+  });
+
+  it('the discarded duplicate still enters the transcript (distinct envelope, not a redelivery)', () => {
     projection.applyEnvelope(makeEnvelope('Proposal', { proposalId: 'p1', option: 'a' }), registry);
     projection.applyEnvelope(makeEnvelope('Vote', { proposalId: 'p1', vote: 'reject' }, 'alice'), registry);
     projection.applyEnvelope(makeEnvelope('Vote', { proposalId: 'p1', vote: 'approve' }, 'alice'), registry);
 
-    const totals = projection.voteTotals();
-    expect(totals['p1']).toBe(1); // latest vote wins
+    expect(projection.transcript).toHaveLength(3);
+  });
+
+  it('a duplicate vote arriving after Commitment leaves phase Committed, not Voting', () => {
+    projection.applyEnvelope(makeEnvelope('Proposal', { proposalId: 'p1', option: 'a' }), registry);
+    projection.applyEnvelope(makeEnvelope('Vote', { proposalId: 'p1', vote: 'approve' }, 'alice'), registry);
+    projection.applyEnvelope(
+      makeEnvelope('Commitment', {
+        commitmentId: 'c1',
+        action: 'deploy',
+        authorityScope: 'ops',
+        reason: 'approved',
+        modeVersion: '1.0.0',
+        configurationVersion: 'config.default',
+      }),
+      registry,
+    );
+    expect(projection.phase).toBe('Committed');
+
+    projection.applyEnvelope(makeEnvelope('Vote', { proposalId: 'p1', vote: 'reject' }, 'alice'), registry);
+
+    expect(projection.phase).toBe('Committed');
+    expect(projection.anomalies).toHaveLength(1);
+  });
+
+  describe('duplicate_vote anomaly logging', () => {
+    afterEach(() => {
+      _resetLoggingForTests();
+    });
+
+    it('emits logger.warn exactly once for a genuine duplicate vote', () => {
+      const calls: unknown[][] = [];
+      configureLogging({ sink: (level, args) => calls.push([level, ...args]) });
+
+      projection.applyEnvelope(makeEnvelope('Proposal', { proposalId: 'p1', option: 'a' }), registry);
+      projection.applyEnvelope(makeEnvelope('Vote', { proposalId: 'p1', vote: 'reject' }, 'alice'), registry);
+      projection.applyEnvelope(makeEnvelope('Vote', { proposalId: 'p1', vote: 'approve' }, 'alice'), registry);
+
+      const warnCalls = calls.filter(([level]) => level === 'warn');
+      expect(warnCalls).toHaveLength(1);
+    });
+
+    it('a conforming three-sender transcript records zero anomalies and zero sink calls', () => {
+      const calls: unknown[][] = [];
+      configureLogging({ sink: (level, args) => calls.push([level, ...args]) });
+
+      projection.applyEnvelope(makeEnvelope('Proposal', { proposalId: 'p1', option: 'a' }), registry);
+      projection.applyEnvelope(makeEnvelope('Vote', { proposalId: 'p1', vote: 'approve' }, 'alice'), registry);
+      projection.applyEnvelope(makeEnvelope('Vote', { proposalId: 'p1', vote: 'reject' }, 'bob'), registry);
+      projection.applyEnvelope(makeEnvelope('Vote', { proposalId: 'p1', vote: 'abstain' }, 'carol'), registry);
+
+      expect(projection.anomalies).toHaveLength(0);
+      expect(calls).toHaveLength(0);
+    });
+  });
+
+  describe('the reachability pair (redelivery vs. genuine duplicate)', () => {
+    afterEach(() => {
+      _resetLoggingForTests();
+    });
+
+    it('a redelivered Vote (same sender, same proposal_id, SAME messageId) records ZERO anomalies and leaves the tally unchanged', () => {
+      const calls: unknown[][] = [];
+      configureLogging({ sink: (level, args) => calls.push([level, ...args]) });
+
+      projection.applyEnvelope(makeEnvelope('Proposal', { proposalId: 'p1', option: 'a' }), registry);
+      const vote = makeEnvelope('Vote', { proposalId: 'p1', vote: 'approve' }, 'alice');
+      projection.applyEnvelope(vote, registry);
+      // Redelivery: the identical envelope (same messageId) arrives again, e.g.
+      // via the shared-projection-instance echo path.
+      projection.applyEnvelope(vote, registry);
+
+      expect(projection.anomalies).toHaveLength(0);
+      expect(projection.voteTotals()['p1']).toBe(1);
+      expect(projection.votes.get('p1')?.size).toBe(1);
+      // The redelivery guard returns before the switch, so no 'projection
+      // anomaly' warn is ever reached on a redelivery — assert it anyway,
+      // since this is the property that would break if the guard moved.
+      const anomalyWarnCalls = calls.filter(([level, message]) => level === 'warn' && message === 'projection anomaly');
+      expect(anomalyWarnCalls).toHaveLength(0);
+    });
+
+    it('a genuine duplicate Vote (same sender, same proposal_id, DIFFERENT messageId) records EXACTLY ONE anomaly', () => {
+      projection.applyEnvelope(makeEnvelope('Proposal', { proposalId: 'p1', option: 'a' }), registry);
+      const firstVote = buildEnvelope({
+        mode: MODE_DECISION,
+        messageType: 'Vote',
+        sessionId: 'test-session',
+        sender: 'alice',
+        messageId: 'vote-1',
+        payload: registry.encodeKnownPayload(MODE_DECISION, 'Vote', { proposalId: 'p1', vote: 'approve' }),
+      });
+      const secondVote = buildEnvelope({
+        mode: MODE_DECISION,
+        messageType: 'Vote',
+        sessionId: 'test-session',
+        sender: 'alice',
+        messageId: 'vote-2',
+        payload: registry.encodeKnownPayload(MODE_DECISION, 'Vote', { proposalId: 'p1', vote: 'reject' }),
+      });
+      projection.applyEnvelope(firstVote, registry);
+      projection.applyEnvelope(secondVote, registry);
+
+      expect(projection.anomalies).toHaveLength(1);
+      expect(projection.anomalies[0].kind).toBe(EXPECTED_KIND);
+      expect(projection.voteTotals()['p1']).toBe(1);
+      expect(projection.votes.get('p1')?.size).toBe(1);
+    });
   });
 
   it('hasBlockingObjection only counts critical severity', () => {
