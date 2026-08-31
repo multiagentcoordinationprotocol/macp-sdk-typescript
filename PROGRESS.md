@@ -406,3 +406,42 @@ green. Enforced by review, not by tests.
 all exit 0.
 - What's next: Phase 2 — `message_id` dedup at all six entry points, gating
   `transcript`. First real behavior change; fixes the seven double-counting sites.
+
+### Phase 2 — `message_id` dedup at all six entry points — **Status: DONE** (`bce11f3`)
+
+Verifier: Opus, 2 rounds. Round 1 GAPS (4 items + 3 nits), round 2 closed.
+
+The implementation was correct first time and its placement independently proven
+load-bearing: the verifier re-ran the "move the guard after `transcript.push`"
+mutation itself and got exactly 13 failures, all `transcript.length` assertions,
+with all seven accumulate-site tests staying green. That discrimination is why the
+seven are not redundant with the `it.each` dedup case.
+
+**The gap worth remembering: a reported success encoded the defect.** The executor
+reported mutation (b) — dropping the empty-id guard — as "failing exactly 5", and
+called it a pass. There are **six** entry points. The missing sixth was
+`BaseProjection`, the ext-mode extension point that out-of-tree consumers subclass
+and that no in-repo test would ever cover. Deleting that guard gave 765 passed and
+zero failures; v8 independently flagged the line as the file's only uncovered
+branch. Closed with a test that now fails alone under exactly that mutation
+(re-proven by hand before committing, not taken on report). `base.ts` is now 100%
+on all four metrics.
+
+This is the second time in this issue that a *green* signal carried the defect —
+the first was Phase 1's coverage staying byte-identical across three new tests.
+Both were caught by an adversarial reader asking what the number should have been,
+not by any gate.
+
+Also fixed: `HttpTransportAdapter`'s polling branch yielded raw snake_case JSON, so
+`messageId` was `undefined` and the guard silently short-circuited — the HTTP path
+was entirely unprotected. And `participant.test.ts`'s helper hardcoded one
+`message_id` across every envelope, concealing a real collision path: two envelopes
+landing on one projection while the test asserted only handler counts.
+
+`describe.each` blocks were all rendering as `undefined` (`'$name.applyEnvelope'`
+parses as a property path) — fixed before Phases 4-5 inherit the same describes.
+
+765 passed / 7 skipped (37 files); coverage 93.81/85.14/92.28/95.32 vs floors
+91/81/90/92; all six gates green.
+- What's next: Phase 3 — anomaly types and the `anomalies` surface (additive, no
+  detection).
