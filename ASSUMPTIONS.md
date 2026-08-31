@@ -44,3 +44,27 @@
 - **Alternatives:** separate instances per path (rejected — a real design change, out of scope for #55, and it would silently change what `session.projection` reflects); say nothing (rejected — that is how this became a surprise in the first place).
 - **Blast radius if wrong:** If the topology should actually differ, we have published intent we later reverse. Cheap to reverse in docs; the code change would be its own issue.
 - **Status:** UNCONFIRMED
+
+## Quorum keeps `requestId → sender` keying, not the runtime's sender-only keying
+- **Plan:** `plans/rfc-0007-first-vote-stands.md` (Phase 5)
+- **Assumed:** `macp-runtime` keys ballots by sender alone (`quorum.rs:42`); this SDK's `QuorumProjection` keys by `requestId → sender` (a nested map). The two agree on every conforming transcript today because RFC-MACP-0011 §5 rule 1 caps a session at one `ApprovalRequest`, so within a session there is only ever one `requestId` to key on.
+- **Chose:** Keep the existing `requestId → sender` structure rather than flattening it to match the runtime. It is more defensive (scoped duplicate detection survives a hypothetical multi-`ApprovalRequest` session) and changing it is a real structural edit with no behavioral upside under the current cardinality rule.
+- **Alternatives:** flatten to sender-only keying to mirror the runtime exactly (rejected — pure churn against a rule that forbids the divergent case; would also touch every call site in `quorum.ts` for zero observable behavior change).
+- **Blast radius if wrong:** Divergence is only observable on a non-conforming multi-`ApprovalRequest` transcript, which RFC-MACP-0011 §5 rule 1 already forbids — so a conforming producer can never trigger it. Raised as a question, not a defect report, to `macp-runtime`: [macp-runtime#125](https://github.com/multiagentcoordinationprotocol/macp-runtime/issues/125).
+- **Status:** UNCONFIRMED
+
+## `seenMessageIds` is unbounded, deliberately
+- **Plan:** `plans/rfc-0007-first-vote-stands.md` (Phase 2)
+- **Assumed:** A `Set<string>` growing for the life of a projection instance is an acceptable memory tradeoff, not a leak that needs a cap or eviction policy.
+- **Chose:** Leave it unbounded. The class already retains every full envelope (payload bytes included) in `transcript` for the same lifetime, so a set of id strings is strictly dominated by memory already held. `macp-runtime` itself keeps an unbounded per-message dedup set (`crates/macp-modes/src/step.rs:48,89`, field at `crates/macp-core/src/session.rs:69`), and sessions are TTL-bounded by protocol, so neither side accumulates unboundedly in practice.
+- **Alternatives:** an LRU or size-capped set (rejected — adds a tuning knob and an eviction-correctness question for no observed problem, and would need to evict in the same order `transcript` never does, creating a second inconsistency); a periodic `clear()` hook (rejected — no safe point to call it exists without knowing the session is truly done).
+- **Blast radius if wrong:** A long-lived projection instance across many sessions could grow this set without bound. Mitigated: projections are normally one-per-session and short-lived; a consumer holding one projection across many sessions is already accumulating an unbounded `transcript` too, so this is not the first or the worst unboundedness in the class.
+- **Status:** UNCONFIRMED
+
+## `ProjectionLike.anomalies` must stay optional
+- **Plan:** `plans/rfc-0007-first-vote-stands.md` (Phase 3)
+- **Assumed:** `src/agent/types.ts`'s `ProjectionLike` is a structural interface third parties can implement without extending any SDK base class, so tightening `anomalies` from optional to required would break any existing structural implementer that predates this feature.
+- **Chose:** Keep `readonly anomalies?: readonly ProjectionAnomaly[]` optional, with a compile-guard in `src/agent/types.ts` (`_ProjectionLikeAnomaliesStaysOptional`) that fails the build if the member is ever tightened to required — it asserts `{ phase: string; transcript: Envelope[] }` (an object with no `anomalies` at all) still satisfies `ProjectionLike`, following the frozen-field-set precedent already established for `CommitmentPayload` (issue #47). The guard lives in `src/` deliberately — `tsconfig.json` only type-checks `src/**`, so an equivalent assertion in `tests/` compiles nothing and would silently stop enforcing anything.
+- **Alternatives:** make it required now, since all six in-tree projections populate it (rejected — breaks any out-of-tree `ProjectionLike` implementer with no compile error to warn them, the same silent-breakage failure mode `has_blocking_objection`-style predicates were designed to avoid elsewhere in this plan).
+- **Blast radius if wrong:** None observable without a maintainer manually deleting the `?` — the compile guard makes that change fail `npm run check` immediately, so the assumption is nearly self-enforcing. Because `src/agent/types.ts` is coverage-excluded, this change is invisible to `npm run test:coverage` by design (see `vitest.config.ts`'s comment) — the compile guard is the actual enforcement, not test coverage.
+- **Status:** UNCONFIRMED

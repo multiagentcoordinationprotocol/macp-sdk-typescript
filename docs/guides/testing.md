@@ -56,12 +56,12 @@ tests/
 `vitest.config.ts` enforces v8 coverage thresholds over `src/**` (pure
 type/barrel files are excluded so they don't skew the function percentage):
 
-| Metric | Floor | Measured (2026-08 suite) |
-|--------|-------|--------------------------|
-| Lines | 92 | 94.60 |
-| Branches | 81 | 83.87 |
-| Functions | 90 | 92.28 |
-| Statements | 91 | 93.13 |
+| Metric | Floor | Measured (2026-08-31 suite) |
+|--------|-------|-----------------------------|
+| Lines | 93 | 95.65 |
+| Branches | 83 | 85.28 |
+| Functions | 90 | 92.65 |
+| Statements | 92 | 94.13 |
 
 The convention: **floors are the current measured value minus 2 percentage
 points**, and they are raised when new tests land. CI gates on these via
@@ -394,8 +394,9 @@ Harness behaviours worth knowing:
   `duplicateAcceptedBallots` (`tests/conformance/duplicate-ballots.ts`) over
   every fixture's messages and asserts `[]`. The predicate is scoped to
   `expect === 'accept'` — a *rejected* duplicate is exactly the missing
-  upstream fixture this SDK has requested from the spec repo (a
-  `decision_reject_paths.json`/`quorum_reject_paths.json` case with
+  upstream fixture this SDK has requested from the spec repo
+  ([multiagentcoordinationprotocol#84](https://github.com/multiagentcoordinationprotocol/multiagentcoordinationprotocol/issues/84);
+  a `decision_reject_paths.json`/`quorum_reject_paths.json` case with
   `"expect": "reject"` / `"expected_error_code": "INVALID_ENVELOPE"` for a
   duplicate Vote/ballot), and this guard must welcome that fixture landing,
   not treat it as a violation. The predicate lives in its own non-test

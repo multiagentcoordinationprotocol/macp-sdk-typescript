@@ -14,10 +14,18 @@ export default defineConfig({
       // `json` + `json-summary` feed the PR coverage comment in CI
       // (davelosert/vitest-coverage-report-action).
       reporter: ['text', 'html', 'json-summary', 'json'],
-      // Recalibrated 2026-08 for @vitest/coverage-v8 v4 (lines 94.60, branches
-      // 83.87, functions 92.28, statements 93.13). Floors are current - 2pp;
-      // raise them when new tests land. CI gates on these via
-      // `npm run test:coverage`.
+      // Recalibrated 2026-08-31 (RFC-MACP-0007 first-vote-stands, issue #55,
+      // Phase 7) for @vitest/coverage-v8 v4 (statements 94.13, branches 85.28,
+      // functions 92.65, lines 95.65 — `npm run test:coverage` output order is
+      // Stmts/Branch/Funcs/Lines; this block's key order is
+      // lines/branches/functions/statements, so map by name, not position).
+      // Floors are measured - 2pp, rounded down; raise them when new tests
+      // land. CI gates on these via `npm run test:coverage`.
+      //
+      // `src/agent/types.ts` stays excluded above, so the Phase 3
+      // `ProjectionLike.anomalies?` addition (an optional interface member,
+      // zero runtime code) is invisible to this measurement — expected, not a
+      // coverage gap.
       //
       // These numbers are LOWER than the v3-era floors (94/88/90/94) even
       // though not a single test was removed — the v8 provider was rewritten
@@ -29,10 +37,10 @@ export default defineConfig({
       // different rulers: do NOT read the drop as a coverage regression, and do
       // NOT try to restore the old numbers by loosening `exclude`.
       thresholds: {
-        lines: 92,
-        branches: 81,
+        lines: 93,
+        branches: 83,
         functions: 90,
-        statements: 91,
+        statements: 92,
       },
     },
   },

@@ -445,3 +445,289 @@ parses as a property path) — fixed before Phases 4-5 inherit the same describe
 91/81/90/92; all six gates green.
 - What's next: Phase 3 — anomaly types and the `anomalies` surface (additive, no
   detection).
+
+### Phase 3 — anomaly types and the `anomalies` surface — **Status: DONE** (`22649ea`)
+
+Additive only, no detection wired yet: `ProjectionAnomalyKind`, `ProjectionAnomaly`
+(frozen seven-field cross-SDK contract, compile-guarded in `src/projections/base.ts`
+against silent field drift), `BaseProjection.anomalies`/`recordAnomaly`/`hasAnomalies`,
+the same `anomalies`/`hasAnomalies` pair on all five mode projections, and the
+optional `ProjectionLike.anomalies?` member (`src/agent/types.ts`), itself
+compile-guarded to stay optional so a structural third-party implementer cannot be
+silently broken by a future tightening.
+
+Gap closed within this same commit rather than carried to a review round: an
+earlier revision of the `ProjectionLike.anomalies` compile guard was a test labelled
+"compile-level assertion" that passed identically whether the field was optional or
+required — i.e. it asserted nothing. Replaced with the `AssertTrue<{ phase: string;
+transcript: Envelope[] } extends ProjectionLike ? true : false>` form, which only
+type-checks when an object with no `anomalies` at all still satisfies the interface.
+The plan's own Status line for this phase records only `DONE` with no separate
+verifier-round count; this gap is documented here from the commit body since it is
+the only defect-and-fix pair on record for the phase.
+
+Deliberately deferred, stated in the commit body rather than left implicit:
+`recordAnomaly` has no caller anywhere in `src/` for the whole plan, because Decision
+(Phase 4) and Quorum (Phase 5) inline their own two lines per the plan's no-shared-helper
+call — it exists only for ext-mode `BaseProjection` subclasses outside this repo.
+
+787 passed / 7 skipped (38 files); coverage 93.86/85.14/92.41/95.36 (statements/
+branches/functions/lines) vs floors 91/81/90/92 in force at the time; all six gates
+green.
+- What's next: Phase 4 — Decision: first vote stands, duplicate recorded.
+
+### Phase 4 — Decision: first vote stands — **Status: DONE** (`8c628e5`)
+
+Verifier: Opus (plan's Status line: "verified (Opus), committed `8c628e5`" — round
+count not separately broken out).
+
+A second, *distinct* `Vote` from a sender already holding one for the same
+`proposal_id` is now discarded and recorded as a `duplicate_vote` anomaly naming
+both the kept and discarded value; the `break` precedes both the `votes` map write
+and the `phase = 'Voting'` assignment, so a discarded duplicate cannot flip phase
+back to `'Voting'` after a `Commitment`. The reachability pair (redelivery → zero
+anomalies; genuine duplicate, different `message_id` → exactly one) is tested and
+verified load-bearing on Phase 2's dedup guard, not passing by coincidence — the
+commit message notes disabling the upstream dedup makes the redelivery half fail.
+
+Retired (deleted, not edited — see `DECISIONS.md`)
+`tests/unit/projections/decision.test.ts`'s `'deduplicates votes by sender per
+proposal'` (`// latest vote wins`, asserted `totals['p1'] === 1`). Also fixed a
+documentation claim that was false independently of this change:
+`docs/modes/decision.md` had attributed "latest wins" to what the **runtime**
+enforces — the runtime has always rejected the duplicate.
+
+No gaps recorded against this phase in the plan or commit body beyond the doc-cleanup
+grep scoping already called out in the plan itself (Decision's grep is scoped to
+`docs/modes/decision.md` + `docs/api/projections.md` only; the repo-wide sweep is
+Phase 5's, since `docs/modes/quorum.md` still carried "Vote Override" until then).
+
+797 passed / 7 skipped (38 files); coverage 93.88/85.17/92.41/95.38 vs floors in
+force at the time; all six gates green.
+- What's next: Phase 5 — Quorum: first ballot stands across all three ballot types.
+
+### Phase 5 — Quorum: first ballot stands — **Status: DONE** (`88ba7ac`)
+
+Verifier: Opus (plan's Status line: "verified (Opus), committed `88ba7ac`" — round
+count not separately broken out).
+
+Mirrors Phase 4 for `QuorumProjection.setBallot`, keyed on **sender alone** within a
+`request_id` — never on `sender + vote` — because RFC-MACP-0011 §5 rule 3 caps
+ballots across `Approve`/`Reject`/`Abstain` *together*; a same-type test plus six
+ordered cross-type pairs (`describe.each` at `tests/unit/projections/quorum.test.ts:145`,
+with the `it` nested inside at `:153`) pin that a `sender+vote` keying would pass the
+same-type case while failing all six cross-type ones, proving the broader scope is
+exercised rather than assumed. Also lands a replay-equivalence test: replaying a
+projection's own `transcript` through a fresh `QuorumProjection` reproduces
+identical ballots and `anomalies`, which is what would catch a future regression
+that moves the dedup guard to after `transcript.push` without any other test
+noticing.
+
+Retired (deleted, not edited — see `DECISIONS.md`)
+`tests/unit/projections/quorum.test.ts`'s `'same sender voting again overwrites
+previous vote'` — the plan's own words: "the highest-consequence behaviour in this
+issue," since under `requiredApprovals: 1` it let a single sender's reject-then-approve
+report `hasQuorum() === true`, i.e. a duplicate ballot could fabricate quorum.
+
+Deletes `docs/modes/quorum.md`'s entire "Vote Override" section and its worked
+example outright (it instructed users to do something a conforming runtime NACKs),
+and completes the repo-wide doc-cleanup grep the plan explicitly deferred from
+Phase 4.
+
+**Citation discipline held**, per the plan's CITATION CONSTRAINT: RFC-MACP-0011 §5
+rule 3 is cited only for the cardinality cap (at most one ballot, across all three
+types) — never as authority for *which* ballot stands, since the RFC is silent on
+first-vs-last. First-ballot-wins is stated as parity with Decision plus
+runtime-enforced behavior, flagged explicitly as an inference, with a spec fix
+requested upstream (multiagentcoordinationprotocol#83).
+
+817 passed / 7 skipped (38 files); coverage 94.13/85.28/92.65/95.65 (statements/
+branches/functions/lines — matches the measured values Phase 7 recalibrates floors
+against) vs floors in force at the time; all six gates green.
+- What's next: Phase 6 — conformance guards.
+
+### Phase 6 — Conformance guards — **Status: DONE** (`3a7a0f7`)
+
+Verifier: Opus, "PASS + 2 folded fixes" per the plan's own Status line (fixes folded
+into the same commit rather than a separate round).
+
+Two mechanical guards added over the canonical fixture corpus, with **no fixture
+file touched**: (1) every fixture must replay through its mode's projection with an
+empty `anomalies` array AND zero `'projection anomaly'` warn-log calls, asserted as
+two independent channels since the log half is explicitly non-contractual and the
+array is the canonical semantic; (2) a pure predicate,
+`tests/conformance/duplicate-ballots.ts` (deliberately a non-test module so
+importing it from a unit test cannot re-register the whole conformance suite),
+asserting no fixture contains a duplicate *accepted* `Vote` or ballot — scoped to
+`expect: accept` on purpose, since a *rejected* duplicate is exactly the kind of
+fixture the corpus lacks today and the guard must welcome it rather than block it.
+(The upstream request for that missing fixture was not actually filed until the
+Phase 7 gap-fix round below — see multiagentcoordinationprotocol#84 — this phase
+only identified the gap and wrote the guard to be forward-compatible with it.)
+
+Gap worth naming from the commit body: the predicate keys ballots on `payload_type`,
+not the bare `message_type` string, because `message_type` is not a unique
+discriminator across modes (`Reject` is declared by both Proposal and Quorum; the
+canonical `proposal_negative_outcome.json` fixture has an accepted, `request_id`-less
+Proposal `Reject` that would otherwise false-collide with a Quorum ballot from the
+same sender). This exact ambiguity is what multiagentcoordinationprotocol#82 tracks
+upstream. The warn assertion also pins the log **level** explicitly rather than
+inheriting `MACP_LOG_LEVEL` from the environment, after verifying that a sink
+without an explicit level silently passes under `error`/`silent` for the wrong
+reason.
+
+`make verify-fixtures` stays green; `git status --porcelain tests/conformance/*.json`
+empty, as required.
+
+841 passed / 7 skipped (39 files); coverage 94.13/85.28/92.65/95.65 vs floors in
+force at the time; all six gates green.
+- What's next: Phase 7 — coverage recalibration, bookkeeping, cross-repo issues.
+
+### Phase 7 — Coverage recalibration, bookkeeping, cross-repo issues — **Status: DONE**
+
+No `src/` change, verified: `git status --porcelain src/` empty throughout this
+phase.
+
+**Coverage.** Measured at HEAD (`3a7a0f7`, same commit Phase 6 landed — Phase 7
+makes no `src/` change so the measurement is unchanged): statements 94.13%,
+branches 85.28%, functions 92.65%, lines 95.65%. Floors recalibrated in
+`vitest.config.ts` to measured − 2pp, rounded down: `lines: 93, branches: 83,
+functions: 90, statements: 92` (previously `92/81/90/91`, stale since before this
+plan's Phase 1). `coverage.exclude` untouched — still `src/types.ts`,
+`src/agent/types.ts`, `src/index.ts`, `src/agent/index.ts`, `src/projections.ts`
+only; `diff <(git show main:vitest.config.ts | grep "'src/types.ts'") <(grep
+"'src/types.ts'" vitest.config.ts)` is empty, i.e. the `coverage.exclude` array
+line itself is byte-identical to `main` (the plan's own suggested check, `git
+diff main -- vitest.config.ts | grep exclude`, actually returns two lines against
+this diff — one of them a comment this same phase added that mentions the word
+"exclude" — so it was replaced with the line-level diff above, which is the
+narrower, still-true claim). The comment block now also notes `src/agent/types.ts` stays excluded, so the Phase 3
+`ProjectionLike.anomalies?` addition (an optional interface member, no runtime code)
+is invisible to this measurement by construction — expected, not a gap.
+
+**Non-vacuity of the floors:** raised `functions` from `90` to `95` (above the
+measured 92.65%), reran `npm run test:coverage`, confirmed a non-zero exit (`1`)
+with the exact line `ERROR: Coverage for functions (92.65%) does not meet global
+threshold (95%)`, then restored `functions: 90`. Re-ran clean afterward — exit `0`,
+same measured percentages.
+
+**`ASSUMPTIONS.md`** — four new entries logged from Phases 2-6 (three requested by
+the plan, one already present from Phase 4's Decision semver call): Quorum's
+`requestId → sender` keying vs. the runtime's sender-only keying (divergence only
+observable on a non-conforming multi-`ApprovalRequest` transcript, which
+RFC-MACP-0011 §5 rule 1 already forbids); `seenMessageIds` unbounded by design;
+`ProjectionLike.anomalies` must stay optional, now with a named compile guard
+(`_ProjectionLikeAnomaliesStaysOptional`, `src/agent/types.ts`). All logged
+`UNCONFIRMED`, per the file's existing convention — reconciliation is a separate
+pass.
+
+**`DECISIONS.md`** — four new entries: the observability mechanism (recorded
+diagnostics beat callback/strict-throw/return-type-change, with the log-half
+non-contractual / array-canonical split spelled out); `message_id` dedup gating
+`transcript` (with the counter-argument — "a consumer expecting an exact receipt of
+everything handed to `applyEnvelope`" — held and overridden, since mode-mismatched
+envelopes were already silently dropped before this change, and such a consumer's
+data was already corrupted by the initiator echo); the `feat(projections)!`
+semver call landing `0.7.1 → 0.8.0` under `bump-minor-pre-major`; and the deliberate
+retirement-by-deletion of the two intent-documenting tests, so `git log -S` on
+either retired test's name lands on the commit that reversed the intent it
+documented, rather than on a commit that looks like it always asserted today's
+values.
+
+**Cross-repo issues — linked, not duplicated**, all confirmed open before writing
+this entry:
+- multiagentcoordinationprotocol#81 — conformance corpus has zero fixtures for
+  `Objection`, `Withdraw`, `TaskUpdate`.
+- multiagentcoordinationprotocol#82 — `message_type` never specified as
+  mode-scoped; two discriminators collide.
+- multiagentcoordinationprotocol#83 — RFC-MACP-0011 §5 does not say which of two
+  ballots stands.
+- [macp-sdk-python#43](https://github.com/multiagentcoordinationprotocol/macp-sdk-python/issues/43)
+  — `macp-sdk-python`'s identical last-vote/last-ballot-wins divergence
+  (`projections.py:103`, `quorum.py:92`), filed against Python's own copy of the
+  same issue #55 raises here; this is the cross-SDK counterpart, not a
+  duplicate of #81/#82/#83.
+
+**New issues filed in this repo:**
+- [#58](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/issues/58)
+  — `GrpcTransportAdapter` never passes `afterSequence` to `sendSubscribe`; every
+  subscribe (including on reconnect) replays from 0. `lastSequence`
+  (`src/agent/transports.ts:46`) is dead public API whose own docblock describes a
+  call site that does not exist. Filed with the RFC-MACP-0006 §3.2 point 1
+  citation and the explicit note that Phase 2's `message_id` dedup is the *current
+  mitigation*, not an unrelated fix — the two must be reasoned about together.
+- [#59](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/issues/59)
+  — the distinct-envelope half of the seven accumulate-on-apply sites (Decision
+  `evaluations`/`objections`, Proposal `accepts`/`rejections`, Task
+  `updates`/`completions`/`failures`): Phase 2's dedup fixed the *redelivery* half
+  only; two genuinely distinct envelopes carrying the same logical record still
+  double-count, and each site needs its own RFC check.
+- [#60](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/issues/60)
+  — three adjacent last-write-wins spots, reported but not fixed: `task.ts`'s
+  `TaskAccept` overwrites `assignee` unconditionally; `handoff.ts`'s accept/decline
+  overwrite `status` unconditionally; `decision.ts` lets a `Vote` from a fresh
+  sender after `Commitment` flip `phase` back to `'Voting'`. None named by #55.
+
+**`CLAUDE.md`** (gitignored, local-only) — "Coverage gate" line updated from the
+stale `92/81/90/91` to `93/83/90/92`, matching `vitest.config.ts`'s new
+`thresholds` block exactly (same lines/branches/functions/statements order), plus
+a sentence naming this as a grep-checkable criterion rather than an eyeball check
+so the next recalibration doesn't drift silently again.
+
+**Gates:** `npm run check`, `npm run lint`, `npm run format` → `format:check`,
+`npm run test:coverage`, `make verify-fixtures`, `npm run build` — all green (see
+gate summary below this section, added at ship time).
+
+**Verify round: Opus, 1 round — GAPS (4 items + 3 nits), all closed in a follow-up
+fixer pass.** The claim that used to sit here — "completed without gaps found
+against the plan's own acceptance criteria" — was itself false and is corrected
+now rather than repeated. What the verifier actually found, against AC3 and AC5:
+
+1. **AC3 was checked with the wrong command.** The entry above cited `git diff
+   main -- vitest.config.ts | grep exclude` as returning nothing; run for real it
+   returns two lines (one a comment this same phase added that happens to contain
+   the word "excluded"). The `coverage.exclude` *array* is genuinely
+   byte-identical to `main` — the substance of AC3 holds — but the stated check
+   was not the check that was run. Fixed by replacing it with a line-scoped diff
+   that is both true and discriminating (see the Coverage paragraph above, now
+   updated).
+2. **AC5's `macp-runtime` filing didn't exist.** The Assumptions entry for
+   Quorum's `requestId → sender` keying claimed the question had been "raised …
+   in Phase 7's filings"; no such issue existed. Filed now:
+   [macp-runtime#125](https://github.com/multiagentcoordinationprotocol/macp-runtime/issues/125)
+   (a question, not a defect report, per the plan's own framing), and
+   `ASSUMPTIONS.md` updated to cite it.
+3. **AC5's spec-repo fixture request didn't exist either**, and the entry below
+   hedged that gap behind the word "territory" rather than a real issue number.
+   Verified first that #81/#82/#83 don't already cover it (#81 is Objection/
+   Withdraw/TaskUpdate, #82 is `message_type` mode-scoping, #83 is RFC-0011
+   wording) — confirmed absent, then filed
+   [multiagentcoordinationprotocol#84](https://github.com/multiagentcoordinationprotocol/multiagentcoordinationprotocol/issues/84).
+4. **AC5's cross-repo link list omitted `macp-sdk-python#43`** (the Python
+   counterpart of this same issue), despite AC5 requiring cross-repo issues be
+   linked by number. Verified open, added to the list above.
+
+Three nits, all confirmed and fixed: `DECISIONS.md`'s "all seven of
+`QuorumProjection`'s derived methods" reworded to "the seven affected" (the class
+has nine public derived accessors; `threshold()` and `votedSenders()` are
+genuinely unaffected by the duplication fix — verified against
+`src/projections/quorum.ts`); this file's "six ordered cross-type pairs
+(`it.each`)" corrected to `describe.each` (the `it` is nested inside, at
+`tests/unit/projections/quorum.test.ts:153`, the `describe.each` at `:145`); and
+in-repo issue #59's body corrected — its "`Accept` (counter-proposal accept)"
+label was wrong, `src/projections/proposal.ts:120`'s `Accept` case accepts any
+proposal by `proposalId`, not specifically a `CounterProposal`.
+
+None of the four gaps or three nits required touching `src/` — `git status
+--porcelain src/` stayed empty throughout this fixer pass too.
+
+**One stale spot found in the plan itself, not the code:** Phase 7's own Approach
+step 7 / Acceptance criterion 6 quote `vitest.config.ts`'s floors "at the time this
+plan was written" as `92/81/90/91`, matching what was actually in the file at the
+start of this phase — so no correction was needed there. The plan's Phase 7 Files
+list (`vitest.config.ts`; `ASSUMPTIONS.md`; `DECISIONS.md`; `PROGRESS.md`;
+`CLAUDE.md`) was accurate and complete; no `src/` file needed touching, confirmed
+by the git-status check above.
+- What's next: issue #55's plan is complete across all 7 phases. Ship gate
+  (commit, PR, CI) is the user's call — not run in this pass per explicit
+  instruction not to commit or push.
