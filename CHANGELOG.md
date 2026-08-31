@@ -4,6 +4,13 @@ All notable changes to `macp-sdk-typescript` are documented here. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the
 project uses [Semantic Versioning](https://semver.org/).
 
+## [0.7.1](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/compare/v0.7.0...v0.7.1) (2026-08-31)
+
+
+### Bug Fixes
+
+* validate explicit empty-string sessionId, and freeze the commitment field set ([#52](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/issues/52)) ([5e4dc25](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/commit/5e4dc25389d948570afbd9653cfd52bc12e97150)), closes [#47](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/issues/47) [#48](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/issues/48)
+
 ## [0.7.0](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/compare/v0.6.0...v0.7.0) (2026-08-30)
 
 
