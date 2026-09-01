@@ -106,6 +106,60 @@ describe('HandoffProjection', () => {
     expect(projection.isImplicitlyAccepted('h1')).toBe(true);
   });
 
+  // RFC-MACP-0010 §5 rule 4 (`:68`) + §5.1(4) (`:113-116`): once a
+  // handoff_id has been accepted, a competing decline is invalid.
+  it('settle-once: a decline after an accept does not overwrite status', () => {
+    projection.applyEnvelope(
+      makeEnvelope('HandoffOffer', { handoffId: 'h1', targetParticipant: 'bob', scope: 'frontend' }),
+      registry,
+    );
+    projection.applyEnvelope(makeEnvelope('HandoffAccept', { handoffId: 'h1', acceptedBy: 'bob' }, 'bob'), registry);
+    projection.applyEnvelope(
+      makeEnvelope('HandoffDecline', { handoffId: 'h1', declinedBy: 'bob', reason: 'too late' }, 'bob'),
+      registry,
+    );
+
+    expect(projection.getHandoff('h1')?.status).toBe('accepted');
+    expect(projection.isAccepted('h1')).toBe(true);
+    expect(projection.isDeclined('h1')).toBe(false);
+    expect(projection.phase).toBe('Accepted');
+  });
+
+  // Symmetric direction: once declined, a competing accept is invalid too.
+  it('settle-once: an accept after a decline does not overwrite status', () => {
+    projection.applyEnvelope(
+      makeEnvelope('HandoffOffer', { handoffId: 'h1', targetParticipant: 'bob', scope: 'frontend' }),
+      registry,
+    );
+    projection.applyEnvelope(
+      makeEnvelope('HandoffDecline', { handoffId: 'h1', declinedBy: 'bob', reason: 'no capacity' }, 'bob'),
+      registry,
+    );
+    projection.applyEnvelope(makeEnvelope('HandoffAccept', { handoffId: 'h1', acceptedBy: 'bob' }, 'bob'), registry);
+
+    expect(projection.getHandoff('h1')?.status).toBe('declined');
+    expect(projection.isDeclined('h1')).toBe(true);
+    expect(projection.isAccepted('h1')).toBe(false);
+    expect(projection.phase).toBe('Declined');
+  });
+
+  // Old (wrong) behaviour: both HandoffAccept and HandoffDecline overwrote
+  // `status` unconditionally, so a later contradictory message flipped an
+  // already-settled handoff (Phase 3, site 9 — a shipped violation).
+  it('does not let a later contradictory message flip an already-settled handoff', () => {
+    projection.applyEnvelope(
+      makeEnvelope('HandoffOffer', { handoffId: 'h1', targetParticipant: 'bob', scope: 'frontend' }),
+      registry,
+    );
+    projection.applyEnvelope(makeEnvelope('HandoffAccept', { handoffId: 'h1', acceptedBy: 'bob' }, 'bob'), registry);
+    projection.applyEnvelope(
+      makeEnvelope('HandoffDecline', { handoffId: 'h1', declinedBy: 'bob', reason: 'too late' }, 'bob'),
+      registry,
+    );
+
+    expect(projection.getHandoff('h1')?.status).not.toBe('declined');
+  });
+
   it('tracks decline', () => {
     projection.applyEnvelope(
       makeEnvelope('HandoffOffer', { handoffId: 'h1', targetParticipant: 'bob', scope: 'frontend' }),

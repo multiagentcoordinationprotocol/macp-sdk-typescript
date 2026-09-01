@@ -32,6 +32,20 @@ export class ProposalProjection {
   readonly accepts: ProposalAcceptRecord[] = [];
   readonly rejections: ProposalRejectRecord[] = [];
   /**
+   * Each sender's current (unsuperseded) `Accept`, keyed by sender.
+   * RFC-MACP-0008 §5 rule 5 (`:70`): "A participant MAY change its
+   * acceptance target by sending a later `Accept` for a different live
+   * proposal. The latest accepted `Accept` from a participant supersedes
+   * earlier accepts from the same participant." `accepts` above retains the
+   * full append-only history (including superseded accepts) for audit
+   * purposes; `isAccepted` and `acceptedProposal` read from this map instead
+   * so they reflect the live acceptance set — required for determinism by
+   * §7 (`:89`): "Given the same accepted history and the same version-bound
+   * rules, implementations MUST derive the same live proposal set, the same
+   * acceptance set, and the same commitment eligibility."
+   */
+  private readonly latestAcceptBySender = new Map<string, ProposalAcceptRecord>();
+  /**
    * The session's accepted history, one envelope per unique `message_id`. See
    * `BaseProjection.transcript` (`src/projections/base.ts`) for the full
    * redelivery-idempotence contract (RFC-MACP-0006 §3.2); duplicated here
@@ -117,7 +131,11 @@ export class ProposalProjection {
       }
       case 'Accept': {
         const record = payload as { proposalId: string; reason?: string };
-        this.accepts.push({ ...record, sender: envelope.sender });
+        const accept: ProposalAcceptRecord = { ...record, sender: envelope.sender };
+        this.accepts.push(accept);
+        // RFC-MACP-0008 §5 rule 5 (`:70`): this Accept supersedes any earlier
+        // one from the same sender for the live acceptance set.
+        this.latestAcceptBySender.set(envelope.sender, accept);
         break;
       }
       case 'Reject': {
@@ -182,8 +200,18 @@ export class ProposalProjection {
     return all[all.length - 1];
   }
 
+  /**
+   * True if some participant's *current* (unsuperseded) `Accept` targets
+   * `proposalId` — RFC-MACP-0008 §5 rule 5 (`:70`). Note this reads from the
+   * live acceptance set, not from `accepts`' full history: a participant
+   * whose only accept for `proposalId` was later superseded by a re-accept
+   * of a different proposal is not counted.
+   */
   isAccepted(proposalId: string): boolean {
-    return this.accepts.some((a) => a.proposalId === proposalId);
+    for (const accept of this.latestAcceptBySender.values()) {
+      if (accept.proposalId === proposalId) return true;
+    }
+    return false;
   }
 
   isTerminallyRejected(proposalId: string): boolean {
@@ -198,9 +226,18 @@ export class ProposalProjection {
     return result;
   }
 
+  /**
+   * The single proposal every participant's *current* accept targets, or
+   * `undefined` if no one has an outstanding accept or outstanding accepts
+   * are split across more than one proposal. Computed from the live
+   * acceptance set (see `isAccepted`), not from `accepts`' full history — a
+   * participant who accepts `p1` and later re-accepts `p2` (RFC-MACP-0008 §5
+   * rule 5, `:70`) contributes only `p2`, so this correctly returns `p2`
+   * rather than `undefined`.
+   */
   acceptedProposal(): string | undefined {
-    if (this.accepts.length === 0) return undefined;
-    const ids = new Set(this.accepts.map((a) => a.proposalId));
+    if (this.latestAcceptBySender.size === 0) return undefined;
+    const ids = new Set([...this.latestAcceptBySender.values()].map((a) => a.proposalId));
     if (ids.size === 1) return ids.values().next().value;
     return undefined;
   }

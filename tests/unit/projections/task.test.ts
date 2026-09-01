@@ -47,6 +47,29 @@ describe('TaskProjection', () => {
     expect(projection.phase).toBe('InProgress');
   });
 
+  // RFC-MACP-0009 §5 rules 3/3a (`:69-71`): the first accepted TaskAccept
+  // designates the active assignee; a second TaskAccept must not reassign it.
+  it('first-accept-wins: a second TaskAccept does not overwrite the assignee', () => {
+    projection.applyEnvelope(makeEnvelope('TaskRequest', { taskId: 't1', title: 'X', instructions: 'do' }), registry);
+    projection.applyEnvelope(makeEnvelope('TaskAccept', { taskId: 't1', assignee: 'worker-a' }, 'worker-a'), registry);
+    projection.applyEnvelope(makeEnvelope('TaskAccept', { taskId: 't1', assignee: 'worker-b' }, 'worker-b'), registry);
+
+    expect(projection.getTask('t1')?.assignee).toBe('worker-a');
+    expect(projection.getTask('t1')?.status).toBe('accepted');
+  });
+
+  // Old (wrong) behaviour: TaskAccept overwrote `assignee` unconditionally,
+  // so whichever TaskAccept arrived last "won" the assignment with no rule
+  // behind it (Phase 3, site 8 — a shipped violation of RFC-MACP-0009 §5
+  // rule 3a).
+  it('does not let a later TaskAccept silently reassign the task', () => {
+    projection.applyEnvelope(makeEnvelope('TaskRequest', { taskId: 't1', title: 'X', instructions: 'do' }), registry);
+    projection.applyEnvelope(makeEnvelope('TaskAccept', { taskId: 't1', assignee: 'worker-a' }, 'worker-a'), registry);
+    projection.applyEnvelope(makeEnvelope('TaskAccept', { taskId: 't1', assignee: 'worker-b' }, 'worker-b'), registry);
+
+    expect(projection.getTask('t1')?.assignee).not.toBe('worker-b');
+  });
+
   it('tracks task rejection', () => {
     projection.applyEnvelope(makeEnvelope('TaskRequest', { taskId: 't1', title: 'X', instructions: 'do' }), registry);
     projection.applyEnvelope(

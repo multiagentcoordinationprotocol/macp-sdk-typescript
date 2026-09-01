@@ -110,12 +110,23 @@ export class HandoffProjection {
         const record = payload as { handoffId: string; acceptedBy: string; implicit?: boolean };
         const handoff = this.handoffs.get(record.handoffId);
         if (handoff) {
-          handoff.status = 'accepted';
-          handoff.acceptedBy = record.acceptedBy;
-          // proto3 bool defaults are materialized to `false` on decode
-          // (proto-registry), so this is always a real boolean once proto 0.1.6
-          // is loaded — `true` marks a runtime synthetic implicit accept.
-          handoff.implicit = record.implicit ?? false;
+          // RFC-MACP-0010 §5 rule 4 (`:68`): "Once an offer has been
+          // accepted, no competing accept for that same `handoff_id` is
+          // valid." §5.1(4) (`:113-116`) settles the decline-after-accept
+          // direction too: a `handoff_id` transitions
+          // offered -> accepted | declined exactly once. Only settle if this
+          // handoff hasn't already resolved — the same shape as the
+          // HandoffContext guard just above.
+          if (handoff.status === 'offered' || handoff.status === 'context_sent') {
+            handoff.status = 'accepted';
+            handoff.acceptedBy = record.acceptedBy;
+            // proto3 bool defaults are materialized to `false` on decode
+            // (proto-registry), so this is always a real boolean once proto 0.1.6
+            // is loaded — `true` marks a runtime synthetic implicit accept.
+            handoff.implicit = record.implicit ?? false;
+            this.phase = 'Accepted';
+          }
+          break;
         }
         this.phase = 'Accepted';
         break;
@@ -124,8 +135,15 @@ export class HandoffProjection {
         const record = payload as { handoffId: string; declinedBy: string };
         const handoff = this.handoffs.get(record.handoffId);
         if (handoff) {
-          handoff.status = 'declined';
-          handoff.declinedBy = record.declinedBy;
+          // RFC-MACP-0010 §5 rule 4 (`:68`) + §5.1(4) (`:113-116`): a
+          // `handoff_id` settles once. A decline after the handoff already
+          // settled (accepted or declined) is invalid and ignored.
+          if (handoff.status === 'offered' || handoff.status === 'context_sent') {
+            handoff.status = 'declined';
+            handoff.declinedBy = record.declinedBy;
+            this.phase = 'Declined';
+          }
+          break;
         }
         this.phase = 'Declined';
         break;

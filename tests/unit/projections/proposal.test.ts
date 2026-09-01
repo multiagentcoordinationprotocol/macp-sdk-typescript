@@ -61,6 +61,46 @@ describe('ProposalProjection', () => {
     expect(projection.isAccepted('p2')).toBe(false);
   });
 
+  // RFC-MACP-0008 §5 rule 5 (`:70`): "The latest accepted Accept from a
+  // participant supersedes earlier accepts from the same participant."
+  it('a later Accept from the same sender supersedes their earlier one', () => {
+    projection.applyEnvelope(makeEnvelope('Proposal', { proposalId: 'p1', title: 'A' }), registry);
+    projection.applyEnvelope(makeEnvelope('Proposal', { proposalId: 'p2', title: 'B' }), registry);
+    projection.applyEnvelope(makeEnvelope('Accept', { proposalId: 'p1', reason: 'first choice' }, 'bob'), registry);
+    projection.applyEnvelope(makeEnvelope('Accept', { proposalId: 'p2', reason: 'changed my mind' }, 'bob'), registry);
+
+    // Full history is retained for audit...
+    expect(projection.accepts).toHaveLength(2);
+    // ...but the live acceptance set reflects only bob's current accept.
+    expect(projection.isAccepted('p1')).toBe(false);
+    expect(projection.isAccepted('p2')).toBe(true);
+    expect(projection.acceptedProposal()).toBe('p2');
+  });
+
+  // Old (wrong) behaviour: acceptedProposal() used to build a Set of every
+  // historical accept's proposalId and return undefined once that set held
+  // more than one entry — even though the RFC makes the acceptance set
+  // unambiguously {p2} after a legal re-accept. This is the shipped
+  // violation the triage table (Phase 3, site 3) identified.
+  it('acceptedProposal is no longer fooled by a superseded accept into returning undefined', () => {
+    projection.applyEnvelope(makeEnvelope('Proposal', { proposalId: 'p1', title: 'A' }), registry);
+    projection.applyEnvelope(makeEnvelope('Proposal', { proposalId: 'p2', title: 'B' }), registry);
+    projection.applyEnvelope(makeEnvelope('Accept', { proposalId: 'p1', reason: 'first choice' }, 'bob'), registry);
+    projection.applyEnvelope(makeEnvelope('Accept', { proposalId: 'p2', reason: 'changed my mind' }, 'bob'), registry);
+
+    expect(projection.acceptedProposal()).not.toBeUndefined();
+    expect(projection.acceptedProposal()).toBe('p2');
+  });
+
+  it('acceptedProposal stays undefined when two different senders currently accept different proposals', () => {
+    projection.applyEnvelope(makeEnvelope('Proposal', { proposalId: 'p1', title: 'A' }), registry);
+    projection.applyEnvelope(makeEnvelope('Proposal', { proposalId: 'p2', title: 'B' }), registry);
+    projection.applyEnvelope(makeEnvelope('Accept', { proposalId: 'p1', reason: 'ok' }, 'alice'), registry);
+    projection.applyEnvelope(makeEnvelope('Accept', { proposalId: 'p2', reason: 'ok' }, 'bob'), registry);
+
+    expect(projection.acceptedProposal()).toBeUndefined();
+  });
+
   it('tracks terminal rejections and transitions to TerminalRejected phase', () => {
     projection.applyEnvelope(makeEnvelope('Proposal', { proposalId: 'p1', title: 'X' }), registry);
     projection.applyEnvelope(

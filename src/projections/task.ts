@@ -124,7 +124,25 @@ export class TaskProjection {
       case 'TaskAccept': {
         const record = payload as { taskId: string; assignee: string };
         const task = this.tasks.get(record.taskId);
-        if (task) {
+        // RFC-MACP-0009 §5 rules 3/3a (`:69-71`): "Only one assignee may
+        // become active for the Session in base v1. The first accepted
+        // `TaskAccept` from any eligible participant designates that
+        // participant as the active assignee. Subsequent `TaskAccept`
+        // messages for the same session MUST be rejected if an active
+        // assignee is already designated." A conforming runtime rejects the
+        // second `TaskAccept` before it reaches accepted history; this guard
+        // makes the projection first-accept-wins too, so a rogue second one
+        // (e.g. an unfiltered transcript) cannot silently reassign the task.
+        //
+        // Rule 3c's policy-gated reassignment path (`allow_reassignment_on_reject`,
+        // RFC-MACP-0012 `:135`) is deliberately NOT modelled here:
+        // `TaskProjection` has no session-policy input today, and rule 3b
+        // makes an unconditional reassignment wrong by default ("`TaskAccept`
+        // is irrevocable unless policy explicitly permits reassignment").
+        // Plumbing policy into this projection needs its own decision (see
+        // plans/cross-repo/macp-sdk-typescript-conformance-and-transport.md,
+        // Phase 3 open question 4) before that path can be implemented.
+        if (task && task.assignee === undefined) {
           task.assignee = record.assignee;
           task.status = 'accepted';
         }
@@ -134,6 +152,11 @@ export class TaskProjection {
       case 'TaskReject': {
         const record = payload as { taskId: string };
         const task = this.tasks.get(record.taskId);
+        // Deliberately does not clear `task.assignee`: rule 3c's
+        // policy-gated reassignment path is not modelled here (see the
+        // `TaskAccept` case above), so `assignee` is treated as sticky once
+        // set, per rule 3b's default ("irrevocable unless policy explicitly
+        // permits reassignment").
         if (task) task.status = 'rejected';
         break;
       }

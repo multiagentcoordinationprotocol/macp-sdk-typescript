@@ -120,6 +120,54 @@ describe('DecisionProjection', () => {
     expect(projection.commitment).toBeDefined();
   });
 
+  // RFC-MACP-0001 §7.2 (`:216`): RESOLVED is terminal and sessions MUST
+  // transition monotonically w.r.t. termination — never back to
+  // OPEN/SUSPENDED. A conforming runtime rejects any session-scoped message
+  // once the session is non-OPEN (§7.3 `:238`/`:247`), so a `Vote` cannot
+  // legally follow a `Commitment` in accepted history — but if a caller
+  // violates the accepted-only contract and replays one anyway, `phase`
+  // must not regress out of 'Committed'.
+  it('does not regress phase out of Committed if a Vote is (illegally) replayed after Commitment', () => {
+    projection.applyEnvelope(makeEnvelope('Proposal', { proposalId: 'p1', option: 'a' }), registry);
+    projection.applyEnvelope(
+      makeEnvelope('Commitment', {
+        commitmentId: 'c1',
+        action: 'deploy',
+        authorityScope: 'ops',
+        reason: 'approved',
+        modeVersion: '1.0.0',
+        configurationVersion: 'config.default',
+      }),
+      registry,
+    );
+    expect(projection.phase).toBe('Committed');
+
+    projection.applyEnvelope(makeEnvelope('Vote', { proposalId: 'p1', vote: 'approve' }, 'alice'), registry);
+
+    expect(projection.phase).toBe('Committed');
+  });
+
+  // Old (wrong) behaviour: the Vote case set `this.phase = 'Voting'`
+  // unconditionally, so a post-Commitment Vote flipped `phase` back out of
+  // the terminal state (Phase 3, site 10).
+  it('a post-Commitment Vote no longer flips phase back to Voting', () => {
+    projection.applyEnvelope(makeEnvelope('Proposal', { proposalId: 'p1', option: 'a' }), registry);
+    projection.applyEnvelope(
+      makeEnvelope('Commitment', {
+        commitmentId: 'c1',
+        action: 'deploy',
+        authorityScope: 'ops',
+        reason: 'approved',
+        modeVersion: '1.0.0',
+        configurationVersion: 'config.default',
+      }),
+      registry,
+    );
+    projection.applyEnvelope(makeEnvelope('Vote', { proposalId: 'p1', vote: 'approve' }, 'alice'), registry);
+
+    expect(projection.phase).not.toBe('Voting');
+  });
+
   it('ignores envelopes for other modes', () => {
     const envelope = buildEnvelope({
       mode: 'macp.mode.proposal.v1',
