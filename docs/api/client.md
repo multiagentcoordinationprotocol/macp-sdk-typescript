@@ -327,6 +327,23 @@ const ack = await client.sendProgress({
 });
 ```
 
+Per RFC-MACP-0001 §6, `Progress` is legal in exactly two shapes:
+
+| Shape | `sessionId` | `mode` |
+|-------|-------------|--------|
+| Ambient | omitted/empty | omitted/empty |
+| Session-scoped | non-empty | non-empty |
+
+Supplying exactly one of the two throws `MacpSessionError` before the RPC is
+issued, naming the mismatched field. The runtime rejects that mixed envelope
+with `INVALID_ENVELOPE`, so this only surfaces the failure earlier and more
+clearly.
+
+```typescript
+// throws MacpSessionError — sessionId is set but mode is empty
+await client.sendProgress({ sessionId: session.sessionId, progressToken: 't1', progress: 1, total: 4 });
+```
+
 ### Watch methods
 
 Server-streaming RPCs that return a raw `grpc.ClientReadableStream`. Prefer the

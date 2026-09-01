@@ -59,6 +59,39 @@ export function validateSignalType(signalType: string, data?: Buffer | Uint8Arra
   }
 }
 
+/**
+ * Validate the `Progress` scope pairing (RFC-MACP-0001 §6).
+ *
+ * `Progress` is legal in exactly two shapes — ambient (`sessionId` and `mode`
+ * both empty) or session-scoped (both non-empty). An envelope with exactly one
+ * of the two empty is a mixed shape that the runtime rejects with
+ * `INVALID_ENVELOPE`; raising here names the mismatched field instead.
+ *
+ * Unlike Signals, `Progress` is *not* required to be ambient — this is a
+ * tri-state rule, so neither field may be inferred from the other.
+ *
+ * The emptiness test deliberately mirrors `macp-runtime`'s
+ * `validate_envelope_shape` **exactly**, including its asymmetry: `sessionId`
+ * is compared raw while `mode` is trimmed first. Mirroring rather than
+ * normalising is the only choice under which the SDK neither accepts a shape
+ * the runtime rejects nor rejects one it accepts. Concretely, a
+ * whitespace-only `mode` alongside an empty `sessionId` is ambient to the
+ * runtime, so it stays ambient here.
+ */
+export function validateProgressScope(sessionId: string, mode: string): void {
+  const sessionIdEmpty = sessionId === '';
+  const modeEmpty = mode.trim() === '';
+  if (sessionIdEmpty === modeEmpty) return;
+  const detail = sessionIdEmpty
+    ? `mode is ${JSON.stringify(mode)} but sessionId is empty`
+    : `sessionId is ${JSON.stringify(sessionId)} but mode is empty`;
+  throw new MacpSessionError(
+    `Progress must be either ambient (sessionId and mode both empty) or session-scoped ` +
+      `(both non-empty), but ${detail} (RFC-MACP-0001 §6). ` +
+      'Pass both fields for a session-scoped Progress, or neither for an ambient one.',
+  );
+}
+
 const MAX_TTL_MS = 86_400_000; // 24 hours
 
 export function validateTtlMs(ttlMs: number): void {

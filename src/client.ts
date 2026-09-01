@@ -13,7 +13,7 @@ import { assertSenderMatchesIdentity, authSender, type AuthConfig, metadataFromA
 import { buildEnvelope, buildProgressPayload, buildSignalPayload } from './envelope';
 import { MacpAckError, MacpSdkError, MacpSessionError, MacpTimeoutError, MacpTransportError } from './errors';
 import { ProtoRegistry } from './proto-registry';
-import { validateSignalType } from './validation';
+import { validateProgressScope, validateSignalType } from './validation';
 import type {
   Ack,
   AgentManifest,
@@ -683,6 +683,15 @@ export class MacpClient {
     return this.send(envelope, { auth, deadlineMs: options.deadlineMs });
   }
 
+  /**
+   * Send a `Progress` message.
+   *
+   * Per RFC-MACP-0001 §6, `Progress` is legal in exactly two shapes: *ambient*
+   * (`sessionId` and `mode` both omitted/empty) or *session-scoped* (both
+   * non-empty). Supplying exactly one of the two throws `MacpSessionError` —
+   * the runtime rejects that mixed envelope with `INVALID_ENVELOPE`, so this
+   * fails fast with a message naming the mismatched field.
+   */
   async sendProgress(options: {
     sessionId?: string;
     mode?: string;
@@ -695,6 +704,7 @@ export class MacpClient {
     auth?: AuthConfig;
     deadlineMs?: number;
   }): Promise<Ack> {
+    validateProgressScope(options.sessionId ?? '', options.mode ?? '');
     const auth = this.requireAuth(options.auth);
     assertSenderMatchesIdentity(auth, options.sender);
     const progressPayload = buildProgressPayload({
