@@ -4,6 +4,29 @@ All notable changes to `macp-sdk-typescript` are documented here. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the
 project uses [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+
+- **`GrpcTransportAdapter` resumes instead of replaying on a second `start()`.**
+  The adapter now calls `sendSubscribe(sessionId, this.lastSequence)` instead of
+  always subscribing from `0`, so a caller that `stop()`s and re-`start()`s a
+  reused adapter — the only reachable "reconnect" in this SDK; there is no
+  built-in retry loop — no longer replays the entire session history. Requires
+  `macp-runtime` ≥ 0.5.0 for the `after_sequence` ordinal contract
+  (RFC-MACP-0006 §3.2); older runtimes compared it inclusively against a raw
+  log index. `lastSequence` itself is corrected in the same change to count
+  **distinct** accepted envelopes (keyed on `message_id`) instead of raw
+  delivery events — passing the old, uncorrected counter as a resume cursor
+  would have silently skipped history on resume (RFC-MACP-0006 §3.2
+  Redelivery). Anyone relying on a reused adapter's second `start()` to rebuild
+  a *fresh* projection from full history will now see only the envelopes
+  accepted since the first pass ended; open a new `GrpcTransportAdapter` (or a
+  raw `MacpStream` with `sendSubscribe(sessionId, 0)`) for a full replay.
+- `MacpStream.sendSubscribe`'s docblock no longer claims `IncomingMessage.seq`
+  is the RFC-MACP-0006 ordinal — `seq` is a 0-based delivery index that
+  advances on redelivery, unlike the ordinal.
+
 ## [0.8.0](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/compare/v0.7.1...v0.8.0) (2026-08-31)
 
 

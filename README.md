@@ -367,7 +367,7 @@ await stream.sendSubscribe(sessionId);            // full replay then live
 await stream.sendSubscribe(sessionId, lastSeq);    // resume from cursor
 ```
 
-The agent framework's `GrpcTransportAdapter` calls this for you on start, so non-initiator agents see `SessionStart` regardless of join order.
+The agent framework's `GrpcTransportAdapter` calls this for you on start, so non-initiator agents see `SessionStart` regardless of join order — and it passes its own resume cursor on a second `start()` (after a `stop()`), so that call resumes rather than replaying the whole session again.
 
 ### Registry & Root Watchers
 
