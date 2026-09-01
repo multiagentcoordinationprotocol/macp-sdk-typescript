@@ -109,43 +109,61 @@ export class HandoffProjection {
       case 'HandoffAccept': {
         const record = payload as { handoffId: string; acceptedBy: string; implicit?: boolean };
         const handoff = this.handoffs.get(record.handoffId);
-        if (handoff) {
-          // RFC-MACP-0010 §5 rule 4 (`:68`): "Once an offer has been
-          // accepted, no competing accept for that same `handoff_id` is
-          // valid." §5.1(4) (`:113-116`) settles the decline-after-accept
-          // direction too: a `handoff_id` transitions
-          // offered -> accepted | declined exactly once. Only settle if this
-          // handoff hasn't already resolved — the same shape as the
-          // HandoffContext guard just above.
-          if (handoff.status === 'offered' || handoff.status === 'context_sent') {
-            handoff.status = 'accepted';
-            handoff.acceptedBy = record.acceptedBy;
-            // proto3 bool defaults are materialized to `false` on decode
-            // (proto-registry), so this is always a real boolean once proto 0.1.6
-            // is loaded — `true` marks a runtime synthetic implicit accept.
-            handoff.implicit = record.implicit ?? false;
-            this.phase = 'Accepted';
-          }
+        if (!handoff) {
+          // RFC-MACP-0010 §5 rule 2 (`:65`): "HandoffContext, HandoffAccept,
+          // and HandoffDecline MUST reference an existing handoff_id." An
+          // accept for an unknown/never-offered handoff_id is invalid input
+          // (e.g. an unfiltered transcript) and MUST NOT mutate `phase` or
+          // fabricate a handoff record. An anomaly would be recorded here,
+          // but `ProjectionAnomalyKind` (`base.ts:8-9`) is deliberately
+          // frozen pending cross-SDK agreement with macp-sdk-python.
           break;
         }
-        this.phase = 'Accepted';
+        // RFC-MACP-0010 §5 rule 4 (`:68`): "Once an offer has been
+        // accepted, no competing accept for that same `handoff_id` is
+        // valid." §5.1(4) (`:113-116`) settles the decline-after-accept
+        // direction too: a `handoff_id` transitions
+        // offered -> accepted | declined exactly once. Only settle if this
+        // handoff hasn't already resolved — the same shape as the
+        // HandoffContext guard just above. An anomaly would be recorded when
+        // this guard discards a competing accept, but `ProjectionAnomalyKind`
+        // (`base.ts:8-9`) is deliberately frozen pending cross-SDK agreement
+        // with macp-sdk-python.
+        if (handoff.status === 'offered' || handoff.status === 'context_sent') {
+          handoff.status = 'accepted';
+          handoff.acceptedBy = record.acceptedBy;
+          // proto3 bool defaults are materialized to `false` on decode
+          // (proto-registry), so this is always a real boolean once proto 0.1.6
+          // is loaded — `true` marks a runtime synthetic implicit accept.
+          handoff.implicit = record.implicit ?? false;
+          this.phase = 'Accepted';
+        }
         break;
       }
       case 'HandoffDecline': {
         const record = payload as { handoffId: string; declinedBy: string };
         const handoff = this.handoffs.get(record.handoffId);
-        if (handoff) {
-          // RFC-MACP-0010 §5 rule 4 (`:68`) + §5.1(4) (`:113-116`): a
-          // `handoff_id` settles once. A decline after the handoff already
-          // settled (accepted or declined) is invalid and ignored.
-          if (handoff.status === 'offered' || handoff.status === 'context_sent') {
-            handoff.status = 'declined';
-            handoff.declinedBy = record.declinedBy;
-            this.phase = 'Declined';
-          }
+        if (!handoff) {
+          // RFC-MACP-0010 §5 rule 2 (`:65`): "HandoffContext, HandoffAccept,
+          // and HandoffDecline MUST reference an existing handoff_id." A
+          // decline for an unknown/never-offered handoff_id is invalid input
+          // (e.g. an unfiltered transcript) and MUST NOT mutate `phase` or
+          // fabricate a handoff record. An anomaly would be recorded here,
+          // but `ProjectionAnomalyKind` (`base.ts:8-9`) is deliberately
+          // frozen pending cross-SDK agreement with macp-sdk-python.
           break;
         }
-        this.phase = 'Declined';
+        // RFC-MACP-0010 §5 rule 4 (`:68`) + §5.1(4) (`:113-116`): a
+        // `handoff_id` settles once. A decline after the handoff already
+        // settled (accepted or declined) is invalid and ignored. An anomaly
+        // would be recorded here too, but `ProjectionAnomalyKind`
+        // (`base.ts:8-9`) is deliberately frozen pending cross-SDK agreement
+        // with macp-sdk-python.
+        if (handoff.status === 'offered' || handoff.status === 'context_sent') {
+          handoff.status = 'declined';
+          handoff.declinedBy = record.declinedBy;
+          this.phase = 'Declined';
+        }
         break;
       }
       case 'Commitment': {

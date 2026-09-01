@@ -120,10 +120,10 @@ describe('DecisionProjection', () => {
     expect(projection.commitment).toBeDefined();
   });
 
-  // RFC-MACP-0001 §7.2 (`:216`): RESOLVED is terminal and sessions MUST
+  // RFC-MACP-0001 §7.2 (`:218`): RESOLVED is terminal and sessions MUST
   // transition monotonically w.r.t. termination — never back to
   // OPEN/SUSPENDED. A conforming runtime rejects any session-scoped message
-  // once the session is non-OPEN (§7.3 `:238`/`:247`), so a `Vote` cannot
+  // once the session is non-OPEN (§7.3 `:240`/`:249`), so a `Vote` cannot
   // legally follow a `Commitment` in accepted history — but if a caller
   // violates the accepted-only contract and replays one anyway, `phase`
   // must not regress out of 'Committed'.

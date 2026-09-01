@@ -142,6 +142,11 @@ export class TaskProjection {
         // Plumbing policy into this projection needs its own decision (see
         // plans/cross-repo/macp-sdk-typescript-conformance-and-transport.md,
         // Phase 3 open question 4) before that path can be implemented.
+        //
+        // An anomaly would be recorded when this guard discards a second
+        // `TaskAccept`, but `ProjectionAnomalyKind` (`base.ts:8-9`) is
+        // deliberately frozen pending cross-SDK agreement with
+        // macp-sdk-python.
         if (task && task.assignee === undefined) {
           task.assignee = record.assignee;
           task.status = 'accepted';

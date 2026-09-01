@@ -160,6 +160,28 @@ describe('HandoffProjection', () => {
     expect(projection.getHandoff('h1')?.status).not.toBe('declined');
   });
 
+  // RFC-MACP-0010 §5 rule 2: HandoffDecline MUST reference an existing
+  // handoff_id. A decline for a never-offered handoff_id is invalid input
+  // (e.g. an unfiltered transcript) and must not mutate `phase` — even
+  // though `h1` is already settled to 'accepted'.
+  it('does not let a decline for an unknown handoff_id mutate phase', () => {
+    projection.applyEnvelope(
+      makeEnvelope('HandoffOffer', { handoffId: 'h1', targetParticipant: 'bob', scope: 'frontend' }),
+      registry,
+    );
+    projection.applyEnvelope(makeEnvelope('HandoffAccept', { handoffId: 'h1', acceptedBy: 'bob' }, 'bob'), registry);
+    expect(projection.phase).toBe('Accepted');
+
+    projection.applyEnvelope(
+      makeEnvelope('HandoffDecline', { handoffId: 'ghost', declinedBy: 'bob', reason: 'never offered' }, 'bob'),
+      registry,
+    );
+
+    expect(projection.getHandoff('h1')?.status).toBe('accepted');
+    expect(projection.getHandoff('ghost')).toBeUndefined();
+    expect(projection.phase).toBe('Accepted');
+  });
+
   it('tracks decline', () => {
     projection.applyEnvelope(
       makeEnvelope('HandoffOffer', { handoffId: 'h1', targetParticipant: 'bob', scope: 'frontend' }),
