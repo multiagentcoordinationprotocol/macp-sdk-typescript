@@ -70,6 +70,27 @@ export class TaskProjection {
   private readonly seenMessageIds = new Set<string>();
 
   /**
+   * The **session-level** active assignment: who currently holds the session's
+   * single assignee slot, and which `task_id` they took it on.
+   *
+   * RFC-MACP-0009 §5 rule 3 (`:69`): "Only one assignee may become active for
+   * the Session in base v1." The constraint is scoped to the *Session*, not to
+   * a `task_id` — rule 1 (`:67`) separately caps a v1 session at one
+   * `TaskRequest`, so in a conforming transcript the two scopes coincide, but
+   * an unfiltered transcript carrying two `TaskRequest`s must not be able to
+   * hand out two active assignees. That is why this is one field on the
+   * projection rather than a per-`TaskRecord` flag (issue #71).
+   *
+   * `sender` is the envelope sender, not `TaskAcceptPayload.assignee`, to
+   * mirror the reference runtime: `macp-runtime`
+   * `crates/macp-modes/src/mode/task.rs:211` sets `state.active_assignee =
+   * Some(env.sender)` after rejecting any payload whose `assignee` disagrees
+   * with the sender (`:205-207`). `taskId` is retained so a reject can clear
+   * the right `TaskRecord.assignee` even on a multi-task transcript.
+   */
+  private activeAssignment?: { sender: string; taskId: string };
+
+  /**
    * Apply one envelope to this projection's in-process state.
    *
    * Input contract: **accepted-only**, caller-maintained (`Envelope` carries
@@ -124,45 +145,70 @@ export class TaskProjection {
       case 'TaskAccept': {
         const record = payload as { taskId: string; assignee: string };
         const task = this.tasks.get(record.taskId);
-        // RFC-MACP-0009 §5 rules 3/3a (`:69-71`): "Only one assignee may
+        // RFC-MACP-0009 §5 rules 3/3a (`:69-70`): "Only one assignee may
         // become active for the Session in base v1. The first accepted
         // `TaskAccept` from any eligible participant designates that
         // participant as the active assignee. Subsequent `TaskAccept`
         // messages for the same session MUST be rejected if an active
         // assignee is already designated." A conforming runtime rejects the
-        // second `TaskAccept` before it reaches accepted history; this guard
-        // makes the projection first-accept-wins too, so a rogue second one
-        // (e.g. an unfiltered transcript) cannot silently reassign the task.
+        // second `TaskAccept` before it reaches accepted history
+        // (`macp-runtime` `crates/macp-modes/src/mode/task.rs:184-186`); this
+        // guard makes the projection first-accept-wins too, so a rogue second
+        // one (e.g. an unfiltered transcript) cannot silently reassign.
         //
-        // Rule 3c's policy-gated reassignment path (`allow_reassignment_on_reject`,
-        // RFC-MACP-0012 `:135`) is deliberately NOT modelled here:
-        // `TaskProjection` has no session-policy input today, and rule 3b
-        // makes an unconditional reassignment wrong by default ("`TaskAccept`
-        // is irrevocable unless policy explicitly permits reassignment").
-        // Plumbing policy into this projection needs its own decision (see
-        // plans/cross-repo/macp-sdk-typescript-conformance-and-transport.md,
-        // Phase 3 open question 4) before that path can be implemented.
+        // The guard is keyed on the SESSION slot (`activeAssignment`), not on
+        // `task.assignee`, because rule 3's scope is the Session (issue #71).
+        // Two `TaskRequest`s in one transcript therefore share one assignee
+        // slot, matching the runtime, whose `TaskState` holds a single
+        // `active_assignee` (`task.rs:70`) alongside a single `task`.
+        //
+        // Rule 3c's policy-gated reassignment (`allow_reassignment_on_reject`,
+        // RFC-MACP-0012 `:135`) is reachable here via the `TaskReject` case
+        // below, which frees the slot — see its comment for why that needs no
+        // policy input.
         //
         // An anomaly would be recorded when this guard discards a second
         // `TaskAccept`, but `ProjectionAnomalyKind` (`base.ts:8-9`) is
         // deliberately frozen pending cross-SDK agreement with
         // macp-sdk-python.
-        if (task && task.assignee === undefined) {
+        if (task && this.activeAssignment === undefined) {
           task.assignee = record.assignee;
           task.status = 'accepted';
+          this.activeAssignment = { sender: envelope.sender, taskId: record.taskId };
+          this.phase = 'InProgress';
         }
-        this.phase = 'InProgress';
         break;
       }
       case 'TaskReject': {
         const record = payload as { taskId: string };
         const task = this.tasks.get(record.taskId);
-        // Deliberately does not clear `task.assignee`: rule 3c's
-        // policy-gated reassignment path is not modelled here (see the
-        // `TaskAccept` case above), so `assignee` is treated as sticky once
-        // set, per rule 3b's default ("irrevocable unless policy explicitly
-        // permits reassignment").
         if (task) task.status = 'rejected';
+        // RFC-MACP-0009 §5 rule 3c (`:72`): "When policy sets
+        // `allow_reassignment_on_reject: true` and the active assignee sends
+        // `TaskReject`, the session returns to the pre-assignment state. Other
+        // eligible participants MAY then send `TaskAccept` for the same
+        // `task_id`." Mirrors `macp-runtime`
+        // `crates/macp-modes/src/mode/task.rs:257-260`, which clears
+        // `active_assignee` only when the ACTIVE assignee is the rejecter —
+        // a reject from anyone else never frees the slot (`task.rs:241-244`
+        // rejects it as `InvalidPayload`).
+        //
+        // Deliberately NOT gated on the session policy, and it does not need
+        // to be. The runtime gates the reassignment twice — it denies the
+        // active assignee's `TaskReject` (`task.rs:223-239`) and the follow-up
+        // `TaskAccept` (`task.rs:187-204`) with `PolicyDenied` when
+        // `allow_reassignment_on_reject` is false — and a projection is a view
+        // of history the runtime ALREADY ACCEPTED (see this method's
+        // accepted-only input contract). A reassignment the runtime denied
+        // never reaches the transcript, so tracking the reject unconditionally
+        // cannot diverge from the runtime on any real transcript, and it needs
+        // no new API surface (threading a `PolicyDefinition` into the
+        // constructor would). Issue #70, option 2.
+        if (this.activeAssignment?.sender === envelope.sender) {
+          const held = this.tasks.get(this.activeAssignment.taskId);
+          if (held) held.assignee = undefined;
+          this.activeAssignment = undefined;
+        }
         break;
       }
       case 'TaskUpdate': {
