@@ -6,6 +6,53 @@ project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **BREAKING: four projection sites now enforce the cardinality rule their
+  governing RFC section actually states, instead of last-write-wins.**
+  Issues #59 and #60 argued that no cardinality/ordering site in the
+  built-in projections had a normative rule behind it; a full re-read of the
+  four mode RFCs plus RFC-MACP-0001 found governing rules for five of the
+  ten sites they raised, three of which were shipped conformance
+  violations:
+  - `ProposalProjection` (breaking): a later `Accept` from a participant now
+    supersedes their earlier one (RFC-MACP-0008 §5 rule 5, `:70`), so
+    `isAccepted` and `acceptedProposal()` read the live acceptance set
+    instead of raw accept history. Previously `acceptedProposal()` could
+    return `undefined` after a legal re-accept, where the RFC's
+    determinism clause (§7, `:89`) makes the accepted proposal unambiguous.
+  - `TaskProjection` (breaking): the first accepted `TaskAccept` now wins —
+    a later `TaskAccept` for the same task no longer overwrites `assignee`
+    (RFC-MACP-0009 §5 rules 3/3a, `:69-71`). The policy-gated reassignment
+    path (rule 3c) is intentionally not modelled yet; `TaskProjection` has
+    no session-policy input.
+  - `HandoffProjection` (breaking): a `handoff_id` now settles (`offered` →
+    `accepted`/`declined`) exactly once — a later contradictory
+    `HandoffAccept`/`HandoffDecline` for an already-settled `handoff_id`,
+    or for a `handoff_id` that was never offered, is ignored in both
+    directions and can no longer mutate `phase` (RFC-MACP-0010 §5 rule 2
+    `:65`, rule 4 `:68`, §5.1(4) `:113-116`).
+  - `DecisionProjection` (not breaking for conforming callers): `phase` no
+    longer regresses out of `'Committed'` if a `Vote` is replayed after a
+    `Commitment` — such a message cannot legally exist in accepted history
+    under a conforming runtime (RFC-MACP-0001 §7.2 `:218`, §7.3
+    `:240`/`:249`), but a caller violating the accepted-only contract no
+    longer corrupts `phase` if it happens.
+
+  `ProposalProjection.isAccepted()`/`acceptedProposal()`, `TaskProjection`'s
+  `assignee` field, and `HandoffProjection`'s `status`/`phase` can now
+  derive different values than before for a transcript containing the
+  message sequences described above — existing callers reading those
+  surfaces should treat this as a breaking change. Conforming transcripts
+  (no superseded accept, no second `TaskAccept`, no contradictory or
+  unknown-`handoff_id` handoff accept/decline) are unaffected.
+
+  Three other sites raised by #59 (Decision `Evaluation`/`Objection`
+  cardinality, Task `TaskUpdate` accumulation) were confirmed to be silent
+  *coherently* and are unchanged. `TaskComplete`/`TaskFail` cardinality is
+  genuinely ambiguous in RFC-MACP-0009 and is tracked as an upstream spec
+  question rather than an SDK change.
+
 ### Changed
 
 - **`GrpcTransportAdapter` resumes instead of replaying on a second `start()`.**

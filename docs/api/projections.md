@@ -268,7 +268,7 @@ mode-specific message types. The five built-in projections below pre-date
 
 ## DecisionProjection
 
-**Phases**: `'Proposal'` → `'Evaluation'` → `'Voting'` → `'Committed'`
+**Phases**: `'Proposal'` → `'Evaluation'` → `'Voting'` → `'Committed'`. `'Committed'` is terminal for `phase`: once reached, a `Vote` cannot legally follow in accepted history ([RFC-MACP-0001](https://github.com/multiagentcoordinationprotocol/multiagentcoordinationprotocol/blob/main/rfcs/RFC-MACP-0001-core.md) §7.2/§7.3 session terminality), and if one is replayed anyway `phase` does not regress out of `'Committed'`.
 
 | Property | Type |
 |----------|------|
@@ -293,17 +293,17 @@ mode-specific message types. The five built-in projections below pre-date
 | Property | Type |
 |----------|------|
 | `proposals` | `Map<string, ProposalRecord>` |
-| `accepts` | `ProposalAcceptRecord[]` |
+| `accepts` | `ProposalAcceptRecord[]` — full append-only history, including any accept later superseded by the same sender (see `isAccepted`/`acceptedProposal` below) |
 | `rejections` | `ProposalRejectRecord[]` |
 
 | Method | Returns | Description |
 |--------|---------|-------------|
 | `activeProposals()` | `ProposalRecord[]` | Proposals with status `'open'` |
 | `latestProposal()` | `ProposalRecord \| undefined` | Most recently submitted |
-| `isAccepted(proposalId)` | `boolean` | Has any Accept for this ID |
+| `isAccepted(proposalId)` | `boolean` | Some participant's **current** (unsuperseded) Accept targets this ID — [RFC-MACP-0008](https://github.com/multiagentcoordinationprotocol/multiagentcoordinationprotocol/blob/main/rfcs/RFC-MACP-0008-proposal-mode.md) §5 rule 5: a later Accept from a participant supersedes their earlier one, so a superseded accept is not counted even though it remains in `accepts` |
 | `isTerminallyRejected(proposalId)` | `boolean` | Has terminal Reject |
 | `liveProposals()` | `Map<string, ProposalRecord>` | All proposals except withdrawn ones |
-| `acceptedProposal()` | `string \| undefined` | The single accepted proposal ID; `undefined` if none or if accepts span multiple IDs |
+| `acceptedProposal()` | `string \| undefined` | The single proposal ID every participant's current accept targets; `undefined` if no one currently has an outstanding accept, or current accepts are split across more than one proposal. Computed from current accepts, not from `accepts`' full history |
 | `hasTerminalRejection()` | `boolean` | Any terminal Reject in the session |
 
 ## TaskProjection
@@ -319,7 +319,7 @@ mode-specific message types. The five built-in projections below pre-date
 
 | Method | Returns | Description |
 |--------|---------|-------------|
-| `getTask(taskId)` | `TaskRecord \| undefined` | Full task record |
+| `getTask(taskId)` | `TaskRecord \| undefined` | Full task record — `assignee` is first-accept-wins: the first `TaskAccept` designates the active assignee ([RFC-MACP-0009](https://github.com/multiagentcoordinationprotocol/multiagentcoordinationprotocol/blob/main/rfcs/RFC-MACP-0009-task-mode.md) §5 rules 3/3a), and a later `TaskAccept` for the same task does not overwrite it. The policy-gated reassignment path (rule 3c) is not modelled — `TaskProjection` has no session-policy input |
 | `progressOf(taskId)` | `number` | Current progress (0 before any update, 1 once complete) |
 | `isComplete(taskId)` | `boolean` | TaskComplete received |
 | `isFailed(taskId)` | `boolean` | TaskFail received |
@@ -338,7 +338,7 @@ mode-specific message types. The five built-in projections below pre-date
 
 | Method | Returns | Description |
 |--------|---------|-------------|
-| `getHandoff(handoffId)` | `HandoffRecord \| undefined` | Full handoff record (`.implicit` set once accepted) |
+| `getHandoff(handoffId)` | `HandoffRecord \| undefined` | Full handoff record (`.implicit` set once accepted) — `status` settles once: once a `handoff_id` transitions to `'accepted'` or `'declined'`, a later contradictory `HandoffAccept`/`HandoffDecline` for the same ID is ignored ([RFC-MACP-0010](https://github.com/multiagentcoordinationprotocol/multiagentcoordinationprotocol/blob/main/rfcs/RFC-MACP-0010-handoff-mode.md) §5 rule 4, §5.1(4)) |
 | `isAccepted(handoffId)` | `boolean` | HandoffAccept received |
 | `isImplicitlyAccepted(handoffId)` | `boolean` | Accepted by a runtime synthetic implicit accept ([RFC-MACP-0010 (Handoff Mode)](https://github.com/multiagentcoordinationprotocol/multiagentcoordinationprotocol/blob/main/rfcs/RFC-MACP-0010-handoff-mode.md) §5.1, proto ≥ 0.1.6) |
 | `isDeclined(handoffId)` | `boolean` | HandoffDecline received |

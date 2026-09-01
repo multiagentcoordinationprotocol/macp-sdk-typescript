@@ -139,7 +139,23 @@ export class DecisionProjection {
         }
         bySender.set(envelope.sender, { ...record, sender: envelope.sender });
         this.votes.set(record.proposalId, bySender);
-        this.phase = 'Voting';
+        // RFC-MACP-0001 §7.2 (`:218`): RESOLVED is terminal and sessions
+        // MUST transition monotonically w.r.t. termination — never back to
+        // OPEN/SUSPENDED. §7.3 (`:240`, restated `:249`) says a conforming
+        // runtime rejects any session-scoped message once the session is
+        // non-OPEN, so a `Vote` cannot legally follow a `Commitment` in
+        // accepted history. If one reaches here anyway (the caller violated
+        // the accepted-only contract — see `applyEnvelope`'s docblock), do
+        // not regress `phase` out of `'Committed'`. Note "phase" itself is
+        // not a normative MACP term (it appears once, in passing, at
+        // RFC-MACP-0012 `:211`); this guard is justified by session
+        // terminality, not by a phase specification. An anomaly would be
+        // recorded here too, but `ProjectionAnomalyKind` (`base.ts:8-9`) is
+        // deliberately frozen pending cross-SDK agreement with
+        // macp-sdk-python.
+        if (this.phase !== 'Committed') {
+          this.phase = 'Voting';
+        }
         break;
       }
       case 'Commitment': {
