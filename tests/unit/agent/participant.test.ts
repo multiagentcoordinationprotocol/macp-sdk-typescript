@@ -806,4 +806,101 @@ describe('Participant', () => {
       expect(closeSpy).toHaveBeenCalledTimes(1);
     });
   });
+
+  // Regression for #66: `run()`'s loop checked `!this.running` *after*
+  // `GrpcTransportAdapter` had already counted the envelope into its resume
+  // cursor, so a `stop()` that lands mid-stream (e.g. the cancel-callback
+  // path, `onCancel: () => { void this.stop(); }`) permanently skipped
+  // whatever envelope was in flight when the loop next asked the transport
+  // for more. Before #65 added the resume cursor this was latent (the next
+  // `run()` replayed from ordinal 0 and picked it back up); after #65 the
+  // cursor makes the skip permanent. This drives a real `GrpcTransportAdapter`
+  // (not `makeMockTransport`, which has no cursor of its own) against a fake
+  // stream whose `responses()` honors whatever `afterSequence` was last
+  // passed to `sendSubscribe`, so it reproduces the actual resume-after-stop
+  // behavior end to end.
+  describe('run() — stop() mid-stream does not lose the in-flight envelope (#66)', () => {
+    function makeEnvelope(overrides: Partial<Envelope>): Envelope {
+      return {
+        macpVersion: '1.0',
+        mode: 'ext.custom.v1',
+        messageType: 'Kickoff',
+        messageId: 'msg-1',
+        sessionId: '550e8400-e29b-41d4-a716-446655440000',
+        sender: 'agent-a',
+        timestampUnixMs: String(Date.now()),
+        payload: Buffer.alloc(0),
+        ...overrides,
+      };
+    }
+
+    // A minimal fake of the `MacpStream` surface `GrpcTransportAdapter` uses.
+    // Each `openStream()` call returns a fresh stream bound to the shared
+    // envelope log; `responses()` only yields envelopes at or after whatever
+    // ordinal `sendSubscribe` was last called with — the same "resume, don't
+    // replay" contract the real runtime honors (RFC-MACP-0006 §3.2).
+    function makeResumableClient(envelopes: Envelope[]) {
+      return {
+        protoRegistry: {
+          encodeKnownPayload: vi.fn(() => Buffer.alloc(0)),
+          decodeKnownPayload: vi.fn(() => ({})),
+        },
+        openStream: vi.fn(() => {
+          let afterSequence = 0;
+          return {
+            sendSubscribe: vi.fn(async (_sessionId: string, after: number) => {
+              afterSequence = after;
+            }),
+            responses: async function* () {
+              for (const e of envelopes.slice(afterSequence)) yield e;
+            },
+            close: vi.fn(),
+          };
+        }),
+        send: vi.fn().mockResolvedValue({ ok: true }),
+        getSession: vi.fn(),
+      } as any;
+    }
+
+    it('redelivers the envelope in flight when stop() lands on the previous one, across a restart', async () => {
+      const sessionId = '550e8400-e29b-41d4-a716-446655440000';
+      const envelope1 = makeEnvelope({ sessionId, messageId: 'msg-1', messageType: 'Kickoff' });
+      const envelope2 = makeEnvelope({ sessionId, messageId: 'msg-2', messageType: 'FollowUp' });
+      const client = makeResumableClient([envelope1, envelope2]);
+
+      const received: string[] = [];
+
+      // No `transport` override: the Participant builds its own real
+      // GrpcTransportAdapter, exactly as it would against a live client.
+      const participant = new Participant({
+        participantId: 'agent-1',
+        sessionId,
+        mode: 'ext.custom.v1',
+        client,
+      });
+
+      participant.on('Kickoff', async (_msg, ctx) => {
+        received.push('Kickoff');
+        // Simulate the cancel-callback path stopping the participant while
+        // the transport is mid-stream, exactly like
+        // `onCancel: () => { void this.stop(); }` in participant.ts.
+        await (ctx.participant as Participant).stop();
+      });
+      participant.on('FollowUp', () => {
+        received.push('FollowUp');
+      });
+
+      await participant.run();
+      // FollowUp was already fetched from the transport by the time `run()`
+      // observed `!this.running` and broke out of its loop, but must not
+      // have been processed yet.
+      expect(received).toEqual(['Kickoff']);
+
+      // Restart. If FollowUp's envelope was wrongly counted into the resume
+      // cursor while it was in flight, this second subscribe skips past it
+      // and it is never seen again.
+      await participant.run();
+      expect(received).toEqual(['Kickoff', 'FollowUp']);
+    });
+  });
 });

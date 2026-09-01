@@ -339,8 +339,14 @@ describe('GrpcTransportAdapter', () => {
     const adapter = new GrpcTransportAdapter(mockClient, 'session-1');
 
     // Prime the first generator (opens mockStream1, subscribes, yields once)
-    // without draining it or calling stop() -- a re-entrant start().
+    // without calling stop() -- a re-entrant start(). Per #66, the cursor
+    // only advances once the consumer comes back for more (proof that it
+    // didn't abandon the envelope mid-processing), so a second `next()` is
+    // needed here to actually confirm msg-1 -- it resolves `done: true`
+    // since mockStream1 has nothing else queued, exercising exactly the
+    // "asked for more, got none" tail rather than an abandoned iterator.
     const firstIterator = adapter.start()[Symbol.asyncIterator]();
+    await firstIterator.next();
     await firstIterator.next();
 
     for await (const _ of adapter.start()) {
