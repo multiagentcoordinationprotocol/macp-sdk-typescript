@@ -273,6 +273,14 @@ describe('GrpcTransportAdapter', () => {
     // guard's job.
     expect(messages).toHaveLength(2);
     expect(adapter.lastSequence).toBe(1);
+
+    // A subsequent start() must subscribe at the deduped cursor (1), not at
+    // the raw delivery count (2).
+    await adapter.stop();
+    for await (const _ of adapter.start()) {
+      // drain the second pass
+    }
+    expect(mockStream.sendSubscribe).toHaveBeenNthCalledWith(2, 'session-1', 1);
   });
 
   // Edge case 2 from the plan: an empty/absent messageId has no identity to

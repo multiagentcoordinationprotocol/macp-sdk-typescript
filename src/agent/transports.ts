@@ -28,6 +28,22 @@ export class GrpcTransportAdapter implements TransportAdapter {
   private stream: MacpStream | null = null;
   private seq = 0;
   private delivered = 0;
+
+  /**
+   * `message_id`s already counted into `delivered`, so the resume cursor
+   * advances once per distinct accepted envelope rather than once per raw
+   * delivery (RFC-MACP-0006 §3.2 Redelivery). Deliberately unbounded, for the
+   * same reason `BaseProjection` leaves its own copy of this set unbounded
+   * (`src/projections/base.ts:118-129`): this set is strictly dominated by
+   * memory this SDK already commits to per session — a `Participant` using
+   * this adapter also holds a `BaseProjection` with an identical
+   * `message_id` set *plus* a full `transcript` of every envelope, payload
+   * bytes included. The runtime keeps an unbounded per-session dedup set of
+   * its own regardless of what any client does
+   * (`macp-runtime/crates/macp-modes/src/step.rs:48/:89`, field declared at
+   * `macp-runtime/crates/macp-core/src/session.rs:69`), and sessions are
+   * TTL-bounded by protocol.
+   */
   private readonly seenMessageIds = new Set<string>();
 
   constructor(
@@ -61,8 +77,14 @@ export class GrpcTransportAdapter implements TransportAdapter {
     // A prior stream from an earlier start() (without an intervening stop())
     // must not keep feeding this adapter's counter — two live generators
     // would both advance `delivered` from two differently-positioned
-    // replays. Close it before opening the new one so re-entrant start() and
-    // stop()-then-start() behave identically.
+    // replays. `MacpStream.close()` is `this.call.end()` (`src/client.ts:223-227`),
+    // a write-side half-close — it does not itself force the server to stop
+    // pushing. It is enough here because macp-runtime's StreamSession loop
+    // reads the resulting end-of-request-stream as `StreamAction::ClientDone`,
+    // whose arm drains any already-buffered envelopes once and then breaks,
+    // ending that stream's response side too
+    // (macp-runtime/src/server.rs:654-666). Close it before opening the new
+    // one so re-entrant start() and stop()-then-start() behave identically.
     if (this.stream) {
       this.stream.close();
       this.stream = null;
@@ -86,7 +108,15 @@ export class GrpcTransportAdapter implements TransportAdapter {
       // has no identity to dedup on and increments unconditionally — the
       // same carve-out the projection guard documents at
       // `src/projections/base.ts:224-227`, so the two dedup sites read the
-      // same way.
+      // same way. In practice the `else` below can never run against a
+      // conformant runtime: `validate_envelope_shape` rejects any envelope
+      // with an empty `message_id` as `InvalidEnvelope` before it can be
+      // accepted (`macp-runtime/src/server.rs:118`), and RFC-MACP-0001 §8.2
+      // makes `message_id` the runtime's dedup identity, so no accepted
+      // envelope in any session history can carry one. The branch stays
+      // anyway — it costs nothing and errs toward still counting the
+      // envelope instead of silently dropping it if a non-conformant server
+      // ever sends one.
       if (envelope.messageId) {
         if (!this.seenMessageIds.has(envelope.messageId)) {
           this.seenMessageIds.add(envelope.messageId);
