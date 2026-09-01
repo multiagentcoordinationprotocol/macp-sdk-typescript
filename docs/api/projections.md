@@ -319,7 +319,7 @@ mode-specific message types. The five built-in projections below pre-date
 
 | Method | Returns | Description |
 |--------|---------|-------------|
-| `getTask(taskId)` | `TaskRecord \| undefined` | Full task record — `assignee` is first-accept-wins: the first `TaskAccept` designates the active assignee ([RFC-MACP-0009](https://github.com/multiagentcoordinationprotocol/multiagentcoordinationprotocol/blob/main/rfcs/RFC-MACP-0009-task-mode.md) §5 rules 3/3a), and a later `TaskAccept` for the same task does not overwrite it. The policy-gated reassignment path (rule 3c) is not modelled — `TaskProjection` has no session-policy input |
+| `getTask(taskId)` | `TaskRecord \| undefined` | Full task record — see [Task assignee lifecycle](#task-assignee-lifecycle) for how `assignee` is set and cleared |
 | `progressOf(taskId)` | `number` | Current progress (0 before any update, 1 once complete) |
 | `isComplete(taskId)` | `boolean` | TaskComplete received |
 | `isFailed(taskId)` | `boolean` | TaskFail received |
@@ -327,6 +327,65 @@ mode-specific message types. The five built-in projections below pre-date
 | `isAccepted(taskId)` | `boolean` | Status is accepted or in_progress |
 | `activeTasks()` | `TaskRecord[]` | Tasks in requested/accepted/in_progress |
 | `latestProgress()` | `number \| undefined` | Progress of the most recent TaskUpdate |
+
+### Task assignee lifecycle
+
+[RFC-MACP-0009](https://github.com/multiagentcoordinationprotocol/multiagentcoordinationprotocol/blob/main/rfcs/RFC-MACP-0009-task-mode.md)
+§5 rule 3 (`:69`) scopes the assignee slot to the **Session**, not to a
+`task_id`: "Only one assignee may become active for the Session in base v1."
+`TaskProjection` models it the same way — one session-level slot, matching the
+reference runtime's single `TaskState.active_assignee`.
+
+- **First accept wins, per session.** The first `TaskAccept` that names a
+  known `task_id` takes the slot and sets that task's `assignee` (rule 3a,
+  `:70`). Every later `TaskAccept` — including one for a *different*
+  `task_id` in the same transcript — is discarded while the slot is held, and
+  does not advance `phase` to `'InProgress'` on its own.
+- **A reject by the slot holder frees the slot** (rule 3c, `:72`): "the
+  session returns to the pre-assignment state. Other eligible participants MAY
+  then send `TaskAccept` for the same `task_id`." `TaskProjection` clears both
+  the session slot and the `assignee` on the `TaskRecord` the slot was taken
+  on, so a subsequent `TaskAccept` can reassign. A `TaskReject` from anyone
+  *other* than the current slot holder leaves the assignment untouched —
+  matching `macp-runtime`'s `crates/macp-modes/src/mode/task.rs:257-260`,
+  which clears `active_assignee` only when the active assignee is the
+  rejecter.
+- **No session-policy input is needed, and none is taken.** Rule 3c's
+  reassignment is gated on the policy flag `allow_reassignment_on_reject`
+  ([RFC-MACP-0012](https://github.com/multiagentcoordinationprotocol/multiagentcoordinationprotocol/blob/main/rfcs/RFC-MACP-0012-policy.md)
+  `:135`), and the runtime enforces that gate twice — it denies the active
+  assignee's `TaskReject` and the follow-up `TaskAccept` with `POLICY_DENIED`
+  when the flag is false. A projection replays history the runtime **already
+  accepted** (see [the accepted-only input contract](#input-contract)),
+  so a reassignment the runtime denied never reaches the transcript. Tracking
+  the reject unconditionally therefore cannot diverge from the runtime on any
+  real transcript, and it avoids threading a `PolicyDefinition` into the
+  projection constructor.
+
+## List accumulators and logical duplicates
+
+`evaluations`, `objections`, `accepts`, `rejections`, `updates`,
+`completions`, and `failures` are **append-only audit lists**, not
+cardinality-enforcing sets. They are idempotent under redelivery (same
+`message_id` — see [Redelivery](#redelivery-message_id-dedup)), but two
+envelopes with *different* `message_id`s that describe the same logical record
+both get appended.
+
+That is deliberate, and it is what the RFCs and the reference runtime do:
+
+| Site | Stated cardinality rule? | Runtime behaviour | Projection |
+|------|--------------------------|-------------------|------------|
+| Decision `Evaluation` | None. RFC-MACP-0007 §5 constrains only `proposal_id` existence (rule 2); no per-sender cap | `decision.rs:174` pushes to a `Vec` unconditionally | Append — correct |
+| Decision `Objection` | None (same) | `decision.rs:197` pushes to a `Vec` unconditionally | Append — correct |
+| Proposal `Accept` | Yes, and it is **last**-wins: RFC-MACP-0008 §5 rule 5 (`:70`) — "The latest accepted `Accept` from a participant supersedes earlier accepts from the same participant" | `proposal.rs:289-291` keeps a `sender → proposal_id` map, so the last accept wins | `accepts` keeps the full audit history; the *live acceptance set* is tracked separately and drives `isAccepted()` / `acceptedProposal()` (§7 determinism) |
+| Proposal `Reject` | None. Rule 3 requires an existing proposal; rule 6 is about terminal rejection, not count | `proposal.rs:313` pushes to a `Vec` — "Always record the rejection for audit trail" | Append — correct |
+| Task `TaskUpdate` | None, and repetition is the point: RFC-MACP-0009 §4 defines it as a "non-terminal progress or status update" | `task.rs:278` pushes to a `Vec`; the only guards are active-assignee authorship and no terminal report yet | Append — correct |
+| Task `TaskComplete` | Effectively at most one per session — RFC-MACP-0009 §5 rule 5 treats `TaskComplete`/`TaskFail` as the terminal report | `task.rs:293-297` returns `FORBIDDEN` once `terminal_report` is set, so a second terminal report never enters accepted history | Append — a conforming transcript can never carry a second one |
+| Task `TaskFail` | Same as `TaskComplete` (they share one `terminal_report` slot) | `task.rs:314-318`, same guard | Append — same |
+
+So: no site has a rule the runtime fails to enforce, and no site needs a
+projection-side guard. Where a rule does exist and the *derived* view would
+otherwise be wrong — Proposal's last-accept-wins — it is already modelled.
 
 ## HandoffProjection
 

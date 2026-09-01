@@ -1,0 +1,71 @@
+name: Integration
+
+# Runs tests/integration/ (tests/integration/README.md) against a real
+# macp-runtime over the actual gRPC boundary. Previously this suite only ran
+# by hand against a scratch runtime -- nothing in CI exercised it, so drift
+# between this SDK and the runtime's wire behavior could land on main
+# unnoticed. This job closes that gap.
+#
+# Runtime source: the published `ghcr.io/multiagentcoordinationprotocol/
+# macp-runtime` image (built + pushed by the runtime repo's docker.yml on
+# every push to its main). The image is public, so no registry login is
+# needed to pull it. `:latest` tracks the runtime's main branch deliberately:
+# this suite exists to catch drift against the current runtime, not a frozen
+# snapshot of it -- see the PR description for the tradeoff (a runtime-side
+# regression can fail SDK PRs that didn't touch anything relevant).
+#
+# The runtime is started in dev mode (MACP_ALLOW_INSECURE=1) with
+# MACP_MEMORY_ONLY=1 so the job leaves no state, on a scratch port (50123,
+# not the runtime's default 50051) so it can never collide with a real
+# deployment. `services:` only waits for the container to start, not for the
+# gRPC server inside it to be ready to accept requests, so an explicit
+# readiness poll (scripts/wait-for-runtime.ts) gates the test run.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: integration-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  integration:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    services:
+      macp-runtime:
+        image: ghcr.io/multiagentcoordinationprotocol/macp-runtime:latest
+        ports:
+          - 50123:50123
+        env:
+          MACP_BIND_ADDR: 0.0.0.0:50123
+          MACP_ALLOW_INSECURE: '1'
+          MACP_MEMORY_ONLY: '1'
+    env:
+      MACP_RUNTIME_ADDRESS: localhost:50123
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          registry-url: 'https://npm.pkg.github.com'
+          scope: '@multiagentcoordinationprotocol'
+          cache: npm
+      - run: npm ci
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # Polls the Initialize RPC rather than sleeping a fixed duration or
+      # just checking the TCP port -- the port can accept connections before
+      # the gRPC services are registered. Fails the job if the runtime never
+      # becomes ready within the script's budget.
+      - name: Wait for macp-runtime to be ready
+        run: npx tsx scripts/wait-for-runtime.ts
+      - run: npm run test:integration
