@@ -4,6 +4,19 @@ All notable changes to `macp-sdk-typescript` are documented here. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the
 project uses [Semantic Versioning](https://semver.org/).
 
+## [0.9.0](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/compare/v0.8.0...v0.9.0) (2026-09-01)
+
+
+### ⚠ BREAKING CHANGES
+
+* **projections:** ProposalProjection.isAccepted()/acceptedProposal(), TaskProjection's `assignee` field, and HandoffProjection's `status` field can now derive different values than before for a transcript containing the message sequences described above. Conforming transcripts (no superseded accept, no second TaskAccept/contradictory handoff accept-decline) are unaffected.
+
+### Bug Fixes
+
+* **agent:** don't count an envelope into the resume cursor until it's asked for again ([#72](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/issues/72)) ([f1b7015](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/commit/f1b70155cb3293bc7f36c0389cbf880359a01e58)), closes [#66](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/issues/66)
+* **agent:** resume GrpcTransportAdapter from its own cursor, and count distinct envelopes ([#65](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/issues/65)) ([7535763](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/commit/75357632351addde3a32a61b1200e823f2ef70da))
+* **projections:** enforce cardinality rules issues [#59](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/issues/59)/[#60](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/issues/60) said didn't exist ([#68](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/issues/68)) ([956d881](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/commit/956d881e19591bcd9a04c6496bff07213d1ee6d3))
+
 ## [Unreleased]
 
 ### Fixed
