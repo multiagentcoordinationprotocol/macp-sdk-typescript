@@ -79,6 +79,133 @@ describe('TaskProjection', () => {
     expect(projection.getTask('t1')?.status).toBe('rejected');
   });
 
+  // Issue #71 — RFC-MACP-0009 §5 rule 3 (`:69`): "Only one assignee may become
+  // active for the Session in base v1." The guard is per-SESSION, not
+  // per-`task_id`, so two TaskRequests in one transcript share one slot.
+  describe('rule 3 is session-scoped, not task-scoped (issue #71)', () => {
+    it('a second TaskAccept for a DIFFERENT task_id cannot take the session assignee slot', () => {
+      projection.applyEnvelope(makeEnvelope('TaskRequest', { taskId: 't1', title: 'A', instructions: 'do' }), registry);
+      projection.applyEnvelope(makeEnvelope('TaskRequest', { taskId: 't2', title: 'B', instructions: 'do' }), registry);
+      projection.applyEnvelope(
+        makeEnvelope('TaskAccept', { taskId: 't1', assignee: 'worker-a' }, 'worker-a'),
+        registry,
+      );
+      projection.applyEnvelope(
+        makeEnvelope('TaskAccept', { taskId: 't2', assignee: 'worker-b' }, 'worker-b'),
+        registry,
+      );
+
+      expect(projection.getTask('t1')?.assignee).toBe('worker-a');
+      expect(projection.getTask('t2')?.assignee).toBeUndefined();
+      expect(projection.getTask('t2')?.status).toBe('requested');
+    });
+
+    it('a discarded TaskAccept does not advance phase to InProgress on its own', () => {
+      projection.applyEnvelope(makeEnvelope('TaskRequest', { taskId: 't1', title: 'A', instructions: 'do' }), registry);
+      projection.applyEnvelope(
+        makeEnvelope('TaskAccept', { taskId: 'unknown-task', assignee: 'worker-a' }, 'worker-a'),
+        registry,
+      );
+      expect(projection.phase).toBe('Requested');
+      expect(projection.tasks.size).toBe(1);
+    });
+  });
+
+  // Issue #70 — RFC-MACP-0009 §5 rule 3c (`:72`), mirroring `macp-runtime`
+  // `crates/macp-modes/src/mode/task.rs:257-260`.
+  describe('TaskReject frees the session assignee slot when the rejecter held it (issue #70)', () => {
+    it('clears the assignee so a later TaskAccept can reassign', () => {
+      projection.applyEnvelope(makeEnvelope('TaskRequest', { taskId: 't1', title: 'X', instructions: 'do' }), registry);
+      projection.applyEnvelope(
+        makeEnvelope('TaskAccept', { taskId: 't1', assignee: 'worker-a' }, 'worker-a'),
+        registry,
+      );
+      projection.applyEnvelope(
+        makeEnvelope('TaskReject', { taskId: 't1', assignee: 'worker-a', reason: 'blocked' }, 'worker-a'),
+        registry,
+      );
+
+      expect(projection.getTask('t1')?.assignee).toBeUndefined();
+      expect(projection.getTask('t1')?.status).toBe('rejected');
+
+      projection.applyEnvelope(
+        makeEnvelope('TaskAccept', { taskId: 't1', assignee: 'worker-b' }, 'worker-b'),
+        registry,
+      );
+
+      expect(projection.getTask('t1')?.assignee).toBe('worker-b');
+      expect(projection.getTask('t1')?.status).toBe('accepted');
+      expect(projection.phase).toBe('InProgress');
+    });
+
+    it('a TaskReject from someone who is NOT the active assignee leaves the assignment intact', () => {
+      projection.applyEnvelope(makeEnvelope('TaskRequest', { taskId: 't1', title: 'X', instructions: 'do' }), registry);
+      projection.applyEnvelope(
+        makeEnvelope('TaskAccept', { taskId: 't1', assignee: 'worker-a' }, 'worker-a'),
+        registry,
+      );
+      projection.applyEnvelope(
+        makeEnvelope('TaskReject', { taskId: 't1', assignee: 'worker-c', reason: 'not mine' }, 'worker-c'),
+        registry,
+      );
+
+      expect(projection.getTask('t1')?.assignee).toBe('worker-a');
+
+      // The slot is still held, so a competing accept is still discarded.
+      projection.applyEnvelope(
+        makeEnvelope('TaskAccept', { taskId: 't1', assignee: 'worker-b' }, 'worker-b'),
+        registry,
+      );
+      expect(projection.getTask('t1')?.assignee).toBe('worker-a');
+    });
+
+    it('a reject that frees the slot clears the assignee on the task the slot was taken on', () => {
+      projection.applyEnvelope(makeEnvelope('TaskRequest', { taskId: 't1', title: 'A', instructions: 'do' }), registry);
+      projection.applyEnvelope(makeEnvelope('TaskRequest', { taskId: 't2', title: 'B', instructions: 'do' }), registry);
+      projection.applyEnvelope(
+        makeEnvelope('TaskAccept', { taskId: 't1', assignee: 'worker-a' }, 'worker-a'),
+        registry,
+      );
+      // Non-conforming shape: the slot holder rejects citing the other task.
+      projection.applyEnvelope(
+        makeEnvelope('TaskReject', { taskId: 't2', assignee: 'worker-a', reason: 'wrong task' }, 'worker-a'),
+        registry,
+      );
+
+      expect(projection.getTask('t1')?.assignee).toBeUndefined();
+      expect(projection.getTask('t2')?.status).toBe('rejected');
+    });
+
+    it('a TaskReject with no active assignee at all is a no-op for assignment', () => {
+      projection.applyEnvelope(makeEnvelope('TaskRequest', { taskId: 't1', title: 'X', instructions: 'do' }), registry);
+      projection.applyEnvelope(
+        makeEnvelope('TaskReject', { taskId: 't1', assignee: 'worker-a', reason: 'too busy' }, 'worker-a'),
+        registry,
+      );
+      expect(projection.getTask('t1')?.assignee).toBeUndefined();
+
+      projection.applyEnvelope(
+        makeEnvelope('TaskAccept', { taskId: 't1', assignee: 'worker-b' }, 'worker-b'),
+        registry,
+      );
+      expect(projection.getTask('t1')?.assignee).toBe('worker-b');
+    });
+
+    it('a TaskReject for an unknown task_id from the slot holder still frees the slot', () => {
+      projection.applyEnvelope(makeEnvelope('TaskRequest', { taskId: 't1', title: 'X', instructions: 'do' }), registry);
+      projection.applyEnvelope(
+        makeEnvelope('TaskAccept', { taskId: 't1', assignee: 'worker-a' }, 'worker-a'),
+        registry,
+      );
+      projection.applyEnvelope(
+        makeEnvelope('TaskReject', { taskId: 'nope', assignee: 'worker-a', reason: 'x' }, 'worker-a'),
+        registry,
+      );
+      expect(projection.getTask('t1')?.assignee).toBeUndefined();
+      expect(projection.getTask('t1')?.status).toBe('accepted');
+    });
+  });
+
   it('tracks progress updates', () => {
     projection.applyEnvelope(makeEnvelope('TaskRequest', { taskId: 't1', title: 'X', instructions: 'do' }), registry);
     projection.applyEnvelope(makeEnvelope('TaskAccept', { taskId: 't1', assignee: 'w' }, 'w'), registry);
