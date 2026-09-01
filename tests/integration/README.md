@@ -3,6 +3,13 @@
 These tests drive the TypeScript SDK against a real MACP runtime. They are
 excluded from `npm test` and run via `npm run test:integration`.
 
+CI runs this suite automatically on every push/PR to `main` via
+`.github/workflows/integration.yml`, against the published
+`ghcr.io/multiagentcoordinationprotocol/macp-runtime:latest` image started as
+a GitHub Actions service container (dev mode, in-memory, scratch port 50123).
+`scripts/wait-for-runtime.ts` polls the `Initialize` RPC before the suite
+runs. The steps below are for reproducing that locally.
+
 ## Runtime setup
 
 Build and start the runtime in insecure dev mode. As of runtime 0.5.0 the
