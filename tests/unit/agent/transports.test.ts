@@ -4,6 +4,7 @@ import type { Envelope } from '../../../src/types';
 import { MODE_DECISION } from '../../../src/constants';
 import { ProtoRegistry } from '../../../src/proto-registry';
 import { DecisionProjection } from '../../../src/projections/decision';
+import { MacpTransportError } from '../../../src/errors';
 
 function makeEnvelope(overrides?: Partial<Envelope>): Envelope {
   return {
@@ -159,10 +160,11 @@ describe('GrpcTransportAdapter', () => {
     }
 
     expect(mockStream.sendSubscribe).toHaveBeenCalledTimes(1);
-    // The adapter calls sendSubscribe(sessionId) — the default afterSequence=0
-    // in MacpStream means "replay everything", which is what a fresh participant
-    // wants. If we ever start passing a cursor, this assertion needs updating.
-    expect(mockStream.sendSubscribe).toHaveBeenCalledWith('session-xyz');
+    // The adapter calls sendSubscribe(sessionId, this.lastSequence). A fresh
+    // adapter's lastSequence is 0 (by construction), which MacpStream treats
+    // as "replay everything" — so a fresh participant still sees full
+    // history on its first subscribe.
+    expect(mockStream.sendSubscribe).toHaveBeenCalledWith('session-xyz', 0);
     // subscribe must be sent before any envelope is yielded
     const subscribeOrder = mockStream.sendSubscribe.mock.invocationCallOrder[0];
     const decodeOrder = (mockClient.protoRegistry.decodeKnownPayload as any).mock.invocationCallOrder[0] ?? Infinity;
@@ -184,7 +186,7 @@ describe('GrpcTransportAdapter', () => {
     }
 
     expect(mockStream.sendSubscribe).toHaveBeenCalledTimes(1);
-    expect(mockStream.sendSubscribe).toHaveBeenCalledWith('session-empty');
+    expect(mockStream.sendSubscribe).toHaveBeenCalledWith('session-empty', 0);
   });
 
   it('passes the auth option through to openStream', async () => {
@@ -205,6 +207,169 @@ describe('GrpcTransportAdapter', () => {
 
     expect(openStream).toHaveBeenCalledTimes(1);
     expect(openStream).toHaveBeenCalledWith({ auth });
+  });
+
+  // RFC-MACP-0006 §3.2: a resuming client subscribes from its own cursor
+  // instead of replaying the whole session. `start()` is the only reachable
+  // "reconnect" in this SDK (there is no built-in retry loop) — a caller
+  // calls it again, directly or after `stop()`.
+  it('resumes from its own cursor on a second start() after stop()', async () => {
+    const firstPass = [
+      makeEnvelope({ sessionId: 'session-1', messageId: 'msg-1' }),
+      makeEnvelope({ sessionId: 'session-1', messageId: 'msg-2' }),
+    ];
+    const secondPass = [makeEnvelope({ sessionId: 'session-1', messageId: 'msg-3' })];
+
+    const mockStream1 = makeMockStream(firstPass);
+    const mockStream2 = makeMockStream(secondPass);
+    const openStream = vi.fn().mockReturnValueOnce(mockStream1).mockReturnValueOnce(mockStream2);
+    const mockClient = {
+      openStream,
+      protoRegistry: { decodeKnownPayload: vi.fn().mockReturnValue({}) },
+    } as any;
+
+    const adapter = new GrpcTransportAdapter(mockClient, 'session-1');
+
+    for await (const _ of adapter.start()) {
+      // drain the first pass
+    }
+    await adapter.stop();
+
+    expect(adapter.lastSequence).toBe(2);
+
+    for await (const _ of adapter.start()) {
+      // drain the second pass
+    }
+
+    // First subscribe is still a full replay (afterSequence = 0)...
+    expect(mockStream1.sendSubscribe).toHaveBeenCalledWith('session-1', 0);
+    // ...but the second subscribe resumes from the adapter's own cursor,
+    // not from 0 and not from `seq`/`delivered`-as-raw-count.
+    expect(mockStream2.sendSubscribe).toHaveBeenCalledWith('session-1', 2);
+    expect(adapter.lastSequence).toBe(3);
+  });
+
+  // The direct RFC-MACP-0006 §3.2 Redelivery obligation: "a redelivery MUST
+  // NOT advance the client's sequence position; only a distinct accepted
+  // envelope does." Failure path: without the message_id guard this would be
+  // 2, and the next resume would silently skip the second delivery's ordinal.
+  it('a redelivered envelope (same messageId) does not advance the resume cursor', async () => {
+    const envelope = makeEnvelope({ sessionId: 'session-1', messageId: 'msg-1' });
+    const redelivery = makeEnvelope({ sessionId: 'session-1', messageId: 'msg-1' });
+    const mockStream = makeMockStream([envelope, redelivery]);
+    const mockClient = {
+      openStream: vi.fn().mockReturnValue(mockStream),
+      protoRegistry: { decodeKnownPayload: vi.fn().mockReturnValue({}) },
+    } as any;
+
+    const adapter = new GrpcTransportAdapter(mockClient, 'session-1');
+    const messages = [];
+    for await (const msg of adapter.start()) {
+      messages.push(msg);
+    }
+
+    // The envelope is still yielded both times -- deduping the counter is
+    // not the same as suppressing delivery; that stays the projection
+    // guard's job.
+    expect(messages).toHaveLength(2);
+    expect(adapter.lastSequence).toBe(1);
+  });
+
+  // Edge case 2 from the plan: an empty/absent messageId has no identity to
+  // dedup on, so it must increment unconditionally -- collapsing an id-less
+  // feed to one envelope would be strictly worse. Mirrors the carve-out at
+  // src/projections/base.ts:224-227.
+  it('envelopes with an empty messageId always advance the resume cursor', async () => {
+    const e1 = makeEnvelope({ sessionId: 'session-1', messageId: '' });
+    const e2 = makeEnvelope({ sessionId: 'session-1', messageId: '' });
+    const mockStream = makeMockStream([e1, e2]);
+    const mockClient = {
+      openStream: vi.fn().mockReturnValue(mockStream),
+      protoRegistry: { decodeKnownPayload: vi.fn().mockReturnValue({}) },
+    } as any;
+
+    const adapter = new GrpcTransportAdapter(mockClient, 'session-1');
+    for await (const _ of adapter.start()) {
+      // drain
+    }
+
+    expect(adapter.lastSequence).toBe(2);
+  });
+
+  it('a cross-session envelope affects neither the yielded messages nor the resume cursor', async () => {
+    const envelope1 = makeEnvelope({ sessionId: 'session-1' });
+    const envelope2 = makeEnvelope({ sessionId: 'session-2', messageId: 'msg-2' });
+    const envelope3 = makeEnvelope({ sessionId: 'session-1', messageId: 'msg-3', messageType: 'Vote' });
+
+    const mockStream = makeMockStream([envelope1, envelope2, envelope3]);
+    const mockClient = {
+      openStream: vi.fn().mockReturnValue(mockStream),
+      protoRegistry: { decodeKnownPayload: vi.fn().mockReturnValue({}) },
+    } as any;
+
+    const adapter = new GrpcTransportAdapter(mockClient, 'session-1');
+    for await (const _ of adapter.start()) {
+      // drain
+    }
+
+    expect(adapter.lastSequence).toBe(2);
+  });
+
+  // Edge case 1 from the plan: start() assigned `this.stream` unconditionally,
+  // orphaning any prior stream while the earlier generator kept iterating it.
+  // Two live generators would both feed one counter from two
+  // differently-positioned replays.
+  it('start() called again without stop() closes the prior stream first', async () => {
+    const mockStream1 = makeMockStream([makeEnvelope({ sessionId: 'session-1', messageId: 'msg-1' })]);
+    const mockStream2 = makeMockStream([]);
+    const openStream = vi.fn().mockReturnValueOnce(mockStream1).mockReturnValueOnce(mockStream2);
+    const mockClient = {
+      openStream,
+      protoRegistry: { decodeKnownPayload: vi.fn().mockReturnValue({}) },
+    } as any;
+
+    const adapter = new GrpcTransportAdapter(mockClient, 'session-1');
+
+    // Prime the first generator (opens mockStream1, subscribes, yields once)
+    // without draining it or calling stop() -- a re-entrant start().
+    const firstIterator = adapter.start()[Symbol.asyncIterator]();
+    await firstIterator.next();
+
+    for await (const _ of adapter.start()) {
+      // drain the second pass
+    }
+
+    expect(mockStream1.close).toHaveBeenCalledTimes(1);
+    expect(mockStream2.sendSubscribe).toHaveBeenCalledWith('session-1', 1);
+  });
+
+  // "Recognised, not recovered from" (plan §Approach): a resume below a
+  // compacted base must propagate to the caller unchanged, not trigger a
+  // silent auto-retry from 0 -- a full re-replay would re-fire every agent
+  // handler through the unguarded dispatcher.dispatch path.
+  it('a FAILED_PRECONDITION resume error propagates without a recovery subscribe', async () => {
+    const mockStream = {
+      responses: async function* (): AsyncGenerator<Envelope, void, void> {
+        throw new MacpTransportError('session history before ordinal 5 was compacted', 'FAILED_PRECONDITION');
+      },
+      sendSubscribe: vi.fn().mockResolvedValue(undefined),
+      close: vi.fn(),
+    };
+    const mockClient = {
+      openStream: vi.fn().mockReturnValue(mockStream),
+      protoRegistry: { decodeKnownPayload: vi.fn().mockReturnValue({}) },
+    } as any;
+
+    const adapter = new GrpcTransportAdapter(mockClient, 'session-1');
+
+    const consume = async () => {
+      for await (const _ of adapter.start()) {
+        // unreachable
+      }
+    };
+
+    await expect(consume()).rejects.toMatchObject({ code: 'FAILED_PRECONDITION' });
+    expect(mockStream.sendSubscribe).toHaveBeenCalledTimes(1);
   });
 });
 

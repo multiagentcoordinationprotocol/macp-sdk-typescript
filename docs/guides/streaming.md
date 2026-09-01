@@ -69,9 +69,9 @@ for await (const envelope of stream.responses()) {
 }
 ```
 
-`sendSubscribe(sessionId, afterSequence?)` is how non-initiator agents observe the `SessionStart` and earlier `Proposal` / `Vote` envelopes when they join a session that is already in flight. The `GrpcTransportAdapter` in the agent framework calls this automatically — you only need to call it yourself when driving a raw `MacpStream`.
+`sendSubscribe(sessionId, afterSequence?)` is how non-initiator agents observe the `SessionStart` and earlier `Proposal` / `Vote` envelopes when they join a session that is already in flight. The `GrpcTransportAdapter` in the agent framework calls this automatically, passing its own resume cursor on every `start()` — including a second `start()` after `stop()`, which is the only reachable "reconnect" in this SDK — so it does not replay the whole session again. You only need to call `sendSubscribe` yourself when driving a raw `MacpStream`.
 
-`afterSequence` is the **1-based accepted-envelope ordinal**, exclusive (`0` = from the start): the Nth accepted envelope has ordinal N. Derive `lastSeenSequence` by counting delivered envelopes (`GrpcTransportAdapter.lastSequence` does this for you). Ordinals are stable across compaction and restart; resuming below a compacted base returns `FAILED_PRECONDITION` (runtime ≥ 0.5.0). See [`sendSubscribe`](../api/client.md#sendsubscribesessionid-aftersequence) for the full contract.
+`afterSequence` is the **1-based accepted-envelope ordinal**, exclusive (`0` = from the start): the Nth accepted envelope has ordinal N. Derive `lastSeenSequence` by counting **distinct** delivered envelopes, keyed on `message_id` (`GrpcTransportAdapter.lastSequence` does this for you) — a redelivered envelope MUST NOT advance the count (RFC-MACP-0006 §3.2 Redelivery). Ordinals are stable across compaction and restart; resuming below a compacted base returns `FAILED_PRECONDITION` (runtime ≥ 0.5.0). See [`sendSubscribe`](../api/client.md#sendsubscribesessionid-aftersequence) for the full contract.
 
 ### Important Notes
 

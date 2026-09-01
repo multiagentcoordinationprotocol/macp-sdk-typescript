@@ -28,6 +28,7 @@ export class GrpcTransportAdapter implements TransportAdapter {
   private stream: MacpStream | null = null;
   private seq = 0;
   private delivered = 0;
+  private readonly seenMessageIds = new Set<string>();
 
   constructor(
     private readonly client: MacpClient,
@@ -37,28 +38,63 @@ export class GrpcTransportAdapter implements TransportAdapter {
 
   /**
    * The server passive-subscribe ordinal of the last delivered envelope (the
-   * 1-based count of accepted envelopes delivered on this stream, RFC-MACP-0006
-   * §3.2). `0` before anything is delivered. Pass this as `afterSequence` to
-   * `MacpStream.sendSubscribe` on a reconnect to resume exactly-once — ordinals
-   * are stable across compaction/restart. Distinct from `IncomingMessage.seq`,
-   * which is a client-local 0-based delivery index.
+   * 1-based count of *distinct* accepted envelopes delivered on this stream,
+   * RFC-MACP-0006 §3.2). `0` before anything is delivered. `start()` passes
+   * this value as `afterSequence` to `MacpStream.sendSubscribe` itself, so a
+   * caller that `stop()`s and calls `start()` again (the only reachable
+   * "reconnect" in this SDK — there is no built-in retry loop) resumes
+   * rather than replays the whole session. Ordinals are stable across
+   * compaction/restart. Counts distinct `message_id`s, never raw delivery
+   * events: RFC-MACP-0006 §3.2 Redelivery requires that "a redelivery MUST
+   * NOT advance the client's sequence position; only a distinct accepted
+   * envelope does," and a client that counts raw deliveries "arrives at a
+   * position ahead of the true one, and its next resume silently skips
+   * history." Distinct from `IncomingMessage.seq`, which is a client-local
+   * 0-based delivery index that advances on every delivery, redeliveries
+   * included.
    */
   get lastSequence(): number {
     return this.delivered;
   }
 
   async *start(): AsyncIterable<IncomingMessage> {
+    // A prior stream from an earlier start() (without an intervening stop())
+    // must not keep feeding this adapter's counter — two live generators
+    // would both advance `delivered` from two differently-positioned
+    // replays. Close it before opening the new one so re-entrant start() and
+    // stop()-then-start() behave identically.
+    if (this.stream) {
+      this.stream.close();
+      this.stream = null;
+    }
     this.stream = this.client.openStream({ auth: this.auth });
 
-    // RFC-MACP-0006-A1: Subscribe to the session with history replay.
-    // The runtime replays accepted envelopes then switches to live broadcast.
-    // This ensures non-initiator agents receive the SessionStart + Proposal
-    // regardless of spawn order or connection timing.
-    await this.stream.sendSubscribe(this.sessionId);
+    // RFC-MACP-0006 §3.2: subscribe to the session, resuming from this
+    // adapter's own cursor. `this.delivered` is 0 before anything has been
+    // delivered, by construction, and `afterSequence = 0` is normatively
+    // "replay from the session's first accepted envelope" — so the first
+    // subscribe and every later one (e.g. after stop()+start()) are the same
+    // expression. There is no separate first-subscribe/reconnect branch to
+    // keep in sync with the counter.
+    await this.stream.sendSubscribe(this.sessionId, this.delivered);
 
     for await (const envelope of this.stream.responses()) {
       if (envelope.sessionId !== this.sessionId) continue;
-      this.delivered++;
+      // RFC-MACP-0006 §3.2 Redelivery: a redelivery MUST NOT advance the
+      // resume cursor, and a consumer that accumulates state per envelope
+      // MUST be idempotent w.r.t. `message_id`. An empty/absent messageId
+      // has no identity to dedup on and increments unconditionally — the
+      // same carve-out the projection guard documents at
+      // `src/projections/base.ts:224-227`, so the two dedup sites read the
+      // same way.
+      if (envelope.messageId) {
+        if (!this.seenMessageIds.has(envelope.messageId)) {
+          this.seenMessageIds.add(envelope.messageId);
+          this.delivered++;
+        }
+      } else {
+        this.delivered++;
+      }
       yield normalizeEnvelope(
         envelope,
         (mode, mt, p) => this.client.protoRegistry.decodeKnownPayload(mode, mt, p),

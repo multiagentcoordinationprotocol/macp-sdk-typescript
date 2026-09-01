@@ -26,6 +26,7 @@ import {
   buildDecisionPolicy,
   newSessionId,
 } from '../../src/index';
+import { GrpcTransportAdapter } from '../../src/agent/transports';
 
 const RUNTIME_ADDRESS = process.env.MACP_RUNTIME_ADDRESS ?? 'localhost:50051';
 
@@ -808,6 +809,78 @@ describe('Stream subscribe + history replay', () => {
       await consumer.catch(() => undefined);
 
       expect(received).not.toContain('Proposal');
+    } finally {
+      bobClient.close();
+    }
+  });
+
+  it('GrpcTransportAdapter start -> stop -> start resumes without replaying the first pass', async () => {
+    // Proves the SDK-computed cursor agrees with the ordinal the runtime
+    // assigns -- something a mocked unit test cannot check. RFC-MACP-0006
+    // §3.2: the second start() must resume from the adapter's own cursor,
+    // not replay from 0.
+    const aliceSession = new DecisionSession(client, { auth: agentAlice });
+    await aliceSession.start({
+      intent: 'Adapter resume test',
+      participants: ['alice', 'bob'],
+      ttlMs: 30_000,
+      sender: 'alice',
+    });
+    await aliceSession.propose({
+      proposalId: 'resume-p1',
+      option: 'first-pass',
+      sender: 'alice',
+    });
+
+    const bobClient = makeClient(agentBob);
+    try {
+      const adapter = new GrpcTransportAdapter(bobClient, aliceSession.sessionId, agentBob);
+
+      const firstPassTypes: string[] = [];
+      const firstPass = (async () => {
+        for await (const msg of adapter.start()) {
+          if (msg.raw.sessionId !== aliceSession.sessionId) continue;
+          firstPassTypes.push(msg.messageType);
+          if (firstPassTypes.includes('SessionStart') && firstPassTypes.includes('Proposal')) break;
+        }
+      })();
+      await Promise.race([
+        firstPass,
+        new Promise((_, reject) => setTimeout(() => reject(new Error('first pass timeout')), 5000)),
+      ]);
+      await adapter.stop();
+
+      // The first pass observed exactly two distinct accepted envelopes
+      // (SessionStart, Proposal), so the resume cursor must be 2.
+      expect(adapter.lastSequence).toBe(2);
+
+      // Alice proposes again only after the first pass has ended.
+      await aliceSession.propose({
+        proposalId: 'resume-p2',
+        option: 'second-pass',
+        sender: 'alice',
+      });
+
+      const secondPassTypes: string[] = [];
+      const secondPass = (async () => {
+        for await (const msg of adapter.start()) {
+          if (msg.raw.sessionId !== aliceSession.sessionId) continue;
+          secondPassTypes.push(msg.messageType);
+          if (secondPassTypes.includes('Proposal')) break;
+        }
+      })();
+      await Promise.race([
+        secondPass,
+        new Promise((_, reject) => setTimeout(() => reject(new Error('second pass timeout')), 5000)),
+      ]);
+      await adapter.stop();
+
+      // The resumed stream must see only the envelope accepted after the
+      // first pass ended -- not a full replay of SessionStart + the first
+      // Proposal.
+      expect(secondPassTypes).not.toContain('SessionStart');
+      expect(secondPassTypes.filter((t) => t === 'Proposal')).toHaveLength(1);
+      expect(adapter.lastSequence).toBe(3);
     } finally {
       bobClient.close();
     }

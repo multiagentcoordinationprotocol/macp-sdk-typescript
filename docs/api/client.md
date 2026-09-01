@@ -402,8 +402,10 @@ await stream.sendSubscribe('session-abc', lastSeenSequence);
 
 **Ordinal contract (runtime ≥ 0.5.0, RFC-MACP-0006 §3.2):** `afterSequence` is
 the **1-based accepted-envelope ordinal** — the Nth accepted envelope has
-ordinal N. Clients derive it by counting delivered envelopes; the agent
-framework's `GrpcTransportAdapter` exposes this as its `lastSequence` getter.
+ordinal N. Clients derive it by counting **distinct** delivered envelopes,
+keyed on `message_id` — a redelivery MUST NOT advance the count (§3.2
+Redelivery); the agent framework's `GrpcTransportAdapter` exposes this as its
+`lastSequence` getter, computed exactly this way.
 Ordinals are **stable across log compaction and runtime restart**, and envelopes
 accepted during the subscribe window are never delivered twice. Resuming **below
 a compacted base** fails with `FAILED_PRECONDITION` (inspect via
@@ -411,7 +413,8 @@ a compacted base** fails with `FAILED_PRECONDITION` (inspect via
 
 Rejects with `MacpSdkError` if the stream has already been closed. The agent
 framework's `GrpcTransportAdapter` calls this automatically after opening the
-stream, so you only need it when driving a raw `MacpStream`.
+stream — including passing its own `lastSequence` as the resume cursor on a
+second `start()` — so you only need it when driving a raw `MacpStream`.
 
 ### `responses()`
 

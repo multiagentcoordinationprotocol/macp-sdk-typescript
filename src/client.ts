@@ -158,9 +158,13 @@ export class MacpStream {
    *
    * `afterSequence` is the **1-based accepted-envelope ordinal**, exclusive:
    * `0` (default) replays from the very start; `k` replays envelopes with
-   * ordinal `> k`. Clients derive the ordinal by counting delivered envelopes
-   * (the Nth accepted envelope has ordinal N) — see
-   * `IncomingMessage.seq`, which is exactly this ordinal under the new contract.
+   * ordinal `> k`. Clients derive the ordinal by counting **distinct**
+   * accepted envelopes delivered, keyed on `message_id` — RFC-MACP-0006 §3.2
+   * Redelivery requires that a repeat of an already-observed envelope MUST
+   * NOT advance the count. This is **not** the same as `IncomingMessage.seq`,
+   * which is a client-local 0-based delivery index that advances on every
+   * delivery, redeliveries included; see `GrpcTransportAdapter.lastSequence`
+   * for a cursor that tracks the ordinal correctly.
    * Ordinals are stable across log compaction and runtime restart. Resuming
    * below a compacted base returns `FAILED_PRECONDITION` (inspectable via
    * `MacpTransportError.code`) rather than silently skipping history (runtime
