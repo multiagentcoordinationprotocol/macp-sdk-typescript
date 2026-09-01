@@ -4,6 +4,19 @@ All notable changes to `macp-sdk-typescript` are documented here. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the
 project uses [Semantic Versioning](https://semver.org/).
 
+## [0.10.0](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/compare/v0.9.0...v0.10.0) (2026-09-01)
+
+
+### ⚠ BREAKING CHANGES
+
+* `client.sendProgress()` now throws `MacpSessionError` when exactly one of `sessionId`/`mode` is supplied. Such calls used to succeed against a runtime that had the symmetric gap; as of macp-runtime PR #137 they are rejected with `INVALID_ENVELOPE`. Pass both fields for a session-scoped Progress, or neither for an ambient one.
+* **projections:** `TaskProjection` assignee semantics changed twice. (1) The first-accept-wins guard is now per-session, not per-`task_id`: on a transcript with two `TaskRequest`s, only the first `TaskAccept` assigns — the second task keeps `assignee === undefined` and `status === 'requested'`, where it previously got its own assignee. A `TaskAccept` the guard discards also no longer sets `phase = 'InProgress'`. (2) `TaskAccept` is no longer sticky forever: a `TaskReject` from the active assignee clears `assignee` back to `undefined`, so code reading `getTask(id).assignee` after a reject now sees `undefined` (or the reassigned participant) rather than the participant who rejected.
+
+### Bug Fixes
+
+* **projections:** scope the Task assignee slot to the session and free it on reject ([#75](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/issues/75)) ([f7841a9](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/commit/f7841a96d120b3fc55effdfabf63a2d72f431081)), closes [#59](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/issues/59) [#60](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/issues/60) [#70](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/issues/70) [#71](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/issues/71)
+* reject mixed ambient/session-scoped Progress envelopes ([#76](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/issues/76)) ([a9e00e3](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/commit/a9e00e370b7a4bf08d09190e8b75a12d221319f8))
+
 ## [0.9.0](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/compare/v0.8.0...v0.9.0) (2026-09-01)
 
 
