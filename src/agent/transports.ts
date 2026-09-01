@@ -102,6 +102,26 @@ export class GrpcTransportAdapter implements TransportAdapter {
 
     for await (const envelope of this.stream.responses()) {
       if (envelope.sessionId !== this.sessionId) continue;
+      // Count this envelope into the resume cursor only *after* the
+      // consumer has come back for more, not when it is handed off. `yield`
+      // suspends here until the consumer's `for await` either calls
+      // `.next()` again (it took this envelope and kept iterating — the
+      // code below runs) or closes the iterator via `break`/`return`/throw
+      // (e.g. `Participant.run()` observing `!this.running` and breaking
+      // out of its loop without processing this envelope). In the latter
+      // case `.return()` on this generator resumes at this `yield` as if a
+      // `return` had been written here, so nothing below it runs: the
+      // cursor is never advanced past an envelope the consumer never
+      // actually took past the loop boundary, and the next `start()`
+      // redelivers it instead of silently skipping it. See #66 — counting
+      // before yielding let a stop-mid-stream permanently drop an envelope
+      // once #65 made the resume cursor authoritative.
+      const message = normalizeEnvelope(
+        envelope,
+        (mode, mt, p) => this.client.protoRegistry.decodeKnownPayload(mode, mt, p),
+        this.seq++,
+      );
+      yield message;
       // RFC-MACP-0006 §3.2 Redelivery: a redelivery MUST NOT advance the
       // resume cursor, and a consumer that accumulates state per envelope
       // MUST be idempotent w.r.t. `message_id`. An empty/absent messageId
@@ -125,11 +145,6 @@ export class GrpcTransportAdapter implements TransportAdapter {
       } else {
         this.delivered++;
       }
-      yield normalizeEnvelope(
-        envelope,
-        (mode, mt, p) => this.client.protoRegistry.decodeKnownPayload(mode, mt, p),
-        this.seq++,
-      );
     }
   }
 

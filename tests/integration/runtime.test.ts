@@ -47,6 +47,17 @@ function makeClient(auth = agentAlice): MacpClient {
   });
 }
 
+/** Polls `predicate` until it's true or `timeoutMs` elapses (then throws). */
+async function waitForCondition(predicate: () => boolean, timeoutMs = 5000, intervalMs = 20): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!predicate()) {
+    if (Date.now() >= deadline) {
+      throw new Error('waitForCondition timed out');
+    }
+    await new Promise((r) => setTimeout(r, intervalMs));
+  }
+}
+
 let client: MacpClient;
 
 beforeAll(() => {
@@ -841,14 +852,22 @@ describe('Stream subscribe + history replay', () => {
         for await (const msg of adapter.start()) {
           if (msg.raw.sessionId !== aliceSession.sessionId) continue;
           firstPassTypes.push(msg.messageType);
-          if (firstPassTypes.includes('SessionStart') && firstPassTypes.includes('Proposal')) break;
         }
       })();
-      await Promise.race([
-        firstPass,
-        new Promise((_, reject) => setTimeout(() => reject(new Error('first pass timeout')), 5000)),
-      ]);
+
+      // Deliberately not a `break` inside the loop above: per #66, breaking a
+      // `for await` mid-iteration calls `.return()` on the adapter's
+      // generator, which resumes right at the last `yield` and skips the
+      // counting code that follows it -- the same permanent-skip bug this
+      // test is meant to guard against, reintroduced by the test itself.
+      // Instead, wait for both expected types to show up (so the loop has
+      // already looped back and asked the adapter for *another* envelope,
+      // which is what commits the previous one's count), then end the
+      // stream out from under the pending fetch so the loop completes on
+      // its own instead of via `break`.
+      await waitForCondition(() => firstPassTypes.includes('SessionStart') && firstPassTypes.includes('Proposal'));
       await adapter.stop();
+      await firstPass;
 
       // The first pass observed exactly two distinct accepted envelopes
       // (SessionStart, Proposal), so the resume cursor must be 2.
@@ -866,14 +885,14 @@ describe('Stream subscribe + history replay', () => {
         for await (const msg of adapter.start()) {
           if (msg.raw.sessionId !== aliceSession.sessionId) continue;
           secondPassTypes.push(msg.messageType);
-          if (secondPassTypes.includes('Proposal')) break;
         }
       })();
-      await Promise.race([
-        secondPass,
-        new Promise((_, reject) => setTimeout(() => reject(new Error('second pass timeout')), 5000)),
-      ]);
+      // See the firstPass comment above: wait for the observation instead of
+      // `break`ing the loop, so the count is committed before we tear the
+      // stream down.
+      await waitForCondition(() => secondPassTypes.includes('Proposal'));
       await adapter.stop();
+      await secondPass;
 
       // The resumed stream must see only the envelope accepted after the
       // first pass ended -- not a full replay of SessionStart + the first
