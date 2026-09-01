@@ -7,6 +7,7 @@ import {
   validateSeverity,
   validateParticipantCount,
   validateSignalType,
+  validateProgressScope,
   validateTtlMs,
   validateMaxSuspendMs,
   validateParticipants,
@@ -284,6 +285,51 @@ describe('validation', () => {
 
     it('defaults the field name to "commitmentHash" when omitted', () => {
       expect(() => validateCommitmentHash('abc123')).toThrow(/commitmentHash/);
+    });
+  });
+
+  // RFC-MACP-0001 §6 tri-state rule for `Progress` (spec PR #91, issue #73).
+  // Mirrors macp-runtime's `validate_envelope_shape` (PR #137).
+  describe('validateProgressScope', () => {
+    const SID = '550e8400-e29b-41d4-a716-446655440000';
+
+    it('accepts the ambient form (both empty)', () => {
+      expect(() => validateProgressScope('', '')).not.toThrow();
+    });
+
+    it('accepts the session-scoped form (both non-empty)', () => {
+      expect(() => validateProgressScope(SID, 'macp.mode.task.v1')).not.toThrow();
+    });
+
+    it('rejects a populated sessionId with an empty mode', () => {
+      expect(() => validateProgressScope(SID, '')).toThrow(MacpSessionError);
+      expect(() => validateProgressScope(SID, '')).toThrow(/sessionId is .* but mode is empty/);
+    });
+
+    it('rejects a populated mode with an empty sessionId', () => {
+      expect(() => validateProgressScope('', 'macp.mode.task.v1')).toThrow(MacpSessionError);
+      expect(() => validateProgressScope('', 'macp.mode.task.v1')).toThrow(/mode is .* but sessionId is empty/);
+    });
+
+    it('names the offending field values in the error message', () => {
+      expect(() => validateProgressScope(SID, '')).toThrow(new RegExp(SID));
+      expect(() => validateProgressScope('', 'macp.mode.task.v1')).toThrow(/macp\.mode\.task\.v1/);
+    });
+
+    // The runtime compares `session_id.is_empty()` against
+    // `mode.trim().is_empty()`. That asymmetry is mirrored, not normalised, so
+    // the SDK's verdict matches the runtime's on every input.
+    it('treats a whitespace-only mode as empty, like the runtime', () => {
+      expect(() => validateProgressScope('', '   ')).not.toThrow();
+      expect(() => validateProgressScope(SID, '   ')).toThrow(MacpSessionError);
+    });
+
+    it('does NOT trim sessionId, like the runtime', () => {
+      // Whitespace-only sessionId is non-empty to the runtime, so pairing it
+      // with a real mode passes the shape check (it fails later, on session
+      // lookup — not our rule to enforce).
+      expect(() => validateProgressScope('   ', 'macp.mode.task.v1')).not.toThrow();
+      expect(() => validateProgressScope('   ', '')).toThrow(MacpSessionError);
     });
   });
 });

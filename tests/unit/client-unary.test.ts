@@ -2,7 +2,7 @@ import * as grpc from '@grpc/grpc-js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Auth } from '../../src/auth';
 import { MacpClient } from '../../src/client';
-import { MacpAckError, MacpSdkError, MacpTransportError } from '../../src/errors';
+import { MacpAckError, MacpSdkError, MacpSessionError, MacpTransportError } from '../../src/errors';
 import type { Ack, Envelope } from '../../src/types';
 import { stubUnary } from './helpers/grpc-stub';
 
@@ -368,6 +368,41 @@ describe('MacpClient.sendSignal / sendProgress happy paths', () => {
       mode: 'macp.mode.task.v1',
       sessionId: '550e8400-e29b-41d4-a716-446655440000',
     });
+  });
+
+  // RFC-MACP-0001 §6 (spec PR #91) makes `Progress` tri-state: ambient (both
+  // empty) or session-scoped (both non-empty), never mixed. macp-runtime
+  // rejects the mixed shape with INVALID_ENVELOPE as of PR #137; the SDK
+  // fails fast so the caller gets a message naming the mismatch. The two
+  // legal forms are covered by the two happy-path cases above.
+  it('sendProgress rejects a sessionId with no mode without sending', async () => {
+    const client = makeClient();
+    const sendSpy = vi.spyOn(client, 'send').mockResolvedValue({ ok: true } as Ack);
+
+    await expect(
+      client.sendProgress({
+        sessionId: '550e8400-e29b-41d4-a716-446655440000',
+        progressToken: 'tok',
+        progress: 1,
+        total: 4,
+      }),
+    ).rejects.toThrow(MacpSessionError);
+    expect(sendSpy).not.toHaveBeenCalled();
+  });
+
+  it('sendProgress rejects a mode with no sessionId without sending', async () => {
+    const client = makeClient();
+    const sendSpy = vi.spyOn(client, 'send').mockResolvedValue({ ok: true } as Ack);
+
+    await expect(
+      client.sendProgress({
+        mode: 'macp.mode.task.v1',
+        progressToken: 'tok',
+        progress: 1,
+        total: 4,
+      }),
+    ).rejects.toThrow(MacpSessionError);
+    expect(sendSpy).not.toHaveBeenCalled();
   });
 });
 
