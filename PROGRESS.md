@@ -855,3 +855,83 @@ release from `08ff766`. `origin/main` was already at `version = "0.7.1"`, so
 merging it would have re-applied a released bump and duplicated the changelog
 entries `#123` landed. Closed with the reasoning recorded on the PR. "Merge all
 open PRs" does not mean merge an artifact of a race in the release tooling.
+
+## CI gate checkpoint — required checks widened, TS 7 bump retired (2026-09-06)
+
+Two items handed off from a peer session working in `macp-runtime`. Both were
+surfaced there and deliberately left unacted-on; both were verified here against
+the repo before anything was changed, and the verification moved the conclusion
+in each case.
+
+**The record has a gap ahead of this entry.** The section above closes at
+**0.8.0**. `main` is now at **0.10.0** (`3e47901` before this work), via `#74`
+(the integration CI job), `#75`, `#76`, `#77` (the 0.10.0 release) and `#78`,
+all shipped from other sessions and not written up here. This entry does not
+reconstruct them; it records only what was done on 2026-09-06.
+
+**PR #64 (typescript 6.0.3 → 7.0.2) was closed as unmergeable, not fixed.** It
+failed at `npm ci` with `ERESOLVE` before a single test ran, so nothing in it
+was ever a TypeScript compatibility problem with this SDK:
+
+```
+peer typescript@">=4.8.4 <6.1.0" from @typescript-eslint/eslint-plugin@8.68.0
+```
+
+The handoff attributed the conflict to `ts-api-utils@2.5.0` and its
+`peer typescript@">=4.8.4"`. That range *accepts* 7.0.2 and is not the blocker.
+Both lines appear in the same `npm error` block and picking the wrong one sends
+the next reader after a `ts-api-utils` bump that cannot help — worth stating
+plainly, because it changes what "fix this" means.
+
+The handoff's preferred remedy — bump `@typescript-eslint/{eslint-plugin,parser}`
+to a TS-7-capable line in the same PR — **does not exist yet.** Both packages are
+at `8.69.0` and both still declare `typescript@">=4.8.4 <6.1.0"`, which will not
+take TS 6.1, let alone 7. Above the 8.x line there are only stale `rc-v*` alphas.
+So close-and-ignore was not the fallback branch of that recommendation, it was
+the only available one.
+
+`#79` (`dd9ff1e`) adds a Dependabot `ignore` for `typescript`
+`version-update:semver-major` only; minor and patch keep flowing through the
+existing `minor-and-patch` group. Without it Dependabot re-raises the identical
+red PR every month. **Explicitly not resolved with `--legacy-peer-deps` or
+`--force`** — either makes the job green while leaving the conflict in place,
+which is a false signal rather than a fix, and this project has been bitten by
+that shape before. Lifting the block means bumping `typescript` *and*
+`typescript-eslint` together in one PR once the peer range widens, then dropping
+the ignore; the `dependabot.yml` comment says so at the point someone would need
+to read it.
+
+**`integration` and `verify-fixtures` are now required status checks on `main`.**
+Required contexts had been only `build-and-test (20|22|24)`. The handoff flagged
+`integration`; `verify-fixtures` was the wider hole and was found here —
+`CLAUDE.md` calls it a CI gate, but nothing enforced it, so vendored conformance
+fixtures could drift from the spec repo and still merge.
+
+The failure mode worth avoiding is a required context that never reports, which
+blocks every PR forever and then needs admin to undo. Three checks ran before
+applying, not just a name comparison: neither workflow carries a `paths:` filter
+(only `notify-website.yml` does, and it is not required), so neither can skip on
+an unrelated diff; neither job has a job-level `if:` or a `name:` override, so
+the check context equals the job id exactly; and both reported `SUCCESS` under
+those exact names on merged `#76` and `#78`.
+
+Applied with `PATCH .../protection/required_status_checks` rather than a full
+`PUT` on the protection object, so nothing else was touched — the before/after
+diff shows only that field changing. Pre-change state saved to
+`branch-protection-before.json` in the session scratchpad.
+
+The real confirmation is behavioral, not the diff: `#79` was opened, ran, and
+merged *after* the change, reported both new contexts green, reached `CLEAN`,
+and merged normally. A name mismatch would have shown up there as a permanent
+block.
+
+**`CLAUDE.md` is gitignored in this repo** (`.gitignore:12`), despite its own
+header stating it is checked into the codebase. The toolchain note there was
+updated with the TS 7 blocker, but that edit is local-only and reaches nobody
+else; the durable record is the `dependabot.yml` comment and this entry. Anyone
+relying on `CLAUDE.md` to carry guidance between machines or sessions should
+know it does not.
+
+**State at wrap:** `main` clean and in sync, zero open PRs, only `main` locally.
+Five required contexts on `main`. The deliberate follow-ups from the #55 work
+are unchanged and still open — this repo's #58, #59, #60; spec #84; runtime #125.
