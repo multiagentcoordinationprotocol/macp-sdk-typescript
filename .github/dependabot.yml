@@ -13,6 +13,16 @@ updates:
       # @…/proto resolves from GitHub Packages (needs a DEPENDABOT_GHPR_TOKEN
       # registry PAT); proto bumps are event-driven, so ignore here.
       - dependency-name: '@multiagentcoordinationprotocol/proto'
+      # TypeScript majors are blocked on the lint toolchain, not on this SDK.
+      # @typescript-eslint/{eslint-plugin,parser} still declare
+      # `peer typescript@">=4.8.4 <6.1.0"` as of 8.69.0, so `npm ci` fails
+      # ERESOLVE on any TS >= 6.1 before a single test runs -- see PR #64,
+      # closed for exactly this. Bumping typescript alone cannot go green;
+      # it needs a coordinated typescript-eslint upgrade to a line that
+      # accepts the new major, landed in the same PR. Drop this ignore (and
+      # do that bump) once typescript-eslint widens the peer range.
+      - dependency-name: 'typescript'
+        update-types: ['version-update:semver-major']
 
   - package-ecosystem: github-actions
     directory: /
