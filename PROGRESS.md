@@ -1199,6 +1199,7 @@ parallel worktrees**.
 
 - `/ship` verification gate (fresh Opus, over `git diff main...policy-v3-phases-2-6`): **PASS**. Independently re-ran the full gate (989 passed | 20 skipped, coverage matching exactly), confirmed `ASSUMPTIONS.md` has zero entries for this plan, confirmed no doc drift, confirmed tracked-file consistency (all 7 commit SHAs referenced in `PROGRESS.md`, all phases `Status: DONE`), confirmed issues #85/#86 closed and `macp-sdk-python#65` real.
 - pushed `policy-v3-phases-2-6` `33da48d`
+- PR #89 opened: https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/pull/89
 
 ## Notes carried into implementation
 
