@@ -191,6 +191,43 @@ describe('policy builders', () => {
     });
   });
 
+  describe('cross-phase seam: schemaVersion option does not bypass voting or commitment validation', () => {
+    // Phases 3, 4, and 5 all touch buildDecisionPolicy. This pins that the new
+    // 4th `options` parameter (Phase 5) is additive in the literal sense -- it
+    // does not short-circuit the voting-constraint checks (Phase 3) or the
+    // designated_role guard (Phase 4), regardless of which schemaVersion is
+    // requested.
+    it('an invalid designated_role commitment still throws under schemaVersion: 3', () => {
+      const build = () =>
+        buildDecisionPolicy('p', 'd', { commitment: { authority: 'designated_role' } }, { schemaVersion: 3 });
+      expect(build).toThrow(MacpSessionError);
+      expect(build).toThrow(/names no one/);
+    });
+
+    it('an invalid voting algorithm still throws under schemaVersion: 1', () => {
+      const build = () =>
+        buildDecisionPolicy('p', 'd', { voting: { algorithm: 'bogus' as never } }, { schemaVersion: 1 });
+      expect(build).toThrow(MacpSessionError);
+      expect(build).toThrow(/algorithm must be one of/);
+    });
+
+    it('a fully valid descriptor combining all three phases succeeds and serializes correctly', () => {
+      const descriptor = buildDecisionPolicy(
+        'p',
+        'd',
+        {
+          voting: { algorithm: 'weighted', weights: { a: 2, b: 1 } },
+          commitment: { authority: 'designated_role', designatedRoles: ['lead'] },
+        },
+        { schemaVersion: 3 },
+      );
+      expect(descriptor.schemaVersion).toBe(3);
+      const rules = parseRules(descriptor);
+      expect(rules.voting).toEqual(expect.objectContaining({ algorithm: 'weighted', weights: { a: 2, b: 1 } }));
+      expect((rules.commitment as { designated_roles: string[] }).designated_roles).toEqual(['lead']);
+    });
+  });
+
   describe('buildDecisionPolicy schema constraints (RFC-MACP-0012 decision-rules.schema.json)', () => {
     it('throws on an algorithm outside the canonical six', () => {
       const build = () => buildDecisionPolicy('p', 'd', { voting: { algorithm: 'bogus' as never } });

@@ -1181,7 +1181,18 @@ parallel worktrees**.
 - Added an integration test (`tests/integration/runtime.test.ts`, `Policy lifecycle` describe block) pinning that the runtime accepts `schema_version: 3` at `RegisterPolicy` — written, not locally executed against a live runtime (out of scope for this pass; integration tests are excluded from CI regardless).
 - Doc sweep: full read-through of `docs/api/policy.md` (consistent across Phases 2-5) and a check of `docs/guides/policy.md` (already correct, not in this phase's Files list). `CHANGELOG.md`'s existing `⚠ BREAKING CHANGES`/`### Features` blocks already satisfy AC3 — no edit needed. Noted and left alone: 3 pre-existing stale duplicate `## [Unreleased]` headers, unrelated to this plan.
 - Full gate green on the accumulated tree: `make verify-fixtures`, `check`, `lint`, `format:check`, `test:coverage` (986 passed | 20 skipped; stmts 94.79/branches 86.68/funcs 93.36/lines 96.12, all above the recalibrated floors), `build`.
-- What's next: finalization pass (whole-feature seam review + one final cumulative Opus verification pass), then commit Phase 6, then `/ship` the accumulated Phases 2-6 PR.
+- Verifier: fresh Opus, 1 round — **PASS**, all 5 ACs individually confirmed (re-ran the full gate itself, confirmed both GitHub issues' state/content, confirmed the Python issue is real and non-duplicate, confirmed the coverage-floor arithmetic). Committed as `c89ae13`.
+- What's next: finalization pass, then `/ship` the accumulated Phases 2-6 PR.
+
+### Finalization pass — **Status: DONE**
+
+- Full-suite re-run from clean tree: 989 passed | 20 skipped (39 files) — up from 986 after adding one cross-phase seam block. `policy.test.ts` alone: 75 → 87 tests across the plan.
+- Added `describe('cross-phase seam: schemaVersion option does not bypass voting or commitment validation')` (3 tests, `tests/unit/policy.test.ts`) — the one whole-feature gap found: Phases 3, 4, and 5 all touch `buildDecisionPolicy`, and no existing test combined Phase 5's `options` parameter with Phase 3's voting-constraint checks or Phase 4's `designated_role` guard in the same call.
+- Integration boundary (`RegisterPolicy` against a live runtime): the Phase 6 test written, not executed live this session (no other boundary applies — this SDK never evaluates policy).
+- Docs: reconfirmed clean, no further edits.
+- `ASSUMPTIONS.md`: checked, no entries needed — see the plan's own Finalization pass section for the reasoning.
+- Full local gate green: `make verify-fixtures`, `check`, `lint`, `format:check`, `test:coverage` (989 passed | 20 skipped; stmts 94.79/branches 86.68/funcs 93.36/lines 96.12, all above the recalibrated floors of stmts 92/branches 84/funcs 91/lines 94), `build`.
+- What's next: one final cumulative Opus verification pass over the whole Phases 2-6 diff against the plan as a whole, then commit the finalization work, then `/ship`.
 
 ## Notes carried into implementation
 
