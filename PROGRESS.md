@@ -1163,3 +1163,4 @@ parallel worktrees**.
   19 → 33 fixtures, 9 → 20 of them carrying rejects, 3 `it()` per fixture plus 2
   more (1 passed + 1 `it.skip`) per fixture with rejects.
 pushed policy-v3-phase1-fixtures 90a38bc 2026-09-19T20:13:17Z
+PR #88 opened: https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/pull/88
