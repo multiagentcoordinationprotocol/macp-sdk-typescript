@@ -1200,6 +1200,10 @@ parallel worktrees**.
 - `/ship` verification gate (fresh Opus, over `git diff main...policy-v3-phases-2-6`): **PASS**. Independently re-ran the full gate (989 passed | 20 skipped, coverage matching exactly), confirmed `ASSUMPTIONS.md` has zero entries for this plan, confirmed no doc drift, confirmed tracked-file consistency (all 7 commit SHAs referenced in `PROGRESS.md`, all phases `Status: DONE`), confirmed issues #85/#86 closed and `macp-sdk-python#65` real.
 - pushed `policy-v3-phases-2-6` `33da48d`
 - PR #89 opened: https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/pull/89
+- CI green: build-and-test (Node 20/22/24), integration, verify-fixtures all `pass`; `call / auto-merge` correctly `skipping` (reserved for a different PR class).
+- merged #89: squash-merged into `main` as `afb5943`. Local branch `policy-v3-phases-2-6` deleted by `gh pr merge --delete-branch`. `main` fast-forwarded, working tree clean.
+- No deploy to watch: this repo publishes to npm only on a GitHub release (`publish.yml`, `on: release: types: [created]`), not on a merge to `main`. This merge does not trigger a deploy.
+- Plan complete: all 6 phases DONE, finalization pass DONE, both verification gates (whole-feature + `/ship`) PASS, issues #85/#86 closed, cross-repo issue `macp-sdk-python#65` filed. `/reconcile` was considered and is a no-op: `ASSUMPTIONS.md` has zero entries tagged to this plan (confirmed independently by two separate verifier passes), so there is nothing to reconcile.
 
 ## Notes carried into implementation
 
