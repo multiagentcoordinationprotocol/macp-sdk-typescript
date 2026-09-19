@@ -1195,6 +1195,11 @@ parallel worktrees**.
 - **Final cumulative verifier (fresh Opus, over the whole `76b97a9...policy-v3-phases-2-6` diff against the plan as a whole): PASS.** Full detail in the plan's own Finalization pass section. No gaps; 3 non-blocking notes only (a lexicographic-vs-numeric sort in one error message, the pre-existing stale CHANGELOG headers, and a confirmed-non-live `additionalProperties` cosmetic mismatch shared with Python).
 - What's next: `/ship` the accumulated Phases 2-6 PR (branch `policy-v3-phases-2-6`, 6 commits: `5e1cb2a` `83b110a` `f6cd048` `80bc01f` `c89ae13` `fa50997`).
 
+## `/ship` — Phases 2-6 closing PR
+
+- `/ship` verification gate (fresh Opus, over `git diff main...policy-v3-phases-2-6`): **PASS**. Independently re-ran the full gate (989 passed | 20 skipped, coverage matching exactly), confirmed `ASSUMPTIONS.md` has zero entries for this plan, confirmed no doc drift, confirmed tracked-file consistency (all 7 commit SHAs referenced in `PROGRESS.md`, all phases `Status: DONE`), confirmed issues #85/#86 closed and `macp-sdk-python#65` real.
+- pushed `policy-v3-phases-2-6` `33da48d`
+
 ## Notes carried into implementation
 
 - **`node_modules/` is absent from this checkout.** Every fixture finding in the
