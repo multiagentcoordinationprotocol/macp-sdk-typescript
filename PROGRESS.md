@@ -1172,7 +1172,16 @@ parallel worktrees**.
 - Full local gate green: `check`, `lint`, `format:check`, `test:coverage` (986 passed | 20 skipped; stmts 94.79/branches 86.68/funcs 93.36/lines 96.12, all above `vitest.config.ts` floors), `build`, `make verify-fixtures`.
 - Verifier: fresh Opus, 1 round — **PASS**, all 6 ACs individually confirmed with file:line citations and an independent re-run of the test suite, tsc, and eslint. 2 non-blocking suggestions: an integration test for runtime `schemaVersion: 3` acceptance (declined — already explicitly deferred by the plan's own Edge cases section as a report item, not a merge gate; noted for Phase 6) and a `NaN`-typed test (applied).
 - What's next: commit Phase 5, start Phase 6.
-### Phase 6 — docs, CHANGELOG, cross-repo issue, closeout — **Status: NOT STARTED**
+### Phase 6 — docs, CHANGELOG, cross-repo issue, closeout — **Status: DONE**
+
+- Branch: `policy-v3-phases-2-6`, on top of Phase 5's commit (`80bc01f`).
+- Issue #86: already CLOSED (pre-existing, nothing to do). Issue #85: closed with an explicit scope statement mapping all five of its items individually — see the plan's Phase 6 Status note for the full text — comment at https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/issues/85#issuecomment-5745270655.
+- Cross-repo issue filed on `macp-sdk-python` for Q1 (the schema_version default-flip decision), search-before-file confirmed no duplicate: https://github.com/multiagentcoordinationprotocol/macp-sdk-python/issues/65.
+- Coverage floors recalibrated (measured-minus-2pp): `vitest.config.ts` and `CLAUDE.md` both now read lines 94 / branches 84 / functions 91 / statements 92 (was 93/83/90/92), grep-verified to match.
+- Added an integration test (`tests/integration/runtime.test.ts`, `Policy lifecycle` describe block) pinning that the runtime accepts `schema_version: 3` at `RegisterPolicy` — written, not locally executed against a live runtime (out of scope for this pass; integration tests are excluded from CI regardless).
+- Doc sweep: full read-through of `docs/api/policy.md` (consistent across Phases 2-5) and a check of `docs/guides/policy.md` (already correct, not in this phase's Files list). `CHANGELOG.md`'s existing `⚠ BREAKING CHANGES`/`### Features` blocks already satisfy AC3 — no edit needed. Noted and left alone: 3 pre-existing stale duplicate `## [Unreleased]` headers, unrelated to this plan.
+- Full gate green on the accumulated tree: `make verify-fixtures`, `check`, `lint`, `format:check`, `test:coverage` (986 passed | 20 skipped; stmts 94.79/branches 86.68/funcs 93.36/lines 96.12, all above the recalibrated floors), `build`.
+- What's next: finalization pass (whole-feature seam review + one final cumulative Opus verification pass), then commit Phase 6, then `/ship` the accumulated Phases 2-6 PR.
 
 ## Notes carried into implementation
 

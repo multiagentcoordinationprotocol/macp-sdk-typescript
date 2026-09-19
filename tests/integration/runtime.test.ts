@@ -1052,6 +1052,24 @@ describe('Policy lifecycle', () => {
     expect(result.ok).toBe(true);
   });
 
+  it('registers a schema_version: 3 policy (RFC-MACP-0012 fail-closed empty tallies)', async () => {
+    // Pins that the runtime accepts v3 at RegisterPolicy, not just that this
+    // SDK can emit it -- macp-policy/src/evaluator.rs's SUPPORTED_SCHEMA_VERSIONS
+    // is a runtime implementation detail this unit-test suite can assert
+    // client-side but cannot itself confirm against a live server.
+    const v3PolicyId = `${policyId}-v3`;
+    const descriptor = buildDecisionPolicy(
+      v3PolicyId,
+      'Integration test policy (schema_version 3)',
+      { voting: { algorithm: 'majority', threshold: 0.5 } },
+      { schemaVersion: 3 },
+    );
+    expect(descriptor.schemaVersion).toBe(3);
+    const result = await client.registerPolicy(descriptor, { auth: agentAlice });
+    expect(result.ok).toBe(true);
+    await client.unregisterPolicy(v3PolicyId, { auth: agentAlice });
+  });
+
   it('retrieves the policy', async () => {
     const descriptor = await client.getPolicy(policyId, { auth: agentAlice });
     expect(descriptor.policyId).toBe(policyId);
