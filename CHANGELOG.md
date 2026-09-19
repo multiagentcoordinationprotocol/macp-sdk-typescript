@@ -39,6 +39,14 @@ project uses [Semantic Versioning](https://semver.org/).
     at every algorithm, not only `'weighted'`**: it must be non-empty, and
     every value must be `> 0`. `weights: { a: 0 }` now throws — a weight-0
     participant must be expressed by omission from the map.
+* **policy:** all five `build*Policy` functions (`buildDecisionPolicy`,
+  `buildQuorumPolicy`, `buildProposalPolicy`, `buildTaskPolicy`,
+  `buildHandoffPolicy`) now throw `MacpSessionError` when
+  `commitment.authority` is `'designated_role'` and `designatedRoles` is
+  omitted or `[]`. An authority rule that names no one is unsatisfiable, and
+  every canonical rule schema already refused this combination at
+  `RegisterPolicy` — this call previously returned a descriptor the runtime
+  would reject.
 
 ## [0.10.0](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/compare/v0.9.0...v0.10.0) (2026-09-01)
 

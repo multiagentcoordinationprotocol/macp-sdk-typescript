@@ -44,7 +44,7 @@ interface DecisionPolicyRulesInput {
   };
   commitment?: {
     authority?: 'initiator_only' | 'any_participant' | 'designated_role';  // default: 'initiator_only'
-    designatedRoles?: string[];                      // default: []
+    designatedRoles?: string[];                      // default: []; REQUIRED non-empty when authority is 'designated_role'
     requireVoteQuorum?: boolean;                     // default: false
     allowDeclineOverApproval?: boolean;              // default: false (schema v2, decision-only)
   };
@@ -153,11 +153,23 @@ The exported input type is named `CommitmentRules`:
 ```typescript
 interface CommitmentRules {
   authority?: 'initiator_only' | 'any_participant' | 'designated_role';  // default: 'initiator_only'
-  designatedRoles?: string[];         // default: []
+  designatedRoles?: string[];         // default: []; REQUIRED non-empty when authority is 'designated_role'
   requireVoteQuorum?: boolean;        // default: false; decision-specific, but always serialized
   allowDeclineOverApproval?: boolean; // emitted only by buildDecisionPolicy (schema v2)
 }
 ```
+
+> **`authority: 'designated_role'` requires a non-empty `designatedRoles`.**
+> An authority rule that names no one is unsatisfiable — no sender could ever
+> meet it — so every one of the five `build*Policy` functions throws
+> `MacpSessionError` if `designatedRoles` is omitted or `[]` while `authority`
+> is `'designated_role'`. Enforced once, in the shared `serializeCommitment`
+> helper all five builders funnel `commitment` through, mirroring the
+> canonical rule schemas' root-level conditional (`minItems: 1` on
+> `designated_roles` when `authority == "designated_role"`, spec issue #116).
+> `designatedRoles` is **ignored, not validated**, under the other two
+> authorities — supplying it there is still serialized into the descriptor
+> but has no effect on who may commit.
 
 ## Client Methods
 

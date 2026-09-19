@@ -7,6 +7,12 @@ import type { PolicyDescriptor } from './types';
 
 export interface CommitmentRules {
   authority?: 'initiator_only' | 'any_participant' | 'designated_role';
+  /**
+   * Required non-empty when `authority` is `'designated_role'` — every
+   * builder throws `MacpSessionError` otherwise, since an authority rule
+   * naming no one is unsatisfiable. Ignored (serialized but inert) under the
+   * other two authorities.
+   */
   designatedRoles?: string[];
   /** Decision-specific: require quorum before commit. Ignored for other modes. */
   requireVoteQuorum?: boolean;
@@ -139,6 +145,23 @@ export interface HandoffPolicyRulesInput {
 // ── Builder helpers ─────────────────────────────────────────────────
 
 function serializeCommitment(commitment?: CommitmentRules): Record<string, unknown> {
+  // `authority: 'designated_role'` with an empty (or unset) `designatedRoles`
+  // names no one, so no sender could ever satisfy it. All five rule schemas
+  // reject this combination at admission (spec PR #121) via a root-level
+  // `allOf` conditional arm, not an inline constraint on the property, so it
+  // is easy to miss. Validated once, here, so every mode builder gets it
+  // uniformly -- mirrors python-sdk `_commitment_dict`, policy.py:49-60.
+  //
+  // Explicit length check, not a truthiness test (Python's `not
+  // c.designated_roles`): the omitted-field and supplied-`[]` cases both
+  // collapse to length 0 here, and both must throw -- unlike Phase 3's
+  // weights rule, there is no supplied-vs-absent distinction to preserve.
+  if (commitment?.authority === 'designated_role' && (commitment.designatedRoles?.length ?? 0) === 0) {
+    throw new MacpSessionError(
+      "commitment.authority is 'designated_role' but designatedRoles is empty -- this names no one, " +
+        'so no sender could ever satisfy it. Pass at least one role/participant id in designatedRoles.',
+    );
+  }
   return {
     authority: commitment?.authority ?? 'initiator_only',
     designated_roles: commitment?.designatedRoles ?? [],

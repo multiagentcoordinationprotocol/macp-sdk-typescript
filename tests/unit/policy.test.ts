@@ -7,6 +7,8 @@ import {
   buildHandoffPolicy,
 } from '../../src/policy';
 import { MacpSessionError } from '../../src/errors';
+import type { CommitmentRules } from '../../src/policy';
+import type { PolicyDescriptor } from '../../src/types';
 
 function parseRules(descriptor: { rules: string }): Record<string, unknown> {
   return JSON.parse(descriptor.rules);
@@ -463,6 +465,66 @@ describe('policy builders', () => {
         designated_roles: [],
         require_vote_quorum: false,
       });
+    });
+  });
+
+  describe('serializeCommitment: designated_role requires designated_roles', () => {
+    // Shared behavior, tested once across all five builders rather than
+    // per-builder, since serializeCommitment() is the single call site.
+    const builders: Array<
+      [string, (policyId: string, description: string, rules: { commitment?: CommitmentRules }) => PolicyDescriptor]
+    > = [
+      ['buildDecisionPolicy', buildDecisionPolicy],
+      ['buildQuorumPolicy', buildQuorumPolicy],
+      ['buildProposalPolicy', buildProposalPolicy],
+      ['buildTaskPolicy', buildTaskPolicy],
+      ['buildHandoffPolicy', buildHandoffPolicy],
+    ];
+
+    it.each(builders)('%s throws when designatedRoles is omitted', (_name, build) => {
+      const throwing = () => build('p', 'd', { commitment: { authority: 'designated_role' } });
+      expect(throwing).toThrow(MacpSessionError);
+      expect(throwing).toThrow(/designatedRoles/);
+      expect(throwing).toThrow(/names no one/);
+    });
+
+    it.each(builders)('%s throws when designatedRoles is empty', (_name, build) => {
+      const throwing = () => build('p', 'd', { commitment: { authority: 'designated_role', designatedRoles: [] } });
+      expect(throwing).toThrow(MacpSessionError);
+      expect(throwing).toThrow(/designatedRoles/);
+      expect(throwing).toThrow(/names no one/);
+    });
+
+    it.each(builders)('%s succeeds with a non-empty designatedRoles and emits it', (_name, build) => {
+      const descriptor = build('p', 'd', {
+        commitment: { authority: 'designated_role', designatedRoles: ['lead'] },
+      });
+      const rules = parseRules(descriptor);
+      expect((rules.commitment as { designated_roles: string[] }).designated_roles).toEqual(['lead']);
+    });
+
+    it('does not throw for any_participant with an empty designatedRoles (negative control)', () => {
+      // The schema's conditional arm is keyed on `authority` alone --
+      // designatedRoles is ignored, not invalid, under the other two.
+      expect(() =>
+        buildProposalPolicy('p', 'd', { commitment: { authority: 'any_participant', designatedRoles: [] } }),
+      ).not.toThrow();
+    });
+
+    it('does not throw for initiator_only with a non-empty designatedRoles (negative control)', () => {
+      // Same conditional arm, opposite direction: a populated designatedRoles
+      // under an authority that ignores it is still harmless, not invalid.
+      expect(() =>
+        buildProposalPolicy('p', 'd', { commitment: { authority: 'initiator_only', designatedRoles: ['lead'] } }),
+      ).not.toThrow();
+    });
+
+    it('Decision: the throw happens before allow_decline_over_approval is appended', () => {
+      expect(() =>
+        buildDecisionPolicy('p', 'd', {
+          commitment: { authority: 'designated_role', allowDeclineOverApproval: true },
+        }),
+      ).toThrow(MacpSessionError);
     });
   });
 
