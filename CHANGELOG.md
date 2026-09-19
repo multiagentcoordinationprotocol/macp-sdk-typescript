@@ -4,6 +4,61 @@ All notable changes to `macp-sdk-typescript` are documented here. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the
 project uses [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### ⚠ BREAKING CHANGES
+
+* **policy:** `QuorumThreshold.type` no longer accepts `'weighted'`. The
+  identifier was removed from the canonical `quorum-rules.schema.json`
+  without ever having defined semantics (no weights vocabulary, no
+  electorate rule) and every descriptor that used it was already refused by
+  the runtime at `RegisterPolicy` — so this is a compile-time break for
+  callers whose descriptors could never register in the first place.
+  `buildQuorumPolicy` now also rejects it at runtime (for JS callers or an
+  `as` cast), naming the reservation.
+* **policy:** `buildQuorumPolicy(id, desc, {})` (an omitted `threshold`) now
+  emits `threshold: { value: 1 }` instead of `value: 0`. A zero approval bar
+  is trivially satisfied by any ballot set, so the canonical schema declares
+  `value` with `exclusiveMinimum: 0`; `buildQuorumPolicy` now enforces that
+  bound for every `threshold.type`, not just `'percentage'`, and rejects a
+  non-integer or non-positive `value` with `MacpSessionError`.
+* **policy:** `buildDecisionPolicy` now enforces the canonical
+  `decision-rules.schema.json` voting constraints client-side, so calls that
+  previously returned an unregistrable descriptor now throw `MacpSessionError`
+  instead:
+  - `voting.algorithm` must be one of the six canonical values.
+  - `voting.threshold` must be `0 < threshold <= 1`.
+  - `algorithm: 'majority'` requires `threshold >= 0.5` (inclusive — a `0.3`
+    "majority" now throws).
+  - `algorithm: 'supermajority'` **at its own default `threshold: 0.5`** now
+    throws — this is the change most likely to break an existing idiomatic
+    call (`buildDecisionPolicy(id, desc, { voting: { algorithm: 'supermajority' } })`);
+    pass an explicit `threshold` above `0.5` (e.g. `0.67`).
+  - `algorithm: 'weighted'` with no `weights` now throws.
+  - `voting.weights`, if supplied at all, is now validated **unconditionally
+    at every algorithm, not only `'weighted'`**: it must be non-empty, and
+    every value must be `> 0`. `weights: { a: 0 }` now throws — a weight-0
+    participant must be expressed by omission from the map.
+* **policy:** all five `build*Policy` functions (`buildDecisionPolicy`,
+  `buildQuorumPolicy`, `buildProposalPolicy`, `buildTaskPolicy`,
+  `buildHandoffPolicy`) now throw `MacpSessionError` when
+  `commitment.authority` is `'designated_role'` and `designatedRoles` is
+  omitted or `[]`. An authority rule that names no one is unsatisfiable, and
+  every canonical rule schema already refused this combination at
+  `RegisterPolicy` — this call previously returned a descriptor the runtime
+  would reject.
+
+### Features
+
+* **policy:** `buildDecisionPolicy` accepts a new fourth `options` argument,
+  `{ schemaVersion?: 1 | 2 | 3 }`, to opt a Decision policy into
+  RFC-MACP-0012 `schema_version` 3's fail-closed empty-tally semantics
+  (§4.1's "vacuous participation floor"). Purely additive — every existing
+  3-argument call site compiles and behaves unchanged, since the default
+  stays `2` (fail-open), in byte-parity with `macp-sdk-python`'s own
+  `schema_version: int = 2` default. An out-of-range value throws
+  `MacpSessionError`.
+
 ## [0.10.0](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/compare/v0.9.0...v0.10.0) (2026-09-01)
 
 

@@ -7,6 +7,8 @@ import {
   buildHandoffPolicy,
 } from '../../src/policy';
 import { MacpSessionError } from '../../src/errors';
+import type { CommitmentRules } from '../../src/policy';
+import type { PolicyDescriptor } from '../../src/types';
 
 function parseRules(descriptor: { rules: string }): Record<string, unknown> {
   return JSON.parse(descriptor.rules);
@@ -143,6 +145,182 @@ describe('policy builders', () => {
     });
   });
 
+  describe('buildDecisionPolicy schemaVersion override (RFC-MACP-0012 §8)', () => {
+    it('AC3: options omitted, {}, and undefined all emit schemaVersion 2', () => {
+      expect(buildDecisionPolicy('p', 'd', {}).schemaVersion).toBe(2);
+      expect(buildDecisionPolicy('p', 'd', {}, {}).schemaVersion).toBe(2);
+      expect(buildDecisionPolicy('p', 'd', {}, undefined).schemaVersion).toBe(2);
+    });
+
+    it.each([1, 2, 3] as const)('AC2: explicit schemaVersion %i round-trips', (schemaVersion) => {
+      expect(buildDecisionPolicy('p', 'd', {}, { schemaVersion }).schemaVersion).toBe(schemaVersion);
+    });
+
+    it('AC4: an out-of-range schemaVersion throws MacpSessionError', () => {
+      const build = () => buildDecisionPolicy('p', 'd', {}, { schemaVersion: 4 as never });
+      expect(build).toThrow(MacpSessionError);
+      expect(build).toThrow(/schemaVersion must be one of/);
+    });
+
+    it('a NaN-typed schemaVersion throws MacpSessionError (untyped JS caller)', () => {
+      const build = () => buildDecisionPolicy('p', 'd', {}, { schemaVersion: NaN as never });
+      expect(build).toThrow(MacpSessionError);
+      expect(build).toThrow(/schemaVersion must be one of/);
+    });
+
+    it('AC5: the serialized rules JSON is byte-identical across schema versions', () => {
+      const rules = {
+        voting: { algorithm: 'majority' as const, threshold: 0.6, weights: { a: 1, b: 2 } },
+        commitment: { authority: 'designated_role' as const, designatedRoles: ['lead'] },
+      };
+      const v1 = buildDecisionPolicy('p', 'd', rules, { schemaVersion: 1 });
+      const v2 = buildDecisionPolicy('p', 'd', rules, { schemaVersion: 2 });
+      const v3 = buildDecisionPolicy('p', 'd', rules, { schemaVersion: 3 });
+      expect(v1.rules).toBe(v2.rules);
+      expect(v2.rules).toBe(v3.rules);
+      expect(v1.schemaVersion).toBe(1);
+      expect(v2.schemaVersion).toBe(2);
+      expect(v3.schemaVersion).toBe(3);
+    });
+
+    it("does not affect any other builder's schemaVersion", () => {
+      expect(buildQuorumPolicy('p', 'd', {}).schemaVersion).toBe(1);
+      expect(buildProposalPolicy('p', 'd', {}).schemaVersion).toBe(1);
+      expect(buildTaskPolicy('p', 'd', {}).schemaVersion).toBe(1);
+      expect(buildHandoffPolicy('p', 'd', {}).schemaVersion).toBe(1);
+    });
+  });
+
+  describe('cross-phase seam: schemaVersion option does not bypass voting or commitment validation', () => {
+    // Phases 3, 4, and 5 all touch buildDecisionPolicy. This pins that the new
+    // 4th `options` parameter (Phase 5) is additive in the literal sense -- it
+    // does not short-circuit the voting-constraint checks (Phase 3) or the
+    // designated_role guard (Phase 4), regardless of which schemaVersion is
+    // requested.
+    it('an invalid designated_role commitment still throws under schemaVersion: 3', () => {
+      const build = () =>
+        buildDecisionPolicy('p', 'd', { commitment: { authority: 'designated_role' } }, { schemaVersion: 3 });
+      expect(build).toThrow(MacpSessionError);
+      expect(build).toThrow(/names no one/);
+    });
+
+    it('an invalid voting algorithm still throws under schemaVersion: 1', () => {
+      const build = () =>
+        buildDecisionPolicy('p', 'd', { voting: { algorithm: 'bogus' as never } }, { schemaVersion: 1 });
+      expect(build).toThrow(MacpSessionError);
+      expect(build).toThrow(/algorithm must be one of/);
+    });
+
+    it('a fully valid descriptor combining all three phases succeeds and serializes correctly', () => {
+      const descriptor = buildDecisionPolicy(
+        'p',
+        'd',
+        {
+          voting: { algorithm: 'weighted', weights: { a: 2, b: 1 } },
+          commitment: { authority: 'designated_role', designatedRoles: ['lead'] },
+        },
+        { schemaVersion: 3 },
+      );
+      expect(descriptor.schemaVersion).toBe(3);
+      const rules = parseRules(descriptor);
+      expect(rules.voting).toEqual(expect.objectContaining({ algorithm: 'weighted', weights: { a: 2, b: 1 } }));
+      expect((rules.commitment as { designated_roles: string[] }).designated_roles).toEqual(['lead']);
+    });
+  });
+
+  describe('buildDecisionPolicy schema constraints (RFC-MACP-0012 decision-rules.schema.json)', () => {
+    it('throws on an algorithm outside the canonical six', () => {
+      const build = () => buildDecisionPolicy('p', 'd', { voting: { algorithm: 'bogus' as never } });
+      expect(build).toThrow(MacpSessionError);
+      expect(build).toThrow(/algorithm must be one of/);
+    });
+
+    it.each(['none', 'majority', 'supermajority', 'unanimous', 'weighted', 'plurality'] as const)(
+      'accepts the canonical algorithm %s',
+      (algorithm) => {
+        const extra =
+          algorithm === 'supermajority' ? { threshold: 0.67 } : algorithm === 'weighted' ? { weights: { a: 1 } } : {};
+        expect(() => buildDecisionPolicy('p', 'd', { voting: { algorithm, ...extra } })).not.toThrow();
+      },
+    );
+
+    it.each([
+      [0, true],
+      [0.0001, false],
+      [1, false],
+      [1.0001, true],
+    ])('threshold %s (throws: %s) — 0 < threshold <= 1', (threshold, shouldThrow) => {
+      const build = () => buildDecisionPolicy('p', 'd', { voting: { threshold } });
+      if (shouldThrow) {
+        expect(build).toThrow(MacpSessionError);
+      } else {
+        expect(build).not.toThrow();
+      }
+    });
+
+    it('majority passes at exactly 0.5 and throws just below it', () => {
+      expect(() => buildDecisionPolicy('p', 'd', { voting: { algorithm: 'majority', threshold: 0.5 } })).not.toThrow();
+      const build = () => buildDecisionPolicy('p', 'd', { voting: { algorithm: 'majority', threshold: 0.49 } });
+      expect(build).toThrow(MacpSessionError);
+      expect(build).toThrow(/majority.*requires threshold >= 0.5/);
+    });
+
+    it('supermajority throws at exactly 0.5 (the default-wearing-the-name trap) and passes just above it', () => {
+      const build = () => buildDecisionPolicy('p', 'd', { voting: { algorithm: 'supermajority' } });
+      expect(build).toThrow(MacpSessionError);
+      expect(build).toThrow(/bare majority wearing the name/);
+      expect(() =>
+        buildDecisionPolicy('p', 'd', { voting: { algorithm: 'supermajority', threshold: 0.51 } }),
+      ).not.toThrow();
+    });
+
+    it('AC2: supermajority at the default threshold throws; an explicit 0.67 succeeds', () => {
+      expect(() => buildDecisionPolicy('p', 'd', { voting: { algorithm: 'supermajority' } })).toThrow(MacpSessionError);
+      expect(() =>
+        buildDecisionPolicy('p', 'd', { voting: { algorithm: 'supermajority', threshold: 0.67 } }),
+      ).not.toThrow();
+    });
+
+    it("AC3: 'weighted' throws without weights and succeeds with a non-empty map", () => {
+      expect(() => buildDecisionPolicy('p', 'd', { voting: { algorithm: 'weighted' } })).toThrow(MacpSessionError);
+      expect(() =>
+        buildDecisionPolicy('p', 'd', { voting: { algorithm: 'weighted', weights: { a: 1 } } }),
+      ).not.toThrow();
+    });
+
+    it('AC4: the electorate rule is unconditional — algorithm: none with weights: {} still throws', () => {
+      expect(() => buildDecisionPolicy('p', 'd', { voting: { algorithm: 'none', weights: {} } })).toThrow(
+        MacpSessionError,
+      );
+    });
+
+    it('throws on an empty weights map with the electorate rationale', () => {
+      const build = () => buildDecisionPolicy('p', 'd', { voting: { weights: {} } });
+      expect(build).toThrow(MacpSessionError);
+      expect(build).toThrow(/non-empty/);
+    });
+
+    it('throws on a zero weight, naming omission as the correct way to express weight 0', () => {
+      const build = () => buildDecisionPolicy('p', 'd', { voting: { weights: { a: 0 } } });
+      expect(build).toThrow(MacpSessionError);
+      expect(build).toThrow(/omission from the map/);
+    });
+
+    it('throws on a NaN weight, naming omission as the correct way to express weight 0', () => {
+      // weight <= 0 alone would let NaN slip through (NaN <= 0 is false);
+      // this pins the separate Number.isNaN guard (registry.rs:596 parity).
+      const build = () => buildDecisionPolicy('p', 'd', { voting: { weights: { a: NaN } } });
+      expect(build).toThrow(MacpSessionError);
+      expect(build).toThrow(/omission from the map/);
+    });
+
+    it('throws on a NaN threshold', () => {
+      // 0 < NaN is false, so this falls through the same branch as threshold
+      // 0 -- pinned separately since it documents intent, not new coverage.
+      expect(() => buildDecisionPolicy('p', 'd', { voting: { threshold: NaN } })).toThrow(MacpSessionError);
+    });
+  });
+
   describe('buildQuorumPolicy (RFC-MACP-0012 §4.2)', () => {
     it('builds with correct mode', () => {
       const descriptor = buildQuorumPolicy('q1', 'Quorum policy', {});
@@ -150,9 +328,9 @@ describe('policy builders', () => {
       expect(descriptor.schemaVersion).toBe(1);
     });
 
-    it('uses RFC default values', () => {
+    it('uses RFC default values (omitted threshold yields value: 1)', () => {
       const rules = parseRules(buildQuorumPolicy('q1', 'desc', {}));
-      expect(rules.threshold).toEqual({ type: 'n_of_m', value: 0 });
+      expect(rules.threshold).toEqual({ type: 'n_of_m', value: 1 });
       expect(rules.abstention).toEqual({
         counts_toward_quorum: false,
         interpretation: 'neutral',
@@ -164,8 +342,8 @@ describe('policy builders', () => {
       });
     });
 
-    it('includes a percentage threshold on the 0–100 integer scale', () => {
-      // The runtime reads `percentage` as an integer 0–100 (approval bar =
+    it('includes a percentage threshold on the 1–100 integer scale', () => {
+      // The runtime reads `percentage` as an integer 1–100 (approval bar =
       // ceil(value/100 × participants)). `75` means 75%, not 0.75.
       const rules = parseRules(
         buildQuorumPolicy('q1', 'desc', {
@@ -175,9 +353,21 @@ describe('policy builders', () => {
       expect(rules.threshold).toEqual({ type: 'percentage', value: 75 });
     });
 
-    it('accepts the 0 and 100 percentage boundaries', () => {
-      expect(() => buildQuorumPolicy('q1', 'd', { threshold: { type: 'percentage', value: 0 } })).not.toThrow();
+    it('accepts the 100 percentage boundary', () => {
       expect(() => buildQuorumPolicy('q1', 'd', { threshold: { type: 'percentage', value: 100 } })).not.toThrow();
+    });
+
+    it.each(['n_of_m', 'percentage'] as const)(
+      'throws on a zero approval bar for type %s (exclusiveMinimum: 0, unconditional)',
+      (type) => {
+        expect(() => buildQuorumPolicy('q1', 'd', { threshold: { type, value: 0 } })).toThrow(MacpSessionError);
+      },
+    );
+
+    it('throws on a negative threshold value', () => {
+      expect(() => buildQuorumPolicy('q1', 'd', { threshold: { type: 'percentage', value: -1 } })).toThrow(
+        MacpSessionError,
+      );
     });
 
     it('throws on a fractional percentage threshold (0.75 → ~1% bar bug)', () => {
@@ -186,11 +376,17 @@ describe('policy builders', () => {
       );
     });
 
-    it('throws on an out-of-range percentage threshold', () => {
-      expect(() => buildQuorumPolicy('q1', 'd', { threshold: { type: 'percentage', value: 101 } })).toThrow(
+    it('throws on a fractional n_of_m threshold', () => {
+      // Unlike the percentage-only check this replaces, integrality is now
+      // enforced unconditionally: the canonical schema declares 'value' as
+      // an integer for every threshold type, not just 'percentage'.
+      expect(() => buildQuorumPolicy('q1', 'd', { threshold: { type: 'n_of_m', value: 1.5 } })).toThrow(
         MacpSessionError,
       );
-      expect(() => buildQuorumPolicy('q1', 'd', { threshold: { type: 'percentage', value: -1 } })).toThrow(
+    });
+
+    it('throws on an out-of-range percentage threshold', () => {
+      expect(() => buildQuorumPolicy('q1', 'd', { threshold: { type: 'percentage', value: 101 } })).toThrow(
         MacpSessionError,
       );
     });
@@ -207,13 +403,18 @@ describe('policy builders', () => {
       });
     });
 
-    it('includes weighted threshold', () => {
-      const rules = parseRules(
+    it("throws on the reserved 'weighted' type, naming the reservation", () => {
+      // 'weighted' was removed from the canonical quorum-rules schema without
+      // ever having defined semantics (no weights vocabulary, no electorate
+      // rule) and is refused by the runtime. The TS union no longer admits it
+      // at compile time (see the `tsc` check below); this proves the runtime
+      // guard also catches a JS caller or an `as` cast around the type.
+      const build = () =>
         buildQuorumPolicy('q1', 'desc', {
-          threshold: { type: 'weighted', value: 10 },
-        }),
-      );
-      expect(rules.threshold).toEqual({ type: 'weighted', value: 10 });
+          threshold: { type: 'weighted' as never, value: 10 },
+        });
+      expect(build).toThrow(MacpSessionError);
+      expect(build).toThrow(/reserved/);
     });
 
     it('includes commitment with designated roles', () => {
@@ -347,6 +548,66 @@ describe('policy builders', () => {
         designated_roles: [],
         require_vote_quorum: false,
       });
+    });
+  });
+
+  describe('serializeCommitment: designated_role requires designated_roles', () => {
+    // Shared behavior, tested once across all five builders rather than
+    // per-builder, since serializeCommitment() is the single call site.
+    const builders: Array<
+      [string, (policyId: string, description: string, rules: { commitment?: CommitmentRules }) => PolicyDescriptor]
+    > = [
+      ['buildDecisionPolicy', buildDecisionPolicy],
+      ['buildQuorumPolicy', buildQuorumPolicy],
+      ['buildProposalPolicy', buildProposalPolicy],
+      ['buildTaskPolicy', buildTaskPolicy],
+      ['buildHandoffPolicy', buildHandoffPolicy],
+    ];
+
+    it.each(builders)('%s throws when designatedRoles is omitted', (_name, build) => {
+      const throwing = () => build('p', 'd', { commitment: { authority: 'designated_role' } });
+      expect(throwing).toThrow(MacpSessionError);
+      expect(throwing).toThrow(/designatedRoles/);
+      expect(throwing).toThrow(/names no one/);
+    });
+
+    it.each(builders)('%s throws when designatedRoles is empty', (_name, build) => {
+      const throwing = () => build('p', 'd', { commitment: { authority: 'designated_role', designatedRoles: [] } });
+      expect(throwing).toThrow(MacpSessionError);
+      expect(throwing).toThrow(/designatedRoles/);
+      expect(throwing).toThrow(/names no one/);
+    });
+
+    it.each(builders)('%s succeeds with a non-empty designatedRoles and emits it', (_name, build) => {
+      const descriptor = build('p', 'd', {
+        commitment: { authority: 'designated_role', designatedRoles: ['lead'] },
+      });
+      const rules = parseRules(descriptor);
+      expect((rules.commitment as { designated_roles: string[] }).designated_roles).toEqual(['lead']);
+    });
+
+    it('does not throw for any_participant with an empty designatedRoles (negative control)', () => {
+      // The schema's conditional arm is keyed on `authority` alone --
+      // designatedRoles is ignored, not invalid, under the other two.
+      expect(() =>
+        buildProposalPolicy('p', 'd', { commitment: { authority: 'any_participant', designatedRoles: [] } }),
+      ).not.toThrow();
+    });
+
+    it('does not throw for initiator_only with a non-empty designatedRoles (negative control)', () => {
+      // Same conditional arm, opposite direction: a populated designatedRoles
+      // under an authority that ignores it is still harmless, not invalid.
+      expect(() =>
+        buildProposalPolicy('p', 'd', { commitment: { authority: 'initiator_only', designatedRoles: ['lead'] } }),
+      ).not.toThrow();
+    });
+
+    it('Decision: the throw happens before allow_decline_over_approval is appended', () => {
+      expect(() =>
+        buildDecisionPolicy('p', 'd', {
+          commitment: { authority: 'designated_role', allowDeclineOverApproval: true },
+        }),
+      ).toThrow(MacpSessionError);
     });
   });
 

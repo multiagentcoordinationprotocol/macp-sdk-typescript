@@ -37,9 +37,9 @@ export default defineConfig({
       // different rulers: do NOT read the drop as a coverage regression, and do
       // NOT try to restore the old numbers by loosening `exclude`.
       thresholds: {
-        lines: 93,
-        branches: 83,
-        functions: 90,
+        lines: 94,
+        branches: 84,
+        functions: 91,
         statements: 92,
       },
     },

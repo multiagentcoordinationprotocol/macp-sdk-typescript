@@ -961,10 +961,12 @@ Sibling checkouts used for verification, READ-ONLY:
 - `src/policy.ts:110-114` — `QuorumPolicyRulesInput`. No `weights` field exists
   for Quorum policies at all, which is the spec's own diagnosis of why
   `'weighted'` never had semantics. Do not add one.
-- `src/policy.ts:146-183` — `buildDecisionPolicy`. `:161` `threshold ?? 0.5`
-  (the `supermajority` trap), `:163` `weights ?? undefined` (dropped by
-  `JSON.stringify`, so `weighted` emits no `weights`), `:181` hardcoded
-  `schemaVersion: 2`. Phases 3 and 5.
+- `src/policy.ts` — `buildDecisionPolicy` (originally `:146-183`; shifted by
+  Phase 3's new validation block and `DECISION_ALGORITHMS` const — grep for
+  `export function buildDecisionPolicy`, don't trust the line number). The
+  `supermajority`-at-default-0.5 trap and the `weighted`-without-`weights`
+  case Phase 3 now catches client-side; hardcoded `schemaVersion: 2` remains
+  for Phase 5.
 - `src/policy.ts:185-218` — `buildQuorumPolicy`. `:190-199` is the **existing
   client-side validation precedent** every new check in Phases 2-3 mirrors;
   `:203` `value ?? 0` violates the canonical `exclusiveMinimum: 0`. Phase 2.
@@ -1130,11 +1132,74 @@ parallel worktrees**.
 - Verifier's non-blocking notes (informational, matches plan's own Open Questions / Edge Cases, nothing to fix): (1) `decision_zero_participants`/`decision_zero_proposal_commitment` assert almost nothing on the replay path by design (plan's own Edge Cases); (2) 12 of 14 new fixtures carry unread `expected_mode_state.proposals` (plan's Q2, pre-existing, not this phase's to fix); (3) coverage floors are ~0.7-1.4pp stale vs. measured-minus-2pp but still satisfied with margin — no test code landed this phase (64 new `it()`s are fixture-driven registrations over already-covered paths), so left alone per convention.
 - What's next: hand Phase 1 to `/ship` as its own PR, then start Phase 2 on a fresh branch off `main` once merged.
 
-### Phase 2 — quorum builder: drop `weighted`, enforce the approval-bar floor — **Status: NOT STARTED**
-### Phase 3 — decision builder: tightened voting constraints — **Status: NOT STARTED**
-### Phase 4 — shared commitment validation: `designated_role` requires non-empty `designated_roles`, all five builders — **Status: NOT STARTED**
-### Phase 5 — `schemaVersion` override parameter (default held at `2`, see Q1) — **Status: NOT STARTED**
-### Phase 6 — docs, CHANGELOG, cross-repo issue, closeout — **Status: NOT STARTED**
+### Phase 2 — quorum builder: drop `weighted`, enforce the approval-bar floor — **Status: DONE**
+
+- Branch: `policy-v3-phases-2-6` (shared closing PR for Phases 2-6, see PR strategy above).
+- Verifier round 1: Opus, GAPS (4 real items + 1 advisory-only, none touching the phase's core correctness claim). Fixed:
+  1. AC4 `tsc` evidence pasted into `plans/adopt-policy-schema-v3.md`'s Phase 2 section: `src/__scratch_weighted_check.ts(3,44): error TS2322: Type '"weighted"' is not assignable to type '"percentage" | "n_of_m"'.` (transient scratch file, created/checked/deleted; `npm run check` clean before and after).
+  2. Stale "integer 0-100" percentage-range claim (should be 1-100, since `value` is now `> 0` unconditionally) fixed in three places: `src/policy.ts:64` (tsdoc), `docs/api/policy.md:66`, and a test title in `tests/unit/policy.test.ts`.
+  3. The weighted-reservation test now asserts both `.toThrow(MacpSessionError)` and `.toThrow(/reserved/)`, not just the message regex.
+  4. This tracked-file closeout (in progress).
+  5. Advisory-only, not fixed (correctly out of scope): `require_vote_quorum` emitted into quorum rules despite the canonical schema's `additionalProperties: false` on `commitment` (pre-existing, cross-SDK-deliberate, same as Python) — noted for Phase 6 awareness, not a Phase 2 defect. Three `## [Unreleased]` headings now coexist in `CHANGELOG.md` — pre-existing pattern (two already existed before this phase), Phase 6's to reconcile.
+- Verifier round 2: fresh Opus, PASS. Independently re-confirmed all 4 fix claims (not trusted) — including reproducing the AC4 `tsc` evidence itself and getting a byte-identical error (differing only by column, from a differently-formatted scratch line) — and re-ran the full gate cold. No new gaps raised.
+- Files touched: `src/policy.ts` (`QuorumThreshold.type` narrowed, `buildQuorumPolicy` validation rewritten), `tests/unit/policy.test.ts`, `docs/api/policy.md`, `CHANGELOG.md` (new `## [Unreleased]` section at the top with the two breaking changes).
+- Full local gate green throughout (re-run after every fix, and again cold by the round-2 verifier): `check`, `lint`, `format:check`, `test:coverage` (940 passed | 20 skipped; stmts 94.71/branches 86.28/funcs 93.36/lines 96.06, all above `vitest.config.ts` floors), `build`, `make verify-fixtures`.
+- What's next: commit Phase 2, start Phase 3.
+### Phase 3 — decision builder: tightened voting constraints — **Status: DONE**
+
+- Branch: `policy-v3-phases-2-6`, on top of Phase 2's commit (`5e1cb2a`).
+- Implemented: module-level `DECISION_ALGORITHMS` set + a 6-rule validation block inserted at the top of `buildDecisionPolicy` (`src/policy.ts`), direct port of `macp-sdk-python@1c5bc26` `policy.py:148-180` (enum, threshold range, majority >=0.5 inclusive, supermajority >0.5 exclusive, weighted-requires-weights, weights electorate unconditional-across-algorithms with an added NaN guard the runtime has but Python's own check doesn't).
+- Tests: new `describe('buildDecisionPolicy schema constraints ...')` block, 20 tests (`tests/unit/policy.test.ts`). AC1 non-vacuity demonstrated via `git stash push -- src/policy.ts`: 11/19 failed pre-change, one per rule — full list in the plan's Phase 3 Status note. Verifier independently reproduced the same split off `git show HEAD:src/policy.ts`.
+- Docs: `docs/api/policy.md` — threshold comment updated, new callout paragraph documenting all 6 constraints and the electorate rule. `CHANGELOG.md` — `⚠ BREAKING CHANGES` bullet under the same `## [Unreleased]` section Phase 2 opened, naming all four break-worthy rules (majority, supermajority-default, weighted-without-weights, weights electorate).
+- Verifier: fresh Opus, round 1 PASS (no gaps blocking). 4 non-blocking suggestions applied post-PASS: typed `DECISION_ALGORITHMS` against `VotingRules['algorithm']` (frozen-set pattern, matches this file's other guards); completed the CHANGELOG rule list; tightened the NaN-weight test's message assertion; added a `threshold: NaN` test. 2 more **not applied, routed to Phase 6/Open Questions** as cross-SDK parity holes (shared with Python + the runtime, not a Phase 3 regression): `weights: { a: Infinity }` is accepted and silently serializes to `null`; a JS caller passing `weights: null` gets a raw `TypeError` instead of `MacpSessionError`.
+- Full local gate green (re-run after the post-PASS fixes): `check`, `lint`, `format:check`, `test:coverage` (960 passed | 20 skipped; stmts 94.77/branches 86.57/funcs 93.36/lines 96.11, all above `vitest.config.ts` floors), `build`, `make verify-fixtures`.
+- What's next: commit Phase 3, start Phase 4.
+### Phase 4 — shared commitment validation: `designated_role` requires non-empty `designated_roles`, all five builders — **Status: DONE**
+
+- Branch: `policy-v3-phases-2-6`, on top of Phase 3's commit (`83b110a`).
+- Implemented: one guard added at the top of `serializeCommitment()` (`src/policy.ts`), the single shared call site for all five builders — `authority === 'designated_role'` with `(designatedRoles?.length ?? 0) === 0` throws `MacpSessionError`, mirroring `macp-sdk-python@1c5bc26` `policy.py:55-60`'s message verbatim (with the camelCase field name). Explicit length check, not a truthy port — omitted and supplied-`[]` both collapse to 0 and both must throw, unlike Phase 3's weights rule.
+- Tests: new top-level `describe('serializeCommitment: designated_role requires designated_roles')` block, 18 tests (3 `it.each` × 5 builders + 3 individual: the `any_participant` + `[]` negative control, the `initiator_only` + non-empty `designatedRoles` negative control added post-verify, the Decision before-`allow_decline_over_approval` ordering check). AC1 non-vacuity: 11/11 new-behavior tests fail pre-change via `git stash` — full breakdown in the plan's Phase 4 Status note. The two pre-existing `designated_role` tests (decision, quorum) pass unchanged, confirmed by `git diff` showing no edit to either. Total suite: 76 tests in `policy.test.ts`, 978 passed | 20 skipped overall.
+- Docs: `docs/api/policy.md` — the shared `CommitmentRules` block gets a new callout, plus the Decision inline copy's `designatedRoles` comment updated (both restored to `// default: []; REQUIRED non-empty when authority is 'designated_role'` post-verify). `CHANGELOG.md` — new `⚠ BREAKING CHANGES` bullet under the same `## [Unreleased]` section, naming all five builders.
+- Full local gate green: `check`, `lint`, `format:check`, `test:coverage` (978 passed | 20 skipped; stmts 94.78/branches 86.63/funcs 93.36/lines 96.11, all above `vitest.config.ts` floors), `build`, `make verify-fixtures`.
+- Verifier: fresh Opus, 1 round — **PASS** with 6 non-blocking suggestions. Applied: test tuple typed away from `any` to a structural signature; `initiator_only` negative-control test added; two doc-wording fixes (`docs/api/policy.md` "has no effect on who may commit", `[]` default restored alongside REQUIRED in both locations); TSDoc added above `CommitmentRules.designatedRoles`. Declined (out of plan scope, routed to nothing — genuinely not needed): validating `designatedRoles` array *contents* — the schema has no per-item constraint and role resolution is a runtime concern.
+- What's next: commit Phase 4, start Phase 5.
+### Phase 5 — `schemaVersion` override parameter (default held at `2`, see Q1) — **Status: DONE**
+
+- Branch: `policy-v3-phases-2-6`, on top of Phase 4's commit (`f6cd048`).
+- Implemented: additive fourth `options?: DecisionPolicyOptions` param on `buildDecisionPolicy`, `{ schemaVersion?: 1 | 2 | 3 }`. Default stays `2` (fail-open empty tallies) — the default flip to `3` is NOT made here, deliberately, per byte-parity with `macp-sdk-python@1c5bc26`'s own `schema_version: int = 2`; routed to Phase 6's cross-repo issue (Q1). Module-level `DECISION_SCHEMA_VERSIONS` frozen `Set<1|2|3>` mirrors the `DECISION_ALGORITHMS` pattern from Phase 3; runtime range check throws `MacpSessionError` for untyped JS callers even though the TS union already covers typed ones. `schemaVersion` is descriptor metadata only — never leaks into the serialized `rules` JSON.
+- Tests: new `describe('buildDecisionPolicy schemaVersion override (RFC-MACP-0012 §8)')` block, 8 tests (AC1 covered by the pre-existing unchanged `toBe(2)` assertion; AC2 `it.each([1,2,3])`; AC3 omitted/`{}`/`undefined`; AC4 out-of-range throw; a `NaN`-typed throw added post-verify for parity with Phase 3's weights guard; AC5 byte-equality of serialized `rules` across versions; a check that no other builder's `schemaVersion` moved). AC1-AC5 non-vacuity proven via `git stash push -- src/policy.ts`: 4 of 8 new tests fail against pre-change code (AC2, AC4, AC5, and the byte-equality assertions), confirming the tests exercise real new behavior, not a tautology.
+- Docs: `docs/api/policy.md` — rewrote the `buildDecisionPolicy` signature line and added a schema-version behavior table (fail-open v1/v2 vs fail-closed v3), the byte-parity/Q1 note, and the TS-options-vs-Python-kwargs divergence note. `CHANGELOG.md` — new `### Features` entry under the same `## [Unreleased]` section (purely additive, correctly separated from the `⚠ BREAKING CHANGES` block).
+- Full local gate green: `check`, `lint`, `format:check`, `test:coverage` (986 passed | 20 skipped; stmts 94.79/branches 86.68/funcs 93.36/lines 96.12, all above `vitest.config.ts` floors), `build`, `make verify-fixtures`.
+- Verifier: fresh Opus, 1 round — **PASS**, all 6 ACs individually confirmed with file:line citations and an independent re-run of the test suite, tsc, and eslint. 2 non-blocking suggestions: an integration test for runtime `schemaVersion: 3` acceptance (declined — already explicitly deferred by the plan's own Edge cases section as a report item, not a merge gate; noted for Phase 6) and a `NaN`-typed test (applied).
+- What's next: commit Phase 5, start Phase 6.
+### Phase 6 — docs, CHANGELOG, cross-repo issue, closeout — **Status: DONE**
+
+- Branch: `policy-v3-phases-2-6`, on top of Phase 5's commit (`80bc01f`).
+- Issue #86: already CLOSED (pre-existing, nothing to do). Issue #85: closed with an explicit scope statement mapping all five of its items individually — see the plan's Phase 6 Status note for the full text — comment at https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/issues/85#issuecomment-5745270655.
+- Cross-repo issue filed on `macp-sdk-python` for Q1 (the schema_version default-flip decision), search-before-file confirmed no duplicate: https://github.com/multiagentcoordinationprotocol/macp-sdk-python/issues/65.
+- Coverage floors recalibrated (measured-minus-2pp): `vitest.config.ts` and `CLAUDE.md` both now read lines 94 / branches 84 / functions 91 / statements 92 (was 93/83/90/92), grep-verified to match.
+- Added an integration test (`tests/integration/runtime.test.ts`, `Policy lifecycle` describe block) pinning that the runtime accepts `schema_version: 3` at `RegisterPolicy` — written, not locally executed against a live runtime (out of scope for this pass; integration tests are excluded from CI regardless).
+- Doc sweep: full read-through of `docs/api/policy.md` (consistent across Phases 2-5) and a check of `docs/guides/policy.md` (already correct, not in this phase's Files list). `CHANGELOG.md`'s existing `⚠ BREAKING CHANGES`/`### Features` blocks already satisfy AC3 — no edit needed. Noted and left alone: 3 pre-existing stale duplicate `## [Unreleased]` headers, unrelated to this plan.
+- Full gate green on the accumulated tree: `make verify-fixtures`, `check`, `lint`, `format:check`, `test:coverage` (986 passed | 20 skipped; stmts 94.79/branches 86.68/funcs 93.36/lines 96.12, all above the recalibrated floors), `build`.
+- Verifier: fresh Opus, 1 round — **PASS**, all 5 ACs individually confirmed (re-ran the full gate itself, confirmed both GitHub issues' state/content, confirmed the Python issue is real and non-duplicate, confirmed the coverage-floor arithmetic). Committed as `c89ae13`.
+- What's next: finalization pass, then `/ship` the accumulated Phases 2-6 PR.
+
+### Finalization pass — **Status: DONE**
+
+- Full-suite re-run from clean tree: 989 passed | 20 skipped (39 files) — up from 986 after adding one cross-phase seam block. `policy.test.ts` alone: 75 → 87 tests across the plan.
+- Added `describe('cross-phase seam: schemaVersion option does not bypass voting or commitment validation')` (3 tests, `tests/unit/policy.test.ts`) — the one whole-feature gap found: Phases 3, 4, and 5 all touch `buildDecisionPolicy`, and no existing test combined Phase 5's `options` parameter with Phase 3's voting-constraint checks or Phase 4's `designated_role` guard in the same call.
+- Integration boundary (`RegisterPolicy` against a live runtime): the Phase 6 test written, not executed live this session (no other boundary applies — this SDK never evaluates policy).
+- Docs: reconfirmed clean, no further edits.
+- `ASSUMPTIONS.md`: checked, no entries needed — see the plan's own Finalization pass section for the reasoning.
+- Full local gate green: `make verify-fixtures`, `check`, `lint`, `format:check`, `test:coverage` (989 passed | 20 skipped; stmts 94.79/branches 86.68/funcs 93.36/lines 96.12, all above the recalibrated floors of stmts 92/branches 84/funcs 91/lines 94), `build`. Committed as `fa50997`.
+- **Final cumulative verifier (fresh Opus, over the whole `76b97a9...policy-v3-phases-2-6` diff against the plan as a whole): PASS.** Full detail in the plan's own Finalization pass section. No gaps; 3 non-blocking notes only (a lexicographic-vs-numeric sort in one error message, the pre-existing stale CHANGELOG headers, and a confirmed-non-live `additionalProperties` cosmetic mismatch shared with Python).
+- What's next: `/ship` the accumulated Phases 2-6 PR (branch `policy-v3-phases-2-6`, 6 commits: `5e1cb2a` `83b110a` `f6cd048` `80bc01f` `c89ae13` `fa50997`).
+
+## `/ship` — Phases 2-6 closing PR
+
+- `/ship` verification gate (fresh Opus, over `git diff main...policy-v3-phases-2-6`): **PASS**. Independently re-ran the full gate (989 passed | 20 skipped, coverage matching exactly), confirmed `ASSUMPTIONS.md` has zero entries for this plan, confirmed no doc drift, confirmed tracked-file consistency (all 7 commit SHAs referenced in `PROGRESS.md`, all phases `Status: DONE`), confirmed issues #85/#86 closed and `macp-sdk-python#65` real.
+- pushed `policy-v3-phases-2-6` `33da48d`
+- PR #89 opened: https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/pull/89
 
 ## Notes carried into implementation
 
@@ -1164,3 +1229,9 @@ parallel worktrees**.
   more (1 passed + 1 `it.skip`) per fixture with rejects.
 pushed policy-v3-phase1-fixtures 90a38bc 2026-09-19T20:13:17Z
 PR #88 opened: https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/pull/88
+merged #88: squash-merged into main as 76b97a9. `make verify-fixtures` confirmed
+green on main post-merge. No deploy to watch (npm publish is release-triggered,
+not merge-triggered, per CLAUDE.md's Publish workflow).
+
+Branch for Phases 2-6 (accumulate into one closing PR, see "PR strategy" above):
+`policy-v3-phases-2-6`, off `main` @ `76b97a9`.

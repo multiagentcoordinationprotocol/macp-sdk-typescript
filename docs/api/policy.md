@@ -10,18 +10,52 @@ interface PolicyDescriptor {
   mode: string;                // Target mode or "*" for mode-agnostic
   description: string;
   rules: string;               // JSON-encoded governance rules
-  schemaVersion: number;       // Rule schema version: 1, or 2 for decision policies
+  schemaVersion: number;       // Rule schema version: 1 for quorum/proposal/task/handoff;
+                                // 2 (default) or 3 for decision, see buildDecisionPolicy below
   registeredAtUnixMs?: number; // Set by runtime
 }
 ```
 
 ## Builder Functions
 
-### `buildDecisionPolicy(policyId, description, rules)`
+### `buildDecisionPolicy(policyId, description, rules, options?)`
 
-Creates a `PolicyDescriptor` targeting `macp.mode.decision.v1`. Emits
-`schemaVersion: 2` ([RFC-MACP-0012 (Policy)](https://github.com/multiagentcoordinationprotocol/multiagentcoordinationprotocol/blob/main/rfcs/RFC-MACP-0012-policy.md)) — the only builder to do so; the other four
-modes remain schema version 1.
+Creates a `PolicyDescriptor` targeting `macp.mode.decision.v1`. The only
+builder with a runtime-selectable schema version
+([RFC-MACP-0012 (Policy)](https://github.com/multiagentcoordinationprotocol/multiagentcoordinationprotocol/blob/main/rfcs/RFC-MACP-0012-policy.md));
+the other four modes remain schema version 1.
+
+```typescript
+interface DecisionPolicyOptions {
+  schemaVersion?: 1 | 2 | 3;   // default: 2 -- see "schemaVersion" below
+}
+```
+
+> **`schemaVersion` selects the empty-tally semantics the runtime evaluates
+> this policy under** (RFC-MACP-0012 §8 item 4 — validated once, at
+> admission, never re-validated on replay):
+>
+> | Version | Empty decisive tally |
+> | --- | --- |
+> | `1` / `2` | Fail-**open**: a binding algorithm (e.g. `majority`) passes on zero ballots unless `commitment.requireVoteQuorum` is `true` (default `false`). |
+> | `3` | Fail-**closed** for every algorithm except `'none'` (RFC-MACP-0012 §4.1's "vacuous participation floor", spec PR #99). |
+>
+> **The default stays `2`** — not `3` — deliberately, to keep existing
+> callers' semantics unchanged, in byte-parity with `macp-sdk-python`'s own
+> `schema_version: int = 2` default. v1/v2 semantics are preserved
+> permanently for replay (RFC-MACP-0012 §8 item 3) and are a supported
+> choice, not a transitional one. Whether the *default* itself should move to
+> `3` for new callers is an open cross-SDK question — see
+> `plans/adopt-policy-schema-v3.md` Open Questions Q1 — pending a joint
+> decision with `macp-sdk-python` so both SDKs' default emitted descriptors
+> never silently disagree. Pass `{ schemaVersion: 3 }` explicitly today to
+> opt in. An out-of-range value (anything other than `1`, `2`, or `3`) throws
+> `MacpSessionError`. `schemaVersion` is descriptor metadata, not a rule — it
+> never changes the serialized `rules` JSON for the same rule input.
+>
+> TypeScript has no keyword arguments, so this is a fourth positional
+> `options` object rather than Python's `schema_version=` keyword — the two
+> SDKs' call shapes diverge here by necessity, not oversight.
 
 **Parameters:**
 
@@ -29,7 +63,7 @@ modes remain schema version 1.
 interface DecisionPolicyRulesInput {
   voting?: {
     algorithm?: 'none' | 'majority' | 'supermajority' | 'unanimous' | 'weighted' | 'plurality';
-    threshold?: number;                             // vote-share fraction, 0-1, default: 0.5
+    threshold?: number;                             // vote-share fraction, 0 < t <= 1, default: 0.5
     quorum?: { type: 'count' | 'percentage'; value: number };  // percentage = integer 0–100, NOT 0–1
     weights?: Record<string, number>;               // participant_id → weight
   };
@@ -44,7 +78,7 @@ interface DecisionPolicyRulesInput {
   };
   commitment?: {
     authority?: 'initiator_only' | 'any_participant' | 'designated_role';  // default: 'initiator_only'
-    designatedRoles?: string[];                      // default: []
+    designatedRoles?: string[];                      // default: []; REQUIRED non-empty when authority is 'designated_role'
     requireVoteQuorum?: boolean;                     // default: false
     allowDeclineOverApproval?: boolean;              // default: false (schema v2, decision-only)
   };
@@ -58,21 +92,49 @@ resolves the session as a negative outcome, `hold` leaves it open).
 a committed negative outcome (`outcome_positive = false`) instead of denying
 commitment.
 
+> **`buildDecisionPolicy` enforces the canonical `decision-rules.schema.json`
+> constraints client-side**, so a schema-invalid descriptor fails fast instead
+> of round-tripping to a runtime `INVALID_POLICY_DEFINITION`:
+> - `voting.algorithm` must be one of the six canonical values.
+> - `voting.threshold` must be `0 < threshold <= 1`.
+> - `algorithm: 'majority'` requires `threshold >= 0.5` — **inclusive**,
+>   deliberately, since `policy.std.majority` (RFC-MACP-0012 §2.2) pins
+>   `threshold: 0.5` byte-identical on every runtime.
+> - `algorithm: 'supermajority'` requires `threshold > 0.5` — **exclusive**;
+>   the field's own default of `0.5` is a bare majority wearing the name, so
+>   an explicit threshold (e.g. `0.67`) is required.
+> - `algorithm: 'weighted'` requires a non-empty `weights` map.
+> - **`weights`, if supplied at all, is validated unconditionally — at every
+>   algorithm, not only `'weighted'`**: it must be non-empty, and every value
+>   must be `> 0`. A weight-0 participant is expressed by **omission** from
+>   the map, never by an explicit `0` — an explicit `0` throws. This is the
+>   weighted electorate rule: an omitted participant's vote is non-decisive
+>   (excluded from the ratio and the decisive tally) but still counts toward
+>   `voting.quorum`'s participation floor.
+
 ### `buildQuorumPolicy(policyId, description, rules)`
 
 Creates a `PolicyDescriptor` targeting `macp.mode.quorum.v1` (RFC-MACP-0012 §4.2).
 
 > **`threshold.value` is the approval bar, not a participation quorum.** For
-> `type: 'percentage'` it is an **integer 0–100** — the runtime computes the bar
+> `type: 'percentage'` it is an **integer 1–100** — the runtime computes the bar
 > as `ceil(value / 100 × participants)`. `75` means "≥ 75% must approve"; a
 > fractional value like `0.75` rounds to a ~1% bar and is therefore **rejected**
-> (`MacpSessionError`). Use `n_of_m`/`weighted` for absolute counts.
+> (`MacpSessionError`). Use `n_of_m` for absolute counts.
+>
+> **`value` must be a positive integer for every `type`** (`exclusiveMinimum: 0`
+> in the canonical `quorum-rules.schema.json`, unconditional — a zero approval
+> bar would be trivially satisfied by any ballot set, so `buildQuorumPolicy`
+> rejects it client-side). `'weighted'` is **reserved**: it was removed from the
+> canonical schema without ever having defined semantics (no weights
+> vocabulary, no electorate rule) and is refused by the runtime; passing it
+> throws `MacpSessionError` naming the reservation.
 
 ```typescript
 interface QuorumPolicyRulesInput {
   threshold?: {
-    type: 'n_of_m' | 'percentage' | 'weighted';     // default: 'n_of_m'
-    value: number;                                    // approval bar; default: 0
+    type: 'n_of_m' | 'percentage';                  // default: 'n_of_m'
+    value: number;                                    // approval bar; default: 1
   };
   abstention?: {
     countsTowardQuorum?: boolean;                     // default: false
@@ -125,11 +187,23 @@ The exported input type is named `CommitmentRules`:
 ```typescript
 interface CommitmentRules {
   authority?: 'initiator_only' | 'any_participant' | 'designated_role';  // default: 'initiator_only'
-  designatedRoles?: string[];         // default: []
+  designatedRoles?: string[];         // default: []; REQUIRED non-empty when authority is 'designated_role'
   requireVoteQuorum?: boolean;        // default: false; decision-specific, but always serialized
   allowDeclineOverApproval?: boolean; // emitted only by buildDecisionPolicy (schema v2)
 }
 ```
+
+> **`authority: 'designated_role'` requires a non-empty `designatedRoles`.**
+> An authority rule that names no one is unsatisfiable — no sender could ever
+> meet it — so every one of the five `build*Policy` functions throws
+> `MacpSessionError` if `designatedRoles` is omitted or `[]` while `authority`
+> is `'designated_role'`. Enforced once, in the shared `serializeCommitment`
+> helper all five builders funnel `commitment` through, mirroring the
+> canonical rule schemas' root-level conditional (`minItems: 1` on
+> `designated_roles` when `authority == "designated_role"`, spec issue #116).
+> `designatedRoles` is **ignored, not validated**, under the other two
+> authorities — supplying it there is still serialized into the descriptor
+> but has no effect on who may commit.
 
 ## Client Methods
 
