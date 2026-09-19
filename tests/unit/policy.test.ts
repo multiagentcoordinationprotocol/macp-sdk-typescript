@@ -150,9 +150,9 @@ describe('policy builders', () => {
       expect(descriptor.schemaVersion).toBe(1);
     });
 
-    it('uses RFC default values', () => {
+    it('uses RFC default values (omitted threshold yields value: 1)', () => {
       const rules = parseRules(buildQuorumPolicy('q1', 'desc', {}));
-      expect(rules.threshold).toEqual({ type: 'n_of_m', value: 0 });
+      expect(rules.threshold).toEqual({ type: 'n_of_m', value: 1 });
       expect(rules.abstention).toEqual({
         counts_toward_quorum: false,
         interpretation: 'neutral',
@@ -164,8 +164,8 @@ describe('policy builders', () => {
       });
     });
 
-    it('includes a percentage threshold on the 0–100 integer scale', () => {
-      // The runtime reads `percentage` as an integer 0–100 (approval bar =
+    it('includes a percentage threshold on the 1–100 integer scale', () => {
+      // The runtime reads `percentage` as an integer 1–100 (approval bar =
       // ceil(value/100 × participants)). `75` means 75%, not 0.75.
       const rules = parseRules(
         buildQuorumPolicy('q1', 'desc', {
@@ -175,9 +175,21 @@ describe('policy builders', () => {
       expect(rules.threshold).toEqual({ type: 'percentage', value: 75 });
     });
 
-    it('accepts the 0 and 100 percentage boundaries', () => {
-      expect(() => buildQuorumPolicy('q1', 'd', { threshold: { type: 'percentage', value: 0 } })).not.toThrow();
+    it('accepts the 100 percentage boundary', () => {
       expect(() => buildQuorumPolicy('q1', 'd', { threshold: { type: 'percentage', value: 100 } })).not.toThrow();
+    });
+
+    it.each(['n_of_m', 'percentage'] as const)(
+      'throws on a zero approval bar for type %s (exclusiveMinimum: 0, unconditional)',
+      (type) => {
+        expect(() => buildQuorumPolicy('q1', 'd', { threshold: { type, value: 0 } })).toThrow(MacpSessionError);
+      },
+    );
+
+    it('throws on a negative threshold value', () => {
+      expect(() => buildQuorumPolicy('q1', 'd', { threshold: { type: 'percentage', value: -1 } })).toThrow(
+        MacpSessionError,
+      );
     });
 
     it('throws on a fractional percentage threshold (0.75 → ~1% bar bug)', () => {
@@ -186,11 +198,17 @@ describe('policy builders', () => {
       );
     });
 
-    it('throws on an out-of-range percentage threshold', () => {
-      expect(() => buildQuorumPolicy('q1', 'd', { threshold: { type: 'percentage', value: 101 } })).toThrow(
+    it('throws on a fractional n_of_m threshold', () => {
+      // Unlike the percentage-only check this replaces, integrality is now
+      // enforced unconditionally: the canonical schema declares 'value' as
+      // an integer for every threshold type, not just 'percentage'.
+      expect(() => buildQuorumPolicy('q1', 'd', { threshold: { type: 'n_of_m', value: 1.5 } })).toThrow(
         MacpSessionError,
       );
-      expect(() => buildQuorumPolicy('q1', 'd', { threshold: { type: 'percentage', value: -1 } })).toThrow(
+    });
+
+    it('throws on an out-of-range percentage threshold', () => {
+      expect(() => buildQuorumPolicy('q1', 'd', { threshold: { type: 'percentage', value: 101 } })).toThrow(
         MacpSessionError,
       );
     });
@@ -207,13 +225,18 @@ describe('policy builders', () => {
       });
     });
 
-    it('includes weighted threshold', () => {
-      const rules = parseRules(
+    it("throws on the reserved 'weighted' type, naming the reservation", () => {
+      // 'weighted' was removed from the canonical quorum-rules schema without
+      // ever having defined semantics (no weights vocabulary, no electorate
+      // rule) and is refused by the runtime. The TS union no longer admits it
+      // at compile time (see the `tsc` check below); this proves the runtime
+      // guard also catches a JS caller or an `as` cast around the type.
+      const build = () =>
         buildQuorumPolicy('q1', 'desc', {
-          threshold: { type: 'weighted', value: 10 },
-        }),
-      );
-      expect(rules.threshold).toEqual({ type: 'weighted', value: 10 });
+          threshold: { type: 'weighted' as never, value: 10 },
+        });
+      expect(build).toThrow(MacpSessionError);
+      expect(build).toThrow(/reserved/);
     });
 
     it('includes commitment with designated roles', () => {

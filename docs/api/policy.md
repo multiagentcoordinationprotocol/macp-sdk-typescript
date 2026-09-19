@@ -63,16 +63,24 @@ commitment.
 Creates a `PolicyDescriptor` targeting `macp.mode.quorum.v1` (RFC-MACP-0012 §4.2).
 
 > **`threshold.value` is the approval bar, not a participation quorum.** For
-> `type: 'percentage'` it is an **integer 0–100** — the runtime computes the bar
+> `type: 'percentage'` it is an **integer 1–100** — the runtime computes the bar
 > as `ceil(value / 100 × participants)`. `75` means "≥ 75% must approve"; a
 > fractional value like `0.75` rounds to a ~1% bar and is therefore **rejected**
-> (`MacpSessionError`). Use `n_of_m`/`weighted` for absolute counts.
+> (`MacpSessionError`). Use `n_of_m` for absolute counts.
+>
+> **`value` must be a positive integer for every `type`** (`exclusiveMinimum: 0`
+> in the canonical `quorum-rules.schema.json`, unconditional — a zero approval
+> bar would be trivially satisfied by any ballot set, so `buildQuorumPolicy`
+> rejects it client-side). `'weighted'` is **reserved**: it was removed from the
+> canonical schema without ever having defined semantics (no weights
+> vocabulary, no electorate rule) and is refused by the runtime; passing it
+> throws `MacpSessionError` naming the reservation.
 
 ```typescript
 interface QuorumPolicyRulesInput {
   threshold?: {
-    type: 'n_of_m' | 'percentage' | 'weighted';     // default: 'n_of_m'
-    value: number;                                    // approval bar; default: 0
+    type: 'n_of_m' | 'percentage';                  // default: 'n_of_m'
+    value: number;                                    // approval bar; default: 1
   };
   abstention?: {
     countsTowardQuorum?: boolean;                     // default: false

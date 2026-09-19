@@ -1130,7 +1130,19 @@ parallel worktrees**.
 - Verifier's non-blocking notes (informational, matches plan's own Open Questions / Edge Cases, nothing to fix): (1) `decision_zero_participants`/`decision_zero_proposal_commitment` assert almost nothing on the replay path by design (plan's own Edge Cases); (2) 12 of 14 new fixtures carry unread `expected_mode_state.proposals` (plan's Q2, pre-existing, not this phase's to fix); (3) coverage floors are ~0.7-1.4pp stale vs. measured-minus-2pp but still satisfied with margin — no test code landed this phase (64 new `it()`s are fixture-driven registrations over already-covered paths), so left alone per convention.
 - What's next: hand Phase 1 to `/ship` as its own PR, then start Phase 2 on a fresh branch off `main` once merged.
 
-### Phase 2 — quorum builder: drop `weighted`, enforce the approval-bar floor — **Status: NOT STARTED**
+### Phase 2 — quorum builder: drop `weighted`, enforce the approval-bar floor — **Status: DONE**
+
+- Branch: `policy-v3-phases-2-6` (shared closing PR for Phases 2-6, see PR strategy above).
+- Verifier round 1: Opus, GAPS (4 real items + 1 advisory-only, none touching the phase's core correctness claim). Fixed:
+  1. AC4 `tsc` evidence pasted into `plans/adopt-policy-schema-v3.md`'s Phase 2 section: `src/__scratch_weighted_check.ts(3,44): error TS2322: Type '"weighted"' is not assignable to type '"percentage" | "n_of_m"'.` (transient scratch file, created/checked/deleted; `npm run check` clean before and after).
+  2. Stale "integer 0-100" percentage-range claim (should be 1-100, since `value` is now `> 0` unconditionally) fixed in three places: `src/policy.ts:64` (tsdoc), `docs/api/policy.md:66`, and a test title in `tests/unit/policy.test.ts`.
+  3. The weighted-reservation test now asserts both `.toThrow(MacpSessionError)` and `.toThrow(/reserved/)`, not just the message regex.
+  4. This tracked-file closeout (in progress).
+  5. Advisory-only, not fixed (correctly out of scope): `require_vote_quorum` emitted into quorum rules despite the canonical schema's `additionalProperties: false` on `commitment` (pre-existing, cross-SDK-deliberate, same as Python) — noted for Phase 6 awareness, not a Phase 2 defect. Three `## [Unreleased]` headings now coexist in `CHANGELOG.md` — pre-existing pattern (two already existed before this phase), Phase 6's to reconcile.
+- Verifier round 2: fresh Opus, PASS. Independently re-confirmed all 4 fix claims (not trusted) — including reproducing the AC4 `tsc` evidence itself and getting a byte-identical error (differing only by column, from a differently-formatted scratch line) — and re-ran the full gate cold. No new gaps raised.
+- Files touched: `src/policy.ts` (`QuorumThreshold.type` narrowed, `buildQuorumPolicy` validation rewritten), `tests/unit/policy.test.ts`, `docs/api/policy.md`, `CHANGELOG.md` (new `## [Unreleased]` section at the top with the two breaking changes).
+- Full local gate green throughout (re-run after every fix, and again cold by the round-2 verifier): `check`, `lint`, `format:check`, `test:coverage` (940 passed | 20 skipped; stmts 94.71/branches 86.28/funcs 93.36/lines 96.06, all above `vitest.config.ts` floors), `build`, `make verify-fixtures`.
+- What's next: commit Phase 2, start Phase 3.
 ### Phase 3 — decision builder: tightened voting constraints — **Status: NOT STARTED**
 ### Phase 4 — shared commitment validation: `designated_role` requires non-empty `designated_roles`, all five builders — **Status: NOT STARTED**
 ### Phase 5 — `schemaVersion` override parameter (default held at `2`, see Q1) — **Status: NOT STARTED**
@@ -1164,3 +1176,9 @@ parallel worktrees**.
   more (1 passed + 1 `it.skip`) per fixture with rejects.
 pushed policy-v3-phase1-fixtures 90a38bc 2026-09-19T20:13:17Z
 PR #88 opened: https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/pull/88
+merged #88: squash-merged into main as 76b97a9. `make verify-fixtures` confirmed
+green on main post-merge. No deploy to watch (npm publish is release-triggered,
+not merge-triggered, per CLAUDE.md's Publish workflow).
+
+Branch for Phases 2-6 (accumulate into one closing PR, see "PR strategy" above):
+`policy-v3-phases-2-6`, off `main` @ `76b97a9`.

@@ -4,6 +4,25 @@ All notable changes to `macp-sdk-typescript` are documented here. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the
 project uses [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### ⚠ BREAKING CHANGES
+
+* **policy:** `QuorumThreshold.type` no longer accepts `'weighted'`. The
+  identifier was removed from the canonical `quorum-rules.schema.json`
+  without ever having defined semantics (no weights vocabulary, no
+  electorate rule) and every descriptor that used it was already refused by
+  the runtime at `RegisterPolicy` — so this is a compile-time break for
+  callers whose descriptors could never register in the first place.
+  `buildQuorumPolicy` now also rejects it at runtime (for JS callers or an
+  `as` cast), naming the reservation.
+* **policy:** `buildQuorumPolicy(id, desc, {})` (an omitted `threshold`) now
+  emits `threshold: { value: 1 }` instead of `value: 0`. A zero approval bar
+  is trivially satisfied by any ballot set, so the canonical schema declares
+  `value` with `exclusiveMinimum: 0`; `buildQuorumPolicy` now enforces that
+  bound for every `threshold.type`, not just `'percentage'`, and rejects a
+  non-integer or non-positive `value` with `MacpSessionError`.
+
 ## [0.10.0](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/compare/v0.9.0...v0.10.0) (2026-09-01)
 
 

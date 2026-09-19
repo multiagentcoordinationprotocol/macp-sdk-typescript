@@ -56,15 +56,20 @@ export interface EvaluationRules {
 }
 
 export interface QuorumThreshold {
-  type: 'n_of_m' | 'percentage' | 'weighted';
+  type: 'n_of_m' | 'percentage';
   /**
    * The approval bar (RFC-MACP-0012 §4.2) — how many APPROVE commitments the
    * request needs, NOT a participation quorum. Scale depends on `type`:
-   * - `n_of_m` / `weighted`: an absolute count (or weight sum).
-   * - `percentage`: an **integer 0–100**; the runtime computes the bar as
+   * - `n_of_m`: an absolute count.
+   * - `percentage`: an **integer 1–100**; the runtime computes the bar as
    *   `ceil(value / 100 × participants)`. So `75` means "≥ 75% of participants
-   *   must approve", NOT `0.75`. `buildQuorumPolicy` validates this range and
-   *   throws on a non-integer or out-of-[0,100] value.
+   *   must approve", NOT `0.75`.
+   *
+   * Must be a **positive integer** for every `type` (`exclusiveMinimum: 0` in
+   * the canonical `quorum-rules.schema.json`, unconditional — a zero approval
+   * bar would be trivially satisfied by any ballot set). `buildQuorumPolicy`
+   * validates this and throws on a non-integer, non-positive, or (for
+   * `percentage`) out-of-[1,100] value.
    */
   value: number;
 }
@@ -187,20 +192,49 @@ export function buildQuorumPolicy(
   description: string,
   rules: QuorumPolicyRulesInput,
 ): PolicyDescriptor {
-  if (rules.threshold?.type === 'percentage') {
-    const v = rules.threshold.value;
-    if (!Number.isInteger(v) || v < 0 || v > 100) {
+  const threshold = rules.threshold;
+  if (threshold) {
+    // Match the canonical quorum-rules schema's constraints before the runtime
+    // does, so a bad descriptor fails immediately client-side instead of
+    // round-tripping to an INVALID_POLICY_DEFINITION from RegisterPolicy.
+    // Order matters: integer first (a float reaching the range checks below
+    // would compare fine numerically but produce a confusing message), then
+    // > 0, then the percentage-specific <= 100 cap, then type. Mirrors
+    // macp-sdk-python policy.py:278-310.
+    //
+    // Number.isInteger(true) is false in TS, so unlike Python's
+    // isinstance(True, int) trap (policy.py:285-287), no separate bool guard
+    // is needed here.
+    if (!Number.isInteger(threshold.value)) {
       throw new MacpSessionError(
-        `quorum percentage threshold must be an integer in [0, 100] (e.g. 75 for 75%), got ${v}. ` +
-          'The runtime computes the approval bar as ceil(value/100 × participants); a fractional value ' +
-          'like 0.75 would round to a ~1% bar.',
+        `quorum threshold value must be an integer (e.g. 75 for 75%), got ${threshold.value}. ` +
+          "The canonical quorum-rules schema declares 'value' as an integer for every threshold " +
+          'type; a fractional value like 0.75 would produce a schema-invalid descriptor that the ' +
+          'runtime rejects at RegisterPolicy with worse diagnostics.',
+      );
+    }
+    if (threshold.value <= 0) {
+      throw new MacpSessionError(
+        `quorum threshold value must be > 0, got ${threshold.value}. A zero approval bar is ` +
+          'trivially satisfied by any ballot set, so the canonical quorum-rules schema declares ' +
+          "'value' with exclusiveMinimum 0.",
+      );
+    }
+    if (threshold.type === 'percentage' && threshold.value > 100) {
+      throw new MacpSessionError(`quorum threshold value must be 1-100 for type 'percentage', got ${threshold.value}`);
+    }
+    if (threshold.type !== 'n_of_m' && threshold.type !== 'percentage') {
+      throw new MacpSessionError(
+        `quorum threshold type must be 'n_of_m' or 'percentage', got ${JSON.stringify(threshold.type)}. ` +
+          "'weighted' is reserved -- it was removed from the canonical schema without ever having " +
+          'defined semantics and must not be used.',
       );
     }
   }
   const rulesJson: Record<string, unknown> = {
     threshold: {
       type: rules.threshold?.type ?? 'n_of_m',
-      value: rules.threshold?.value ?? 0,
+      value: rules.threshold?.value ?? 1,
     },
     abstention: {
       counts_toward_quorum: rules.abstention?.countsTowardQuorum ?? false,
