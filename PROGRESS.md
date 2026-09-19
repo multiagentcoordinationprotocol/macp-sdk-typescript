@@ -1191,8 +1191,9 @@ parallel worktrees**.
 - Integration boundary (`RegisterPolicy` against a live runtime): the Phase 6 test written, not executed live this session (no other boundary applies — this SDK never evaluates policy).
 - Docs: reconfirmed clean, no further edits.
 - `ASSUMPTIONS.md`: checked, no entries needed — see the plan's own Finalization pass section for the reasoning.
-- Full local gate green: `make verify-fixtures`, `check`, `lint`, `format:check`, `test:coverage` (989 passed | 20 skipped; stmts 94.79/branches 86.68/funcs 93.36/lines 96.12, all above the recalibrated floors of stmts 92/branches 84/funcs 91/lines 94), `build`.
-- What's next: one final cumulative Opus verification pass over the whole Phases 2-6 diff against the plan as a whole, then commit the finalization work, then `/ship`.
+- Full local gate green: `make verify-fixtures`, `check`, `lint`, `format:check`, `test:coverage` (989 passed | 20 skipped; stmts 94.79/branches 86.68/funcs 93.36/lines 96.12, all above the recalibrated floors of stmts 92/branches 84/funcs 91/lines 94), `build`. Committed as `fa50997`.
+- **Final cumulative verifier (fresh Opus, over the whole `76b97a9...policy-v3-phases-2-6` diff against the plan as a whole): PASS.** Full detail in the plan's own Finalization pass section. No gaps; 3 non-blocking notes only (a lexicographic-vs-numeric sort in one error message, the pre-existing stale CHANGELOG headers, and a confirmed-non-live `additionalProperties` cosmetic mismatch shared with Python).
+- What's next: `/ship` the accumulated Phases 2-6 PR (branch `policy-v3-phases-2-6`, 6 commits: `5e1cb2a` `83b110a` `f6cd048` `80bc01f` `c89ae13` `fa50997`).
 
 ## Notes carried into implementation
 
