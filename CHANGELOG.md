@@ -48,6 +48,17 @@ project uses [Semantic Versioning](https://semver.org/).
   `RegisterPolicy` — this call previously returned a descriptor the runtime
   would reject.
 
+### Features
+
+* **policy:** `buildDecisionPolicy` accepts a new fourth `options` argument,
+  `{ schemaVersion?: 1 | 2 | 3 }`, to opt a Decision policy into
+  RFC-MACP-0012 `schema_version` 3's fail-closed empty-tally semantics
+  (§4.1's "vacuous participation floor"). Purely additive — every existing
+  3-argument call site compiles and behaves unchanged, since the default
+  stays `2` (fail-open), in byte-parity with `macp-sdk-python`'s own
+  `schema_version: int = 2` default. An out-of-range value throws
+  `MacpSessionError`.
+
 ## [0.10.0](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/compare/v0.9.0...v0.10.0) (2026-09-01)
 
 

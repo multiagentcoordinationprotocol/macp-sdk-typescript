@@ -184,11 +184,43 @@ const DECISION_ALGORITHMS: ReadonlySet<NonNullable<VotingRules['algorithm']>> = 
   'plurality',
 ]);
 
+// RFC-MACP-0012 §8 requires runtimes to accept all three forever -- none of
+// these is a deprecation path. Mirrors macp-sdk-python policy.py's
+// _DECISION_SCHEMA_VERSIONS.
+const DECISION_SCHEMA_VERSIONS: ReadonlySet<1 | 2 | 3> = new Set([1, 2, 3]);
+
+export interface DecisionPolicyOptions {
+  /**
+   * RFC-MACP-0012 rule schema version the runtime evaluates this policy
+   * under (validated, never re-validated, at admission -- RFC-MACP-0012 §8
+   * item 4):
+   * - `1`/`2`: an empty decisive tally is fail-*open* (satisfies the voting
+   *   requirement).
+   * - `3`: an empty decisive tally is fail-*closed* for every algorithm
+   *   except `'none'` (RFC-MACP-0012 §4.1, adopted in spec PR #99).
+   *
+   * Defaults to `2` to keep existing callers' semantics unchanged -- a
+   * deliberate default, not an oversight, kept in byte-parity with
+   * `macp-sdk-python`'s own `schema_version: int = 2`. Pass `3` explicitly
+   * to opt into fail-closed empty tallies. This is descriptor metadata, not
+   * a rule: it is never part of the serialized `rules` JSON.
+   */
+  schemaVersion?: 1 | 2 | 3;
+}
+
 export function buildDecisionPolicy(
   policyId: string,
   description: string,
   rules: DecisionPolicyRulesInput,
+  options?: DecisionPolicyOptions,
 ): PolicyDescriptor {
+  const schemaVersion = options?.schemaVersion ?? 2;
+  if (!DECISION_SCHEMA_VERSIONS.has(schemaVersion)) {
+    throw new MacpSessionError(
+      `schemaVersion must be one of ${[...DECISION_SCHEMA_VERSIONS].sort().join(', ')}, got '${schemaVersion}'`,
+    );
+  }
+
   const algorithm = rules.voting?.algorithm ?? 'none';
   const threshold = rules.voting?.threshold ?? 0.5;
   const weights = rules.voting?.weights;
@@ -277,7 +309,7 @@ export function buildDecisionPolicy(
     mode: 'macp.mode.decision.v1',
     description,
     rules: JSON.stringify(rulesJson),
-    schemaVersion: 2,
+    schemaVersion,
   };
 }
 

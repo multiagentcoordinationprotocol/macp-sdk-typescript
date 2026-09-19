@@ -10,18 +10,52 @@ interface PolicyDescriptor {
   mode: string;                // Target mode or "*" for mode-agnostic
   description: string;
   rules: string;               // JSON-encoded governance rules
-  schemaVersion: number;       // Rule schema version: 1, or 2 for decision policies
+  schemaVersion: number;       // Rule schema version: 1 for quorum/proposal/task/handoff;
+                                // 2 (default) or 3 for decision, see buildDecisionPolicy below
   registeredAtUnixMs?: number; // Set by runtime
 }
 ```
 
 ## Builder Functions
 
-### `buildDecisionPolicy(policyId, description, rules)`
+### `buildDecisionPolicy(policyId, description, rules, options?)`
 
-Creates a `PolicyDescriptor` targeting `macp.mode.decision.v1`. Emits
-`schemaVersion: 2` ([RFC-MACP-0012 (Policy)](https://github.com/multiagentcoordinationprotocol/multiagentcoordinationprotocol/blob/main/rfcs/RFC-MACP-0012-policy.md)) — the only builder to do so; the other four
-modes remain schema version 1.
+Creates a `PolicyDescriptor` targeting `macp.mode.decision.v1`. The only
+builder with a runtime-selectable schema version
+([RFC-MACP-0012 (Policy)](https://github.com/multiagentcoordinationprotocol/multiagentcoordinationprotocol/blob/main/rfcs/RFC-MACP-0012-policy.md));
+the other four modes remain schema version 1.
+
+```typescript
+interface DecisionPolicyOptions {
+  schemaVersion?: 1 | 2 | 3;   // default: 2 -- see "schemaVersion" below
+}
+```
+
+> **`schemaVersion` selects the empty-tally semantics the runtime evaluates
+> this policy under** (RFC-MACP-0012 §8 item 4 — validated once, at
+> admission, never re-validated on replay):
+>
+> | Version | Empty decisive tally |
+> | --- | --- |
+> | `1` / `2` | Fail-**open**: a binding algorithm (e.g. `majority`) passes on zero ballots unless `commitment.requireVoteQuorum` is `true` (default `false`). |
+> | `3` | Fail-**closed** for every algorithm except `'none'` (RFC-MACP-0012 §4.1's "vacuous participation floor", spec PR #99). |
+>
+> **The default stays `2`** — not `3` — deliberately, to keep existing
+> callers' semantics unchanged, in byte-parity with `macp-sdk-python`'s own
+> `schema_version: int = 2` default. v1/v2 semantics are preserved
+> permanently for replay (RFC-MACP-0012 §8 item 3) and are a supported
+> choice, not a transitional one. Whether the *default* itself should move to
+> `3` for new callers is an open cross-SDK question — see
+> `plans/adopt-policy-schema-v3.md` Open Questions Q1 — pending a joint
+> decision with `macp-sdk-python` so both SDKs' default emitted descriptors
+> never silently disagree. Pass `{ schemaVersion: 3 }` explicitly today to
+> opt in. An out-of-range value (anything other than `1`, `2`, or `3`) throws
+> `MacpSessionError`. `schemaVersion` is descriptor metadata, not a rule — it
+> never changes the serialized `rules` JSON for the same rule input.
+>
+> TypeScript has no keyword arguments, so this is a fourth positional
+> `options` object rather than Python's `schema_version=` keyword — the two
+> SDKs' call shapes diverge here by necessity, not oversight.
 
 **Parameters:**
 

@@ -145,6 +145,52 @@ describe('policy builders', () => {
     });
   });
 
+  describe('buildDecisionPolicy schemaVersion override (RFC-MACP-0012 §8)', () => {
+    it('AC3: options omitted, {}, and undefined all emit schemaVersion 2', () => {
+      expect(buildDecisionPolicy('p', 'd', {}).schemaVersion).toBe(2);
+      expect(buildDecisionPolicy('p', 'd', {}, {}).schemaVersion).toBe(2);
+      expect(buildDecisionPolicy('p', 'd', {}, undefined).schemaVersion).toBe(2);
+    });
+
+    it.each([1, 2, 3] as const)('AC2: explicit schemaVersion %i round-trips', (schemaVersion) => {
+      expect(buildDecisionPolicy('p', 'd', {}, { schemaVersion }).schemaVersion).toBe(schemaVersion);
+    });
+
+    it('AC4: an out-of-range schemaVersion throws MacpSessionError', () => {
+      const build = () => buildDecisionPolicy('p', 'd', {}, { schemaVersion: 4 as never });
+      expect(build).toThrow(MacpSessionError);
+      expect(build).toThrow(/schemaVersion must be one of/);
+    });
+
+    it('a NaN-typed schemaVersion throws MacpSessionError (untyped JS caller)', () => {
+      const build = () => buildDecisionPolicy('p', 'd', {}, { schemaVersion: NaN as never });
+      expect(build).toThrow(MacpSessionError);
+      expect(build).toThrow(/schemaVersion must be one of/);
+    });
+
+    it('AC5: the serialized rules JSON is byte-identical across schema versions', () => {
+      const rules = {
+        voting: { algorithm: 'majority' as const, threshold: 0.6, weights: { a: 1, b: 2 } },
+        commitment: { authority: 'designated_role' as const, designatedRoles: ['lead'] },
+      };
+      const v1 = buildDecisionPolicy('p', 'd', rules, { schemaVersion: 1 });
+      const v2 = buildDecisionPolicy('p', 'd', rules, { schemaVersion: 2 });
+      const v3 = buildDecisionPolicy('p', 'd', rules, { schemaVersion: 3 });
+      expect(v1.rules).toBe(v2.rules);
+      expect(v2.rules).toBe(v3.rules);
+      expect(v1.schemaVersion).toBe(1);
+      expect(v2.schemaVersion).toBe(2);
+      expect(v3.schemaVersion).toBe(3);
+    });
+
+    it("does not affect any other builder's schemaVersion", () => {
+      expect(buildQuorumPolicy('p', 'd', {}).schemaVersion).toBe(1);
+      expect(buildProposalPolicy('p', 'd', {}).schemaVersion).toBe(1);
+      expect(buildTaskPolicy('p', 'd', {}).schemaVersion).toBe(1);
+      expect(buildHandoffPolicy('p', 'd', {}).schemaVersion).toBe(1);
+    });
+  });
+
   describe('buildDecisionPolicy schema constraints (RFC-MACP-0012 decision-rules.schema.json)', () => {
     it('throws on an algorithm outside the canonical six', () => {
       const build = () => buildDecisionPolicy('p', 'd', { voting: { algorithm: 'bogus' as never } });
