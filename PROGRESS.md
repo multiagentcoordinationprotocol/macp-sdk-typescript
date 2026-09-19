@@ -961,10 +961,12 @@ Sibling checkouts used for verification, READ-ONLY:
 - `src/policy.ts:110-114` — `QuorumPolicyRulesInput`. No `weights` field exists
   for Quorum policies at all, which is the spec's own diagnosis of why
   `'weighted'` never had semantics. Do not add one.
-- `src/policy.ts:146-183` — `buildDecisionPolicy`. `:161` `threshold ?? 0.5`
-  (the `supermajority` trap), `:163` `weights ?? undefined` (dropped by
-  `JSON.stringify`, so `weighted` emits no `weights`), `:181` hardcoded
-  `schemaVersion: 2`. Phases 3 and 5.
+- `src/policy.ts` — `buildDecisionPolicy` (originally `:146-183`; shifted by
+  Phase 3's new validation block and `DECISION_ALGORITHMS` const — grep for
+  `export function buildDecisionPolicy`, don't trust the line number). The
+  `supermajority`-at-default-0.5 trap and the `weighted`-without-`weights`
+  case Phase 3 now catches client-side; hardcoded `schemaVersion: 2` remains
+  for Phase 5.
 - `src/policy.ts:185-218` — `buildQuorumPolicy`. `:190-199` is the **existing
   client-side validation precedent** every new check in Phases 2-3 mirrors;
   `:203` `value ?? 0` violates the canonical `exclusiveMinimum: 0`. Phase 2.
@@ -1143,7 +1145,15 @@ parallel worktrees**.
 - Files touched: `src/policy.ts` (`QuorumThreshold.type` narrowed, `buildQuorumPolicy` validation rewritten), `tests/unit/policy.test.ts`, `docs/api/policy.md`, `CHANGELOG.md` (new `## [Unreleased]` section at the top with the two breaking changes).
 - Full local gate green throughout (re-run after every fix, and again cold by the round-2 verifier): `check`, `lint`, `format:check`, `test:coverage` (940 passed | 20 skipped; stmts 94.71/branches 86.28/funcs 93.36/lines 96.06, all above `vitest.config.ts` floors), `build`, `make verify-fixtures`.
 - What's next: commit Phase 2, start Phase 3.
-### Phase 3 — decision builder: tightened voting constraints — **Status: NOT STARTED**
+### Phase 3 — decision builder: tightened voting constraints — **Status: DONE**
+
+- Branch: `policy-v3-phases-2-6`, on top of Phase 2's commit (`5e1cb2a`).
+- Implemented: module-level `DECISION_ALGORITHMS` set + a 6-rule validation block inserted at the top of `buildDecisionPolicy` (`src/policy.ts`), direct port of `macp-sdk-python@1c5bc26` `policy.py:148-180` (enum, threshold range, majority >=0.5 inclusive, supermajority >0.5 exclusive, weighted-requires-weights, weights electorate unconditional-across-algorithms with an added NaN guard the runtime has but Python's own check doesn't).
+- Tests: new `describe('buildDecisionPolicy schema constraints ...')` block, 20 tests (`tests/unit/policy.test.ts`). AC1 non-vacuity demonstrated via `git stash push -- src/policy.ts`: 11/19 failed pre-change, one per rule — full list in the plan's Phase 3 Status note. Verifier independently reproduced the same split off `git show HEAD:src/policy.ts`.
+- Docs: `docs/api/policy.md` — threshold comment updated, new callout paragraph documenting all 6 constraints and the electorate rule. `CHANGELOG.md` — `⚠ BREAKING CHANGES` bullet under the same `## [Unreleased]` section Phase 2 opened, naming all four break-worthy rules (majority, supermajority-default, weighted-without-weights, weights electorate).
+- Verifier: fresh Opus, round 1 PASS (no gaps blocking). 4 non-blocking suggestions applied post-PASS: typed `DECISION_ALGORITHMS` against `VotingRules['algorithm']` (frozen-set pattern, matches this file's other guards); completed the CHANGELOG rule list; tightened the NaN-weight test's message assertion; added a `threshold: NaN` test. 2 more **not applied, routed to Phase 6/Open Questions** as cross-SDK parity holes (shared with Python + the runtime, not a Phase 3 regression): `weights: { a: Infinity }` is accepted and silently serializes to `null`; a JS caller passing `weights: null` gets a raw `TypeError` instead of `MacpSessionError`.
+- Full local gate green (re-run after the post-PASS fixes): `check`, `lint`, `format:check`, `test:coverage` (960 passed | 20 skipped; stmts 94.77/branches 86.57/funcs 93.36/lines 96.11, all above `vitest.config.ts` floors), `build`, `make verify-fixtures`.
+- What's next: commit Phase 3, start Phase 4.
 ### Phase 4 — shared commitment validation: `designated_role` requires non-empty `designated_roles`, all five builders — **Status: NOT STARTED**
 ### Phase 5 — `schemaVersion` override parameter (default held at `2`, see Q1) — **Status: NOT STARTED**
 ### Phase 6 — docs, CHANGELOG, cross-repo issue, closeout — **Status: NOT STARTED**

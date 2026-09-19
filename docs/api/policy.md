@@ -29,7 +29,7 @@ modes remain schema version 1.
 interface DecisionPolicyRulesInput {
   voting?: {
     algorithm?: 'none' | 'majority' | 'supermajority' | 'unanimous' | 'weighted' | 'plurality';
-    threshold?: number;                             // vote-share fraction, 0-1, default: 0.5
+    threshold?: number;                             // vote-share fraction, 0 < t <= 1, default: 0.5
     quorum?: { type: 'count' | 'percentage'; value: number };  // percentage = integer 0–100, NOT 0–1
     weights?: Record<string, number>;               // participant_id → weight
   };
@@ -57,6 +57,26 @@ resolves the session as a negative outcome, `hold` leaves it open).
 `allowDeclineOverApproval: true` lets a reject-majority resolve the session with
 a committed negative outcome (`outcome_positive = false`) instead of denying
 commitment.
+
+> **`buildDecisionPolicy` enforces the canonical `decision-rules.schema.json`
+> constraints client-side**, so a schema-invalid descriptor fails fast instead
+> of round-tripping to a runtime `INVALID_POLICY_DEFINITION`:
+> - `voting.algorithm` must be one of the six canonical values.
+> - `voting.threshold` must be `0 < threshold <= 1`.
+> - `algorithm: 'majority'` requires `threshold >= 0.5` — **inclusive**,
+>   deliberately, since `policy.std.majority` (RFC-MACP-0012 §2.2) pins
+>   `threshold: 0.5` byte-identical on every runtime.
+> - `algorithm: 'supermajority'` requires `threshold > 0.5` — **exclusive**;
+>   the field's own default of `0.5` is a bare majority wearing the name, so
+>   an explicit threshold (e.g. `0.67`) is required.
+> - `algorithm: 'weighted'` requires a non-empty `weights` map.
+> - **`weights`, if supplied at all, is validated unconditionally — at every
+>   algorithm, not only `'weighted'`**: it must be non-empty, and every value
+>   must be `> 0`. A weight-0 participant is expressed by **omission** from
+>   the map, never by an explicit `0` — an explicit `0` throws. This is the
+>   weighted electorate rule: an omitted participant's vote is non-decisive
+>   (excluded from the ratio and the decisive tally) but still counts toward
+>   `voting.quorum`'s participation floor.
 
 ### `buildQuorumPolicy(policyId, description, rules)`
 

@@ -22,6 +22,23 @@ project uses [Semantic Versioning](https://semver.org/).
   `value` with `exclusiveMinimum: 0`; `buildQuorumPolicy` now enforces that
   bound for every `threshold.type`, not just `'percentage'`, and rejects a
   non-integer or non-positive `value` with `MacpSessionError`.
+* **policy:** `buildDecisionPolicy` now enforces the canonical
+  `decision-rules.schema.json` voting constraints client-side, so calls that
+  previously returned an unregistrable descriptor now throw `MacpSessionError`
+  instead:
+  - `voting.algorithm` must be one of the six canonical values.
+  - `voting.threshold` must be `0 < threshold <= 1`.
+  - `algorithm: 'majority'` requires `threshold >= 0.5` (inclusive — a `0.3`
+    "majority" now throws).
+  - `algorithm: 'supermajority'` **at its own default `threshold: 0.5`** now
+    throws — this is the change most likely to break an existing idiomatic
+    call (`buildDecisionPolicy(id, desc, { voting: { algorithm: 'supermajority' } })`);
+    pass an explicit `threshold` above `0.5` (e.g. `0.67`).
+  - `algorithm: 'weighted'` with no `weights` now throws.
+  - `voting.weights`, if supplied at all, is now validated **unconditionally
+    at every algorithm, not only `'weighted'`**: it must be non-empty, and
+    every value must be `> 0`. `weights: { a: 0 }` now throws — a weight-0
+    participant must be expressed by omission from the map.
 
 ## [0.10.0](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/compare/v0.9.0...v0.10.0) (2026-09-01)
 

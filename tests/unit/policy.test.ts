@@ -143,6 +143,99 @@ describe('policy builders', () => {
     });
   });
 
+  describe('buildDecisionPolicy schema constraints (RFC-MACP-0012 decision-rules.schema.json)', () => {
+    it('throws on an algorithm outside the canonical six', () => {
+      const build = () => buildDecisionPolicy('p', 'd', { voting: { algorithm: 'bogus' as never } });
+      expect(build).toThrow(MacpSessionError);
+      expect(build).toThrow(/algorithm must be one of/);
+    });
+
+    it.each(['none', 'majority', 'supermajority', 'unanimous', 'weighted', 'plurality'] as const)(
+      'accepts the canonical algorithm %s',
+      (algorithm) => {
+        const extra =
+          algorithm === 'supermajority' ? { threshold: 0.67 } : algorithm === 'weighted' ? { weights: { a: 1 } } : {};
+        expect(() => buildDecisionPolicy('p', 'd', { voting: { algorithm, ...extra } })).not.toThrow();
+      },
+    );
+
+    it.each([
+      [0, true],
+      [0.0001, false],
+      [1, false],
+      [1.0001, true],
+    ])('threshold %s (throws: %s) — 0 < threshold <= 1', (threshold, shouldThrow) => {
+      const build = () => buildDecisionPolicy('p', 'd', { voting: { threshold } });
+      if (shouldThrow) {
+        expect(build).toThrow(MacpSessionError);
+      } else {
+        expect(build).not.toThrow();
+      }
+    });
+
+    it('majority passes at exactly 0.5 and throws just below it', () => {
+      expect(() => buildDecisionPolicy('p', 'd', { voting: { algorithm: 'majority', threshold: 0.5 } })).not.toThrow();
+      const build = () => buildDecisionPolicy('p', 'd', { voting: { algorithm: 'majority', threshold: 0.49 } });
+      expect(build).toThrow(MacpSessionError);
+      expect(build).toThrow(/majority.*requires threshold >= 0.5/);
+    });
+
+    it('supermajority throws at exactly 0.5 (the default-wearing-the-name trap) and passes just above it', () => {
+      const build = () => buildDecisionPolicy('p', 'd', { voting: { algorithm: 'supermajority' } });
+      expect(build).toThrow(MacpSessionError);
+      expect(build).toThrow(/bare majority wearing the name/);
+      expect(() =>
+        buildDecisionPolicy('p', 'd', { voting: { algorithm: 'supermajority', threshold: 0.51 } }),
+      ).not.toThrow();
+    });
+
+    it('AC2: supermajority at the default threshold throws; an explicit 0.67 succeeds', () => {
+      expect(() => buildDecisionPolicy('p', 'd', { voting: { algorithm: 'supermajority' } })).toThrow(MacpSessionError);
+      expect(() =>
+        buildDecisionPolicy('p', 'd', { voting: { algorithm: 'supermajority', threshold: 0.67 } }),
+      ).not.toThrow();
+    });
+
+    it("AC3: 'weighted' throws without weights and succeeds with a non-empty map", () => {
+      expect(() => buildDecisionPolicy('p', 'd', { voting: { algorithm: 'weighted' } })).toThrow(MacpSessionError);
+      expect(() =>
+        buildDecisionPolicy('p', 'd', { voting: { algorithm: 'weighted', weights: { a: 1 } } }),
+      ).not.toThrow();
+    });
+
+    it('AC4: the electorate rule is unconditional — algorithm: none with weights: {} still throws', () => {
+      expect(() => buildDecisionPolicy('p', 'd', { voting: { algorithm: 'none', weights: {} } })).toThrow(
+        MacpSessionError,
+      );
+    });
+
+    it('throws on an empty weights map with the electorate rationale', () => {
+      const build = () => buildDecisionPolicy('p', 'd', { voting: { weights: {} } });
+      expect(build).toThrow(MacpSessionError);
+      expect(build).toThrow(/non-empty/);
+    });
+
+    it('throws on a zero weight, naming omission as the correct way to express weight 0', () => {
+      const build = () => buildDecisionPolicy('p', 'd', { voting: { weights: { a: 0 } } });
+      expect(build).toThrow(MacpSessionError);
+      expect(build).toThrow(/omission from the map/);
+    });
+
+    it('throws on a NaN weight, naming omission as the correct way to express weight 0', () => {
+      // weight <= 0 alone would let NaN slip through (NaN <= 0 is false);
+      // this pins the separate Number.isNaN guard (registry.rs:596 parity).
+      const build = () => buildDecisionPolicy('p', 'd', { voting: { weights: { a: NaN } } });
+      expect(build).toThrow(MacpSessionError);
+      expect(build).toThrow(/omission from the map/);
+    });
+
+    it('throws on a NaN threshold', () => {
+      // 0 < NaN is false, so this falls through the same branch as threshold
+      // 0 -- pinned separately since it documents intent, not new coverage.
+      expect(() => buildDecisionPolicy('p', 'd', { voting: { threshold: NaN } })).toThrow(MacpSessionError);
+    });
+  });
+
   describe('buildQuorumPolicy (RFC-MACP-0012 §4.2)', () => {
     it('builds with correct mode', () => {
       const descriptor = buildQuorumPolicy('q1', 'Quorum policy', {});

@@ -148,11 +148,82 @@ function serializeCommitment(commitment?: CommitmentRules): Record<string, unkno
   };
 }
 
+// Typed against VotingRules['algorithm'] (not a bare string[]) so adding a
+// seventh canonical algorithm to that union without also adding it here is a
+// tsc error instead of a silent runtime-only rejection — same frozen-set
+// intent as this file's other guards (see e.g. commitment-hash-frozen-fields.test.ts).
+const DECISION_ALGORITHMS: ReadonlySet<NonNullable<VotingRules['algorithm']>> = new Set([
+  'none',
+  'majority',
+  'supermajority',
+  'unanimous',
+  'weighted',
+  'plurality',
+]);
+
 export function buildDecisionPolicy(
   policyId: string,
   description: string,
   rules: DecisionPolicyRulesInput,
 ): PolicyDescriptor {
+  const algorithm = rules.voting?.algorithm ?? 'none';
+  const threshold = rules.voting?.threshold ?? 0.5;
+  const weights = rules.voting?.weights;
+
+  // Match decision-rules.schema.json's constraints before the runtime does,
+  // same rationale as buildQuorumPolicy's threshold checks above: a bad
+  // descriptor fails immediately client-side instead of round-tripping to an
+  // INVALID_POLICY_DEFINITION from RegisterPolicy. Order matters and mirrors
+  // macp-sdk-python policy.py:148-180: algorithm enum, then threshold range,
+  // then the majority/supermajority asymmetry, then weighted-requires-weights,
+  // then the electorate rule (unconditional across every algorithm).
+  if (!DECISION_ALGORITHMS.has(algorithm)) {
+    throw new MacpSessionError(
+      `voting algorithm must be one of ${[...DECISION_ALGORITHMS].sort().join(', ')}, got '${algorithm}'`,
+    );
+  }
+  if (!(threshold > 0 && threshold <= 1)) {
+    throw new MacpSessionError(`voting threshold must be > 0 and <= 1, got ${threshold}`);
+  }
+  if (algorithm === 'majority' && threshold < 0.5) {
+    throw new MacpSessionError(`'majority' requires threshold >= 0.5 (an even split approves), got ${threshold}`);
+  }
+  // Deliberately asymmetric with the 'majority' check above: policy.std.majority
+  // sets threshold exactly 0.5 and RFC-MACP-0012 §2.2 pins that reserved profile
+  // byte-identical on every runtime, so an exclusive >= 0.5 bound here would
+  // refuse a profile the runtime pre-registers at startup. Do not "fix" this.
+  if (algorithm === 'supermajority' && threshold <= 0.5) {
+    throw new MacpSessionError(
+      "'supermajority' requires threshold > 0.5 -- the field's own default of 0.5 is a bare majority " +
+        `wearing the name, got ${threshold}. Pass an explicit threshold (e.g. 0.67) for supermajority.`,
+    );
+  }
+  if (algorithm === 'weighted' && (!weights || Object.keys(weights).length === 0)) {
+    throw new MacpSessionError("'weighted' algorithm requires a non-empty 'weights' map");
+  }
+  // The weighted electorate is meaningful only when non-empty and strictly
+  // positive-valued -- enforced unconditionally, at every algorithm, not only
+  // 'weighted' (decision-rules.schema.json: voting.weights minProperties 1,
+  // additionalProperties.exclusiveMinimum 0; normative at every schema_version).
+  // A weight-0 participant is expressed by omission from this map, never by an
+  // explicit 0. `weights !== undefined`, not a truthy check: `{}` is truthy.
+  if (weights !== undefined) {
+    if (Object.keys(weights).length === 0) {
+      throw new MacpSessionError("'weights', if provided, must be non-empty");
+    }
+    for (const [participant, weight] of Object.entries(weights)) {
+      // weight <= 0 alone would let a NaN weight slip through (NaN <= 0 is
+      // false); the runtime guards this explicitly (registry.rs:596), mirrored
+      // here even though the Python reference does not check it separately.
+      if (weight <= 0 || Number.isNaN(weight)) {
+        throw new MacpSessionError(
+          `weights['${participant}'] must be > 0, got ${weight} -- a weight-0 observer is expressed by ` +
+            'omission from the map, not by an explicit 0',
+        );
+      }
+    }
+  }
+
   // Decision-only: extend the shared v1 commitment rules with the schema_version 2
   // decline-over-approval switch, appended after the shared keys so it does not
   // leak into the still-v1 quorum/proposal/task/handoff commitment blocks
@@ -162,10 +233,10 @@ export function buildDecisionPolicy(
 
   const rulesJson: Record<string, unknown> = {
     voting: {
-      algorithm: rules.voting?.algorithm ?? 'none',
-      threshold: rules.voting?.threshold ?? 0.5,
+      algorithm,
+      threshold,
       quorum: rules.voting?.quorum ? { type: rules.voting.quorum.type, value: rules.voting.quorum.value } : undefined,
-      weights: rules.voting?.weights ?? undefined,
+      weights,
     },
     objection_handling: {
       critical_severity_vetoes: rules.objectionHandling?.criticalSeverityVetoes ?? false,
