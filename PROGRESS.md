@@ -935,3 +935,232 @@ know it does not.
 **State at wrap:** `main` clean and in sync, zero open PRs, only `main` locally.
 Five required contexts on `main`. The deliberate follow-ups from the #55 work
 are unchanged and still open — this repo's #58, #59, #60; spec #84; runtime #125.
+
+---
+
+# PROGRESS — adopt RFC-MACP-0012 `schema_version` 3 (issues #85, #86)
+
+Plan: `plans/adopt-policy-schema-v3.md` (written 2026-09-19).
+Verified against `main` @ `f8b97e3` (v0.10.0), working tree clean.
+
+Sibling checkouts used for verification, READ-ONLY:
+`../multiagentcoordinationprotocol` @ `0de1fab`, `../macp-runtime` @ `5e95c4a`,
+`../macp-sdk-python` @ `1c5bc26` (v0.9.1).
+
+## Repo map (relevant slice only)
+
+### Policy builders — the whole of this plan's `src/` surface
+
+- `src/policy.ts:4-6, 140-141` — the standing byte-parity commitment to
+  `macp-sdk-python`'s builder naming/shape. Phases 2-5 are catch-up to Python
+  `1c5bc26`; read that file alongside any edit here.
+- `src/policy.ts:58-70` — `QuorumThreshold`. `:59` `type` union still carries
+  `'weighted'`, removed from the spec vocabulary and **refused by the runtime**
+  (`../macp-runtime/crates/macp-policy/src/registry.rs:48`, enforced `:658-663`).
+  Phase 2.
+- `src/policy.ts:110-114` — `QuorumPolicyRulesInput`. No `weights` field exists
+  for Quorum policies at all, which is the spec's own diagnosis of why
+  `'weighted'` never had semantics. Do not add one.
+- `src/policy.ts:146-183` — `buildDecisionPolicy`. `:161` `threshold ?? 0.5`
+  (the `supermajority` trap), `:163` `weights ?? undefined` (dropped by
+  `JSON.stringify`, so `weighted` emits no `weights`), `:181` hardcoded
+  `schemaVersion: 2`. Phases 3 and 5.
+- `src/policy.ts:185-218` — `buildQuorumPolicy`. `:190-199` is the **existing
+  client-side validation precedent** every new check in Phases 2-3 mirrors;
+  `:203` `value ?? 0` violates the canonical `exclusiveMinimum: 0`. Phase 2.
+- `src/policy.ts:136-144` — `serializeCommitment`, shared by all five builders
+  (call sites `:155`, `:209`, `:235`, `:254`, `:274`). **Phase 4**: it passes
+  `designatedRoles` through with no check, so all five builders can emit
+  `authority: 'designated_role'` with an empty `designated_roles`. The canonical
+  `minItems: 1` lives in a *root-level* `allOf` conditional
+  (`decision-rules.schema.json:260-292`), not on
+  `properties.commitment.properties.designated_roles` (`:142-148`) — which is why an
+  earlier pass read this as "no canonical `minItems`" and wrote the phase off.
+  All five rule schemas now carry the arm (spec PR #121); runtime enforces at
+  `registry.rs:528-537`; Python checks once in `_commitment_dict`
+  (`policy.py:55-60`).
+- `src/types.ts:342-349` — `PolicyDescriptor`. `description` already
+  non-optional, so spec `6f300c8`'s `required` tightening is a verified no-op.
+
+### Conformance harness — Phase 1 reads it, changes nothing
+
+- `tests/conformance/conformance.test.ts:198-203` — fixture discovery is a
+  `readdirSync` **glob**, not an enumeration; `:232-240` fails loudly via
+  `expect.fail` for an unmapped `mode`. Together these refute issue #85's item 2
+  at the file level.
+- `:106-113` `MODE_PROJECTIONS` (6 entries) — all 14 new fixtures are
+  `macp.mode.decision.v1`, already mapped.
+- `:118-135` `CANONICAL_ERROR_CODES` — all 16 codes, already covering the new
+  fixtures' `POLICY_DENIED` / `FORBIDDEN` / `INVALID_ENVELOPE`.
+- `:56-70` `Fixture` — declares `expect_resolution_present` and
+  `expected_mode_state`; the assertions only read `phase` (`:300-302`) and
+  `votes` (`:305-313`). `proposals`/`objections`/`accepts`/`offers` and
+  `expect_resolution_present` are parsed and ignored. Pre-existing; plan Q2.
+- `:284-288` commitment presence derived from `expected_final_state` alone.
+- `:291-297` every `expected_resolution` scalar asserted, snake→camel.
+- `:360-371` format guard — asserts `payload_type` only; never validates a
+  fixture against `schema.json` (which `:200-202` excludes from discovery), so
+  the `participants.minItems` relaxation needs no guard change.
+- `Makefile:20-39` `sync-fixtures` (two copy loops), `:46-89` `verify-fixtures`
+  (four drift loops, one shared `drift` flag, single exit).
+
+### Projections — read to confirm scope, not to change
+
+- `src/projections/decision.ts:56` phase union
+  `'Proposal'|'Evaluation'|'Voting'|'Committed'`; `:184-190` `isPositiveOutcome`
+  reads `outcomePositive` off the wire. **No `'Failed'`/`'NoVotes'`/`'Passed'`
+  literal anywhere in this file or `quorum.ts`** — the load-bearing evidence
+  that this SDK has no resolution-label concept and therefore cannot and need
+  not implement RFC-MACP-0012 §4.1's NoVotes-vs-Failed distinction.
+- `src/projections/decision.ts:200-218, 221-229, 232-239` — advisory unpolicied
+  helpers (`majorityWinner`, `voteRatio`, `hasBlockingObjection`) with hardcoded
+  rules; never receive a `PolicyDescriptor`. Explicitly out of scope.
+- `src/projections/quorum.ts:186-190, 207-209, 211-216` — `hasQuorum` /
+  `commitmentReady` / `isThresholdUnreachable`; the `requiredApprovals === 0`
+  fail-open, shared byte-for-byte with Python. Plan Q3.
+- `src/proto-registry.ts:100-110` — `toObject({ defaults: false })` plus
+  deliberate materialization of proto3 bool defaults. This is why
+  `outcome_positive: false` decodes as `false` and the new negative-outcome
+  fixtures replay correctly.
+
+### Tests and docs the phases must touch
+
+- `tests/unit/policy.test.ts:23` (`schemaVersion toBe(2)`), `:155` and
+  `:178-181` (`value: 0` pinned as "RFC default" / "boundaries"), `:210-217`
+  (the `weighted` round-trip test that must go).
+- `tests/integration/runtime.test.ts:1048-1051` — the only live
+  `registerPolicy` call, via `buildDecisionPolicy`. Docker-gated, not in CI.
+- `docs/api/policy.md:13, 20-24` (schema version prose), `:69, 74-75` (quorum
+  threshold type/default), `:29-51` (`DecisionPolicyRulesInput`).
+- `src/constants.ts:23, 28, 34, 36, 37` — `INVALID_ENVELOPE`, `FORBIDDEN`,
+  `POLICY_DENIED`, `UNKNOWN_POLICY_VERSION`, `INVALID_POLICY_DEFINITION` all
+  already present. Verified no-op.
+
+### Canonical sources of truth (spec repo @ `0de1fab`)
+
+- `schemas/json/policy/quorum-rules.schema.json` — `threshold.type` enum is the
+  closed pair; `value` is `integer` with `exclusiveMinimum: 0` **unconditional**,
+  `maximum: 100` only under `type: 'percentage'`; the `weighted` reservation is
+  spelled out in the object's own `description`.
+- `schemas/json/policy/decision-rules.schema.json` — `voting.threshold`
+  `exclusiveMinimum: 0` / `maximum: 1`; top-level `allOf` arms requiring
+  `weights` for `weighted` and `threshold > 0.5` for `supermajority` (whose
+  `$comment` names the default-0.5 bug, spec issue #101); `voting.weights`
+  `minProperties: 1` + `additionalProperties.exclusiveMinimum: 0`, declared
+  unconditional at every algorithm and normative at every schema version;
+  `voting.quorum.value` `minimum: 0` **inclusive on purpose, MUST NOT be
+  tightened** (the opposite rule to quorum-mode `threshold.value` — do not
+  conflate); `commitment.designated_roles` carries **no inline `minItems`** at
+  `:142-148`, but the root-level `allOf` arm at `:260-292` requires the key with
+  `minItems: 1` whenever `commitment.authority == "designated_role"` — ported into
+  all four other rule schemas by spec PR #121 (`quorum:105`, `proposal:84`,
+  `task:63`, `handoff:51`). Plan Phase 4.
+- `schemas/json/macp-policy-descriptor.schema.json` — `required` includes
+  `description`; `schema_version` enum `[1, 2, 3]`.
+- `schemas/conformance/` — 33 fixtures + `schema.json` + `cmt-hash/`.
+
+### Runtime (`../macp-runtime` @ `5e95c4a`) — admission-time enforcement
+
+- `crates/macp-policy/src/evaluator.rs:24` `SUPPORTED_SCHEMA_VERSIONS = &[1,2,3]`,
+  checked `:27-32`. **Settles the Phase 5 precondition: v3 is accepted today.**
+- `evaluator.rs:442-456` — the `schema_version >= 3` empty-tally branch. This is
+  the code issue #85 items 3-4 are actually about; it lives here, not in this SDK.
+- `registry.rs:48` `QUORUM_THRESHOLD_TYPES = ["n_of_m","percentage","count"]`
+  (enforced `:658-663`) — no `weighted`; `:41-47` records that the refusal is now
+  agreement with the spec rather than a departure.
+- `registry.rs:443-447` weighted-requires-weights, `:459-466` supplied-empty
+  weights, `:468-473` supermajority `> 0.5`, `:479-483` majority `>= 0.5`
+  (`:474-478` explains the deliberate inclusive/exclusive asymmetry),
+  `:585-590` threshold range, `:592-604` non-positive/NaN weights,
+  `:664-676` quorum value integrality + percentage ceiling inside
+  `validate_quorum_threshold` (`:654-678`) — **no lower bound there**, because the
+  `f64` field defaults to `0.0` and a parsed-struct test could not tell a supplied
+  `0` from an omitted `threshold`. The `exclusiveMinimum: 0` floor is enforced one
+  function over, on the raw JSON, at `:513-524` (`INVALID_POLICY_DEFINITION:
+  threshold.value 0 is out of range: must be greater than 0 (RFC-MACP-0011 §5
+  rule 2)`). **`buildQuorumPolicy(id, desc, {})` is therefore REFUSED today**, not
+  silently accepted — it always emits the `value` key.
+- `registry.rs:528-537` — all modes: `commitment.authority 'designated_role'`
+  requires non-empty `commitment.designated_roles`. Plan Phase 4.
+
+### Python reference (`../macp-sdk-python` @ `1c5bc26`, committed 2026-09-19)
+
+`feat(policy): support schema_version 3, enforce schema tightenings client-side`
+— the same work, already landed. Line numbers below were re-verified against the
+file on 2026-09-19; the quorum-side set was previously off by ~30 lines.
+`src/macp_sdk/policy.py:105-107` (`_DECISION_ALGORITHMS`), `:104`
+(`_DECISION_SCHEMA_VERSIONS`), `:118` (`schema_version: int = 2` kwarg) +
+`:135-139` (validated), `:148-180` (the six decision checks: enum `:148-151`,
+`0 < threshold <= 1` `:152-153`, majority `:154-157`, supermajority `:158-163`,
+weighted-requires-weights `:164-165`, weights electorate `:171-180` with its
+rationale comment `:166-170`), `:233-251` (`QuorumThreshold` docstring, the
+reservation and the zero-bar rationale), `:254` (`value: int = 1`), `:278-286`
+(the comment fixing the quorum validation ORDER), `:287-310` (the four quorum
+checks: integer `:287-294`, `> 0` `:295-300`, percentage ceiling `:301-304`, type
+enum `:305-310`), `:55-60` (`_commitment_dict`'s `designated_role` check, the
+Phase 4 reference, rationale comment `:49-54`).
+`src/macp_sdk/quorum.py:140-148` — `has_quorum`, same fail-open as TS.
+
+## PR strategy
+
+Phase 1 ships as its own PR: it is the red CI gate, touches zero `src/` files,
+and has no dependency on Phases 2-6. Phases 2-5 are sequential, interdependent
+edits to the same three files (`src/policy.ts`, `tests/unit/policy.test.ts`,
+`docs/api/policy.md`) with line citations that shift phase to phase, and Phase
+6 (docs/CHANGELOG/closeout) only makes sense once they've landed — so Phases
+2-6 accumulate into one closing PR, same precedent as the RFC-MACP-0013
+commitment-hash feature above ("Accumulated as planned — shipped together...
+in the closing PR"). Decided 2026-09-19 per the Autonomy ladder
+(consequential-but-decidable, not critical).
+
+## Phase status
+
+Six phases. Phases 2, 3, 4 and 5 all edit `src/policy.ts`,
+`tests/unit/policy.test.ts` and `docs/api/policy.md`, and each one's absolute line
+citations assume the earlier ones have landed — **implement in order, never in
+parallel worktrees**.
+
+### Phase 1 — sync the fixture corpus and verify the replay — **Status: DONE**
+
+- Branch: `policy-v3-phase1-fixtures` (off `main` @ `f8b97e3`). Ships as its own PR (see PR strategy above).
+- Verifier: Opus, 1 round. PASS — all 6 acceptance criteria independently re-executed (not trusted from the executor's run), including a from-scratch re-derivation of the 75→139 conformance test-count delta via `git ls-tree HEAD` fixture counts, which matched exactly (119 passed | 20 skipped, +64/+53/+11).
+- Files touched: `tests/conformance/*.json` (14 added, 7 modified, 0 deleted — exact list in the plan's Phase 1 "Files" section), `tests/vectors/cmt-hash/` untouched (confirmed byte-identical), zero `src/` files.
+- Full local gate green: `check`, `lint`, `format:check`, `test:coverage` (936 passed | 20 skipped; statements 94.69/branches 86.20/functions 93.36/lines 96.04, all above the `vitest.config.ts` floors), `build`.
+- `npm ci` required setting `//npm.pkg.github.com/:_authToken` from `gh auth token` (GitHub Packages auth was unset in this environment, as the plan's Edge Cases section anticipated) — a one-time local environment fix, not a code decision; no `ASSUMPTIONS.md` entry.
+- Verifier's non-blocking notes (informational, matches plan's own Open Questions / Edge Cases, nothing to fix): (1) `decision_zero_participants`/`decision_zero_proposal_commitment` assert almost nothing on the replay path by design (plan's own Edge Cases); (2) 12 of 14 new fixtures carry unread `expected_mode_state.proposals` (plan's Q2, pre-existing, not this phase's to fix); (3) coverage floors are ~0.7-1.4pp stale vs. measured-minus-2pp but still satisfied with margin — no test code landed this phase (64 new `it()`s are fixture-driven registrations over already-covered paths), so left alone per convention.
+- What's next: hand Phase 1 to `/ship` as its own PR, then start Phase 2 on a fresh branch off `main` once merged.
+
+### Phase 2 — quorum builder: drop `weighted`, enforce the approval-bar floor — **Status: NOT STARTED**
+### Phase 3 — decision builder: tightened voting constraints — **Status: NOT STARTED**
+### Phase 4 — shared commitment validation: `designated_role` requires non-empty `designated_roles`, all five builders — **Status: NOT STARTED**
+### Phase 5 — `schemaVersion` override parameter (default held at `2`, see Q1) — **Status: NOT STARTED**
+### Phase 6 — docs, CHANGELOG, cross-repo issue, closeout — **Status: NOT STARTED**
+
+## Notes carried into implementation
+
+- **`node_modules/` is absent from this checkout.** Every fixture finding in the
+  plan is static (direct `diff`, JSON field enumeration, reading the harness and
+  projection source); `make verify-fixtures` is pure shell and *was* run (21
+  `DRIFT:`, 0 `EXTRA:`). The executor must `npm ci` — which needs the GitHub
+  Packages PAT for `@multiagentcoordinationprotocol/proto` — and must actually
+  run the suite rather than inheriting these conclusions.
+- Drift counts differ from both issues' text (#85 says 15, #86 says 2, actual is
+  21) because the issues were written at earlier spec commits and their sets
+  overlap. Breakdown: 14 missing entirely, 2 real content changes
+  (`decision_reject_paths.json`, `schema.json`), 5 `_comment`-only.
+- `tests/vectors/cmt-hash/` has **zero** drift in `aedfcad..0de1fab` (no commits
+  touch that directory). `sync-fixtures`'s second loop is a byte-identical no-op;
+  `git status` must show nothing there after Phase 1.
+- No fixture in the corpus carries a duplicate accepted `Vote`/ballot, so
+  `duplicateAcceptedBallots()` and the zero-anomaly/zero-`warn` assertions hold
+  across the 14 new files without change.
+- Fable's recommendation to flip the `schemaVersion` default to `3` predates the
+  discovery of Python's contrary shipped default. Plan Q1 routes it; Phase 5
+  ships the parameter only.
+- Phase 1's test-count criterion is a concrete number, derived from the fixture
+  JSON and the harness's four `describe` blocks: `npx vitest run tests/conformance/`
+  moves from **75 (66 passed | 9 skipped)** to **139 (119 passed | 20 skipped)** —
+  19 → 33 fixtures, 9 → 20 of them carrying rejects, 3 `it()` per fixture plus 2
+  more (1 passed + 1 `it.skip`) per fixture with rejects.
+pushed policy-v3-phase1-fixtures 90a38bc 2026-09-19T20:13:17Z
+PR #88 opened: https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/pull/88
