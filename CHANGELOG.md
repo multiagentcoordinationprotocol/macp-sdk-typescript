@@ -59,6 +59,26 @@ project uses [Semantic Versioning](https://semver.org/).
   `schema_version: int = 2` default. An out-of-range value throws
   `MacpSessionError`.
 
+### Bug Fixes
+
+* **policy:** `buildQuorumPolicy`, `buildProposalPolicy`, `buildTaskPolicy`,
+  and `buildHandoffPolicy` no longer emit `require_vote_quorum` into their
+  `commitment` block. Only `decision-rules.schema.json`'s commitment object
+  declares that key; the other four canonical rule schemas close with
+  `additionalProperties: false` and do not, so the previous output was
+  spec-nonconformant with no CI signal (today's runtime does not enforce
+  `additionalProperties`, but a stricter or future validator would reject
+  it). Passing `commitment.requireVoteQuorum` to these four builders is now
+  silently dropped, matching its existing "ignored for other modes"
+  documentation, rather than leaking an unrecognized key onto the wire.
+  `buildDecisionPolicy` is unaffected.
+* **projections:** all six `applyEnvelope` entry points now roll back
+  `transcript` and the `message_id` redelivery-dedup set on a failed payload
+  decode, instead of leaving a partial application in place. Previously, a
+  failed decode still marked the envelope's `message_id` "seen," so a
+  legitimate retry with a corrected payload was silently absorbed as a
+  redelivery and the envelope's effect was lost forever.
+
 ## [0.10.0](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/compare/v0.9.0...v0.10.0) (2026-09-01)
 
 

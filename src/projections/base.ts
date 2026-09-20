@@ -225,6 +225,7 @@ export abstract class BaseProjection {
     // must apply WITHOUT dedup, or a feed of empty-id envelopes collapses to
     // one. This is architecturally expected (RFC-MACP-0001:306 at-least-once
     // delivery), not an anomaly — hence `debug`, never `warn`.
+    let seenIdAdded = false;
     if (envelope.messageId) {
       if (this.seenMessageIds.has(envelope.messageId)) {
         logger.debug('projection redelivery ignored', {
@@ -235,21 +236,37 @@ export abstract class BaseProjection {
         return;
       }
       this.seenMessageIds.add(envelope.messageId);
+      seenIdAdded = true;
     }
 
     this.transcript.push(envelope);
 
-    if (envelope.messageType === 'Commitment') {
-      this.commitment = protoRegistry.decodeKnownPayload(
-        envelope.mode,
-        envelope.messageType,
-        envelope.payload,
-      ) as Record<string, unknown>;
-      this.phase = 'Committed';
-      return;
-    }
+    // Rollback invariant (parity with macp-sdk-python's base_projection.py
+    // apply_envelope): the only fallible operation below is the payload
+    // decode. If it throws, `transcript`/`seenMessageIds` must not retain a
+    // partial application of this envelope, or a legitimate retry of the
+    // same `message_id` is silently swallowed as a redelivery and the
+    // envelope's effect is lost forever. Deliberately narrow -- this rolls
+    // back only the two mutations made above, never mode/subclass-owned
+    // state, which is safe only because every projection performs its one
+    // fallible operation (decode) strictly before any state mutation.
+    try {
+      if (envelope.messageType === 'Commitment') {
+        this.commitment = protoRegistry.decodeKnownPayload(
+          envelope.mode,
+          envelope.messageType,
+          envelope.payload,
+        ) as Record<string, unknown>;
+        this.phase = 'Committed';
+        return;
+      }
 
-    this.applyMode(envelope, protoRegistry);
+      this.applyMode(envelope, protoRegistry);
+    } catch (err) {
+      this.transcript.pop();
+      if (seenIdAdded) this.seenMessageIds.delete(envelope.messageId);
+      throw err;
+    }
   }
 
   /** Handle a mode-specific (non-Commitment) envelope. */

@@ -335,10 +335,14 @@ describe('policy builders', () => {
         counts_toward_quorum: false,
         interpretation: 'neutral',
       });
+      // require_vote_quorum is a Decision-only key (decision-rules.schema.json
+      // is the only commitment object that declares it) -- must NOT appear
+      // here, or a stricter validator than today's runtime would reject it
+      // (issue #87 item 1; quorum-rules.schema.json's commitment object is
+      // `additionalProperties: false` with only authority/designated_roles).
       expect(rules.commitment).toEqual({
         authority: 'initiator_only',
         designated_roles: [],
-        require_vote_quorum: false,
       });
     });
 
@@ -426,20 +430,18 @@ describe('policy builders', () => {
       expect(rules.commitment).toEqual({
         authority: 'designated_role',
         designated_roles: ['lead'],
-        require_vote_quorum: false,
       });
     });
 
-    it('stays schema_version 1 and drops the Decision-only allow_decline_over_approval field', () => {
+    it('stays schema_version 1 and drops the Decision-only require_vote_quorum/allow_decline_over_approval fields', () => {
       const descriptor = buildQuorumPolicy('q1', 'desc', {
-        commitment: { allowDeclineOverApproval: true },
+        commitment: { requireVoteQuorum: true, allowDeclineOverApproval: true },
       });
       expect(descriptor.schemaVersion).toBe(1);
       const rules = parseRules(descriptor);
       expect(rules.commitment).toEqual({
         authority: 'initiator_only',
         designated_roles: [],
-        require_vote_quorum: false,
       });
     });
   });
@@ -458,7 +460,6 @@ describe('policy builders', () => {
       expect(rules.commitment).toEqual({
         authority: 'initiator_only',
         designated_roles: [],
-        require_vote_quorum: false,
       });
     });
 
@@ -496,7 +497,6 @@ describe('policy builders', () => {
       expect(rules.commitment).toEqual({
         authority: 'initiator_only',
         designated_roles: [],
-        require_vote_quorum: false,
       });
     });
 
@@ -524,7 +524,6 @@ describe('policy builders', () => {
       expect(rules.commitment).toEqual({
         authority: 'initiator_only',
         designated_roles: [],
-        require_vote_quorum: false,
       });
     });
 
@@ -546,7 +545,6 @@ describe('policy builders', () => {
       expect(rules.commitment).toEqual({
         authority: 'any_participant',
         designated_roles: [],
-        require_vote_quorum: false,
       });
     });
   });

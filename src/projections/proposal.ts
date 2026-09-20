@@ -86,6 +86,7 @@ export class ProposalProjection {
    */
   applyEnvelope(envelope: Envelope, protoRegistry: ProtoRegistry): void {
     if (envelope.mode !== MODE_PROPOSAL) return;
+    let seenIdAdded = false;
     if (envelope.messageId) {
       if (this.seenMessageIds.has(envelope.messageId)) {
         logger.debug('projection redelivery ignored', {
@@ -96,77 +97,87 @@ export class ProposalProjection {
         return;
       }
       this.seenMessageIds.add(envelope.messageId);
+      seenIdAdded = true;
     }
     this.transcript.push(envelope);
-    const payload = protoRegistry.decodeKnownPayload(envelope.mode, envelope.messageType, envelope.payload);
-    switch (envelope.messageType) {
-      case 'Proposal': {
-        const record = payload as { proposalId: string; title: string; summary?: string; tags?: string[] };
-        this.proposals.set(record.proposalId, {
-          proposalId: record.proposalId,
-          title: record.title,
-          summary: record.summary,
-          tags: record.tags,
-          sender: envelope.sender,
-          status: 'open',
-        });
-        break;
-      }
-      case 'CounterProposal': {
-        const record = payload as {
-          proposalId: string;
-          supersedesProposalId: string;
-          title: string;
-          summary?: string;
-        };
-        this.proposals.set(record.proposalId, {
-          proposalId: record.proposalId,
-          title: record.title,
-          summary: record.summary,
-          sender: envelope.sender,
-          supersedes: record.supersedesProposalId,
-          status: 'open',
-        });
-        break;
-      }
-      case 'Accept': {
-        const record = payload as { proposalId: string; reason?: string };
-        const accept: ProposalAcceptRecord = { ...record, sender: envelope.sender };
-        this.accepts.push(accept);
-        // RFC-MACP-0008 §5 rule 5 (`:70`): this Accept supersedes any earlier
-        // one from the same sender for the live acceptance set.
-        this.latestAcceptBySender.set(envelope.sender, accept);
-        break;
-      }
-      case 'Reject': {
-        const record = payload as { proposalId: string; terminal?: boolean; reason?: string };
-        const terminal = record.terminal ?? false;
-        this.rejections.push({
-          proposalId: record.proposalId,
-          terminal,
-          reason: record.reason,
-          sender: envelope.sender,
-        });
-        if (terminal) {
-          const proposal = this.proposals.get(record.proposalId);
-          if (proposal) proposal.status = 'rejected';
-          this.phase = 'TerminalRejected';
+    // Rollback invariant -- see BaseProjection.applyEnvelope (src/projections/base.ts)
+    // for the full rationale; duplicated here only as a one-line pointer so six
+    // independent copies of the same prose cannot drift.
+    try {
+      const payload = protoRegistry.decodeKnownPayload(envelope.mode, envelope.messageType, envelope.payload);
+      switch (envelope.messageType) {
+        case 'Proposal': {
+          const record = payload as { proposalId: string; title: string; summary?: string; tags?: string[] };
+          this.proposals.set(record.proposalId, {
+            proposalId: record.proposalId,
+            title: record.title,
+            summary: record.summary,
+            tags: record.tags,
+            sender: envelope.sender,
+            status: 'open',
+          });
+          break;
         }
-        break;
+        case 'CounterProposal': {
+          const record = payload as {
+            proposalId: string;
+            supersedesProposalId: string;
+            title: string;
+            summary?: string;
+          };
+          this.proposals.set(record.proposalId, {
+            proposalId: record.proposalId,
+            title: record.title,
+            summary: record.summary,
+            sender: envelope.sender,
+            supersedes: record.supersedesProposalId,
+            status: 'open',
+          });
+          break;
+        }
+        case 'Accept': {
+          const record = payload as { proposalId: string; reason?: string };
+          const accept: ProposalAcceptRecord = { ...record, sender: envelope.sender };
+          this.accepts.push(accept);
+          // RFC-MACP-0008 §5 rule 5 (`:70`): this Accept supersedes any earlier
+          // one from the same sender for the live acceptance set.
+          this.latestAcceptBySender.set(envelope.sender, accept);
+          break;
+        }
+        case 'Reject': {
+          const record = payload as { proposalId: string; terminal?: boolean; reason?: string };
+          const terminal = record.terminal ?? false;
+          this.rejections.push({
+            proposalId: record.proposalId,
+            terminal,
+            reason: record.reason,
+            sender: envelope.sender,
+          });
+          if (terminal) {
+            const proposal = this.proposals.get(record.proposalId);
+            if (proposal) proposal.status = 'rejected';
+            this.phase = 'TerminalRejected';
+          }
+          break;
+        }
+        case 'Withdraw': {
+          const record = payload as { proposalId: string };
+          const proposal = this.proposals.get(record.proposalId);
+          if (proposal) proposal.status = 'withdrawn';
+          break;
+        }
+        case 'Commitment': {
+          this.commitment = payload;
+          this.phase = 'Committed';
+          break;
+        }
+        default:
+          break;
       }
-      case 'Withdraw': {
-        const record = payload as { proposalId: string };
-        const proposal = this.proposals.get(record.proposalId);
-        if (proposal) proposal.status = 'withdrawn';
-        break;
-      }
-      case 'Commitment': {
-        this.commitment = payload;
-        this.phase = 'Committed';
-        break;
-      }
-      default:
-        break;
+    } catch (err) {
+      this.transcript.pop();
+      if (seenIdAdded) this.seenMessageIds.delete(envelope.messageId);
+      throw err;
     }
   }
 

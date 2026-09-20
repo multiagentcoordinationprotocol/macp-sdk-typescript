@@ -158,6 +158,40 @@ those envelopes at the call site. `transcript` is deliberately not that list,
 before or after this change; it is the runtime's accepted, deduplicated
 history.
 
+## Rollback on failed decode
+
+`applyEnvelope` adds the envelope's `message_id` to the dedup set described
+above and appends it to `transcript` **before** decoding the payload — decode
+is the method's only fallible step. If decode throws (a malformed payload —
+in practice this should only happen against a non-conforming source, since a
+conforming runtime never emits one), both of those mutations are rolled back
+and the error is re-thrown, so the envelope is left exactly as if
+`applyEnvelope` had never been called for it.
+
+This matters because of how the redelivery dedup guard works: without the
+rollback, a failed decode would still leave the `message_id` marked "seen,"
+so a legitimate retry of that same envelope — even with a corrected payload
+— would be silently absorbed as a redelivery (see
+[Redelivery](#redelivery-message_id-dedup) above) and its effect would be
+lost permanently, while `transcript` claimed a partial, never-decoded entry
+was present.
+
+**Deliberately narrow scope.** Only `transcript` and the `message_id` dedup
+set are guaranteed rolled back. Mode/subclass-owned state (`phase`, `votes`,
+`tasks`, and any state a custom `BaseProjection` subclass's own `applyMode`
+mutates) is **not** rolled back. This is safe only because every projection
+performs its one fallible operation (the decode) strictly before any state
+mutation, and constructing a record from an already-decoded payload cannot
+itself throw — so in practice nothing is ever left half-mutated. A
+`BaseProjection` subclass whose own `applyMode` mutates state and *then*
+throws is the one case where this boundary is visible: that mutation is not
+undone, only `transcript`/the dedup set are. Tests:
+`tests/unit/projections/rollback-invariant.test.ts` (all six entry points,
+including that narrow-scope boundary pinned explicitly).
+
+Parity note: mirrors `macp-sdk-python`'s `base_projection.py`
+`apply_envelope`, which has always rolled back the same way.
+
 ## Anomalies
 
 `ProjectionAnomalyKind` and `ProjectionAnomaly` — exported from the package

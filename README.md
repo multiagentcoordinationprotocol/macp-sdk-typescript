@@ -416,7 +416,7 @@ npm run test:integration   # Integration tests (requires Docker runtime; not run
 ```
 
 CI (GitHub Actions) runs type-check, lint, format check, the coverage-gated
-test suite, and the build on Node 20, 22, and 24 for every push and pull
+test suite, and the build on Node 22 and 24 for every push and pull
 request, and posts a coverage summary comment on PRs.
 
 ### Integration Tests

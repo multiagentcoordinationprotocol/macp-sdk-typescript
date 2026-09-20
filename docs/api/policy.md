@@ -188,8 +188,8 @@ The exported input type is named `CommitmentRules`:
 interface CommitmentRules {
   authority?: 'initiator_only' | 'any_participant' | 'designated_role';  // default: 'initiator_only'
   designatedRoles?: string[];         // default: []; REQUIRED non-empty when authority is 'designated_role'
-  requireVoteQuorum?: boolean;        // default: false; decision-specific, but always serialized
-  allowDeclineOverApproval?: boolean; // emitted only by buildDecisionPolicy (schema v2)
+  requireVoteQuorum?: boolean;        // default: false; emitted only by buildDecisionPolicy, dropped elsewhere
+  allowDeclineOverApproval?: boolean; // default: false; emitted only by buildDecisionPolicy (schema v2), dropped elsewhere
 }
 ```
 
