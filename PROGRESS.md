@@ -1329,5 +1329,33 @@ with room to spare.
 `npm run check`, `npm run lint`, `npm run format:check` clean;
 `npm run test:coverage` — 1019 passed | 20 skipped (40 files), coverage
 94.91/86.73/93.36/96.21 vs. floors 94/84/91/92 (all four clear);
-`npm run build` clean; `make verify-fixtures` clean. Not yet shipped —
-awaiting explicit instruction to commit/push per CLAUDE.md.
+`npm run build` clean; `make verify-fixtures` clean.
+
+User authorized shipping all three together. Origin had moved one commit
+ahead (`fd85679`, a `@multiagentcoordinationprotocol/proto` bump to
+0.1.10) since local `main` — branched `fix/rollback-and-policy-schema-
+conformance` off `origin/main` directly (via stash/pop, not a destructive
+reset) rather than off the stale local pointer. Re-ran the full gate
+post-rebase to confirm the proto bump didn't change anything: still green.
+
+Four focused commits: `2a1c7dc` (projections rollback), `a179913` (policy
+require_vote_quorum fix), `d319961` (CI Node matrix + branch protection),
+`9f59cfb` (CHANGELOG/PROGRESS).
+
+pushed `fix/rollback-and-policy-schema-conformance` `9f59cfb`
+PR #92 opened: https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/pull/92
+CI green: `build-and-test (22)`, `build-and-test (24)`, `integration`,
+`verify-fixtures` all `pass` (exactly the 4 required checks after the
+branch-protection update above); `call / auto-merge` correctly `skipping`.
+merged #92: squash-merged into `main` as `a8e7064`. Local branch deleted
+by `gh pr merge --delete-branch`; `main` fast-forwarded, working tree clean.
+No deploy to watch (npm publish is release-triggered, not merge-triggered).
+
+Issues #84 and #87 both auto-closed via the PR body's closing keywords.
+Added an explicit per-item closing comment on #87 (it covered 3 items —
+2 already resolved by #89, item 1 resolved here) documenting what was
+fixed and explicitly noting the broader "reject unknown caller keys"
+defensive-validation idea was considered and deliberately left as an
+optional follow-up, not silently assumed into scope. Filed
+`macp-sdk-python#67` for that repo's identical `require_vote_quorum` bug
+(cross-repo, not fixed here).
