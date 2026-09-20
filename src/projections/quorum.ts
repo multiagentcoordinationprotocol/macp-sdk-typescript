@@ -64,6 +64,7 @@ export class QuorumProjection {
    */
   applyEnvelope(envelope: Envelope, protoRegistry: ProtoRegistry): void {
     if (envelope.mode !== MODE_QUORUM) return;
+    let seenIdAdded = false;
     if (envelope.messageId) {
       if (this.seenMessageIds.has(envelope.messageId)) {
         logger.debug('projection redelivery ignored', {
@@ -74,43 +75,53 @@ export class QuorumProjection {
         return;
       }
       this.seenMessageIds.add(envelope.messageId);
+      seenIdAdded = true;
     }
     this.transcript.push(envelope);
-    const payload = protoRegistry.decodeKnownPayload(envelope.mode, envelope.messageType, envelope.payload);
-    switch (envelope.messageType) {
-      case 'ApprovalRequest': {
-        const record = payload as {
-          requestId: string;
-          action: string;
-          summary: string;
-          requiredApprovals: number;
-        };
-        this.requests.set(record.requestId, { ...record, sender: envelope.sender });
-        this.phase = 'Voting';
-        break;
+    // Rollback invariant -- see BaseProjection.applyEnvelope (src/projections/base.ts)
+    // for the full rationale; duplicated here only as a one-line pointer so six
+    // independent copies of the same prose cannot drift.
+    try {
+      const payload = protoRegistry.decodeKnownPayload(envelope.mode, envelope.messageType, envelope.payload);
+      switch (envelope.messageType) {
+        case 'ApprovalRequest': {
+          const record = payload as {
+            requestId: string;
+            action: string;
+            summary: string;
+            requiredApprovals: number;
+          };
+          this.requests.set(record.requestId, { ...record, sender: envelope.sender });
+          this.phase = 'Voting';
+          break;
+        }
+        case 'Approve': {
+          const record = payload as { requestId: string; reason?: string };
+          this.setBallot(envelope, record.requestId, 'approve', record.reason);
+          break;
+        }
+        case 'Reject': {
+          const record = payload as { requestId: string; reason?: string };
+          this.setBallot(envelope, record.requestId, 'reject', record.reason);
+          break;
+        }
+        case 'Abstain': {
+          const record = payload as { requestId: string; reason?: string };
+          this.setBallot(envelope, record.requestId, 'abstain', record.reason);
+          break;
+        }
+        case 'Commitment': {
+          this.commitment = payload;
+          this.phase = 'Committed';
+          break;
+        }
+        default:
+          break;
       }
-      case 'Approve': {
-        const record = payload as { requestId: string; reason?: string };
-        this.setBallot(envelope, record.requestId, 'approve', record.reason);
-        break;
-      }
-      case 'Reject': {
-        const record = payload as { requestId: string; reason?: string };
-        this.setBallot(envelope, record.requestId, 'reject', record.reason);
-        break;
-      }
-      case 'Abstain': {
-        const record = payload as { requestId: string; reason?: string };
-        this.setBallot(envelope, record.requestId, 'abstain', record.reason);
-        break;
-      }
-      case 'Commitment': {
-        this.commitment = payload;
-        this.phase = 'Committed';
-        break;
-      }
-      default:
-        break;
+    } catch (err) {
+      this.transcript.pop();
+      if (seenIdAdded) this.seenMessageIds.delete(envelope.messageId);
+      throw err;
     }
   }
 
