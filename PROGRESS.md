@@ -1239,3 +1239,95 @@ not merge-triggered, per CLAUDE.md's Publish workflow).
 
 Branch for Phases 2-6 (accumulate into one closing PR, see "PR strategy" above):
 `policy-v3-phases-2-6`, off `main` @ `76b97a9`.
+
+## Post-plan cleanup: issue triage (2026-09-20)
+
+After the policy-v3 plan merged (`afb5943`), reviewed remaining open work in
+`plans/` and GitHub issues. Found: issue #87 (spec `additionalProperties:
+false` heads-up — items 2/3 already resolved by the merged plan, item 1 not
+yet addressed), issue #84 (vitest 5 / Node 20 CI mismatch), and
+`plans/sdk-parity-typescript.md` Phase 1 (a live, unfixed P0 data-loss bug
+from an earlier cross-SDK audit — `applyEnvelope` never rolled back on a
+failed decode). User selected all three to work on. Not yet committed —
+CLAUDE.md requires explicit instruction before commit/push; changes are
+local-only pending that go-ahead.
+
+**`plans/sdk-parity-typescript.md` Phase 1 — DONE** (2026-09-20). See that
+plan file's own Status line for full detail. Summary: all six `applyEnvelope`
+sites (`src/projections/{base,decision,proposal,task,handoff,quorum}.ts`) now
+roll back `transcript`/the `message_id` dedup set on a failed payload decode
+and re-throw, instead of leaving a partial application in place (previously,
+a failed decode still marked the id "seen," silently swallowing a legitimate
+retry). New file `tests/unit/projections/rollback-invariant.test.ts` (30
+tests). Non-vacuity proven via `git stash` (20/30 failed pre-fix). Docs:
+`docs/api/projections.md` ("Rollback on failed decode"), `CLAUDE.md`
+(projections paragraph + test-list entry). Fresh-Opus verifier: **PASS**, no
+gaps, round 1 — independently re-ran the stash proof and confirmed no
+concurrency risk.
+
+**Issue #87 item 1 — real bug found and fixed** (2026-09-20, not a generic
+defensive-validation pass). Investigating the `additionalProperties: false`
+tightening, cross-checked every builder's emitted JSON against the five
+canonical `*-rules.schema.json` files directly and found `serializeCommitment()`
+(`src/policy.ts`) unconditionally emitted `require_vote_quorum` into
+`commitment` for **every** mode, but only `decision-rules.schema.json`'s
+commitment object declares that key — `quorum`/`proposal`/`task`/`handoff`-
+rules.schema.json all close `commitment` with only `authority`/
+`designated_roles`. So `buildQuorumPolicy`/`buildProposalPolicy`/
+`buildTaskPolicy`/`buildHandoffPolicy` were producing spec-nonconformant JSON
+— invisible today only because `macp-runtime`'s `registry.rs` doesn't enforce
+`additionalProperties` (confirmed by grep — no such check exists there).
+**Confirmed the same bug exists in `macp-sdk-python`'s `_commitment_dict`**
+(both SDKs did this for mutual byte-parity, not against the spec) — filed
+[macp-sdk-python#67](https://github.com/multiagentcoordinationprotocol/macp-sdk-python/issues/67)
+for that side; not fixed here (cross-repo write, out of scope). Fix:
+`serializeCommitment()` now returns only `{authority, designated_roles}`;
+`buildDecisionPolicy` adds `require_vote_quorum`/`allow_decline_over_approval`
+itself afterward (mirroring how `allow_decline_over_approval` was already
+handled correctly — only `require_vote_quorum` had the bug). Fixed 7
+pre-existing tests in `tests/unit/policy.test.ts` that had encoded the buggy
+behavior (`.toEqual()` on the whole commitment object is what caught this —
+confirmed non-coincidental via the same stash technique: reverting the fix
+fails exactly those 7). Docs: `docs/api/policy.md` (`CommitmentRules` block),
+`CHANGELOG.md` (new Bug Fixes entry). Fresh-Opus verifier: **PASS**, no gaps
+— independently re-read all five canonical schemas, confirmed no sibling
+instance of the same bug class elsewhere in the file, and independently
+reproduced the stash-based non-vacuity proof.
+
+**Broader defensive validation (rejecting any unrecognized key the caller
+passes into a rules sub-object) was considered and deliberately NOT
+implemented** — the concrete bug above is what issue #87 item 1's risk
+actually manifested as in this SDK; a general "assert no unknown keys in
+caller input" layer across all ~12 rule-input interfaces is a separate,
+larger feature with real design tradeoffs (throw vs. silently drop, whether
+it is itself a breaking change for callers currently passing extra keys)
+that was not requested and is left as an explicit follow-up decision, not
+silently scoped in.
+
+**Issue #84 — CI/Node matrix fixed, branch protection updated** (2026-09-20).
+`.github/workflows/ci.yml`: dropped Node 20 from the `build-and-test` matrix
+(now `[22, 24]`), matching vitest 5's actual `engines` requirement
+(`^22.12.0 || ^24.0.0 || >=26.0.0`, bumped in #82). `package.json`'s own
+`engines: >=20` is unchanged — vitest is dev-only, consumers never install
+it; this is option 1 from the issue (the issue's own recommended option).
+Docs: `CLAUDE.md` (toolchain line's stale `^4.1.11` corrected to `^5.0.0`;
+CI paragraph updated), `README.md`. **Also updated `main`'s branch
+protection** (`gh api PATCH .../required_status_checks`) to drop
+`build-and-test (20)` from the required-checks list — without this, every
+future PR would have been permanently stuck waiting on a check that can no
+longer post. Confirmed via `AskUserQuestion` before making this change (an
+admin-level, shared-state edit) — user chose "update it now." Verified via
+`gh api .../required_status_checks -q .contexts` post-change: now exactly
+`["build-and-test (22)", "build-and-test (24)", "integration",
+"verify-fixtures"]`. Coverage-floor recalibration note in #84 explicitly
+deferred by the issue itself ("deliberately not folded into this issue") —
+left alone; floors were already recalibrated in Phase 6 of the policy-v3
+plan and current measured coverage (96.21/86.73/93.36/94.91) clears them
+with room to spare.
+
+**Full local gate green after all three fixes** (run together, cumulative):
+`npm run check`, `npm run lint`, `npm run format:check` clean;
+`npm run test:coverage` — 1019 passed | 20 skipped (40 files), coverage
+94.91/86.73/93.36/96.21 vs. floors 94/84/91/92 (all four clear);
+`npm run build` clean; `make verify-fixtures` clean. Not yet shipped —
+awaiting explicit instruction to commit/push per CLAUDE.md.
