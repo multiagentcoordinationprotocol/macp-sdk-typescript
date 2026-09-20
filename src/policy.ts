@@ -14,7 +14,15 @@ export interface CommitmentRules {
    * other two authorities.
    */
   designatedRoles?: string[];
-  /** Decision-specific: require quorum before commit. Ignored for other modes. */
+  /**
+   * Decision-specific: require quorum before commit. Emitted only by
+   * `buildDecisionPolicy` (matching `decision-rules.schema.json`'s
+   * commitment object, the only one of the five that declares this key) —
+   * silently dropped, not merely ignored, when passed to the other four
+   * builders, so the still-`additionalProperties: false`
+   * quorum/proposal/task/handoff commitment schemas are unaffected (issue
+   * #87 item 1).
+   */
   requireVoteQuorum?: boolean;
   /**
    * RFC-MACP-0012 schema_version 2, Decision mode only: when `true`, a
@@ -165,9 +173,20 @@ function serializeCommitment(commitment?: CommitmentRules): Record<string, unkno
   return {
     authority: commitment?.authority ?? 'initiator_only',
     designated_roles: commitment?.designatedRoles ?? [],
-    // Parity with python-sdk `_commitment_dict`: emitted for every mode, not
-    // just decision, so policy JSON is byte-identical across SDKs.
-    require_vote_quorum: commitment?.requireVoteQuorum ?? false,
+    // `require_vote_quorum` and `allow_decline_over_approval` are NOT emitted
+    // here -- the canonical *-rules.schema.json commitment object closes with
+    // `additionalProperties: false` for every mode except Decision (issue
+    // #87 item 1, spec PR #125). Only decision-rules.schema.json's commitment
+    // object lists `require_vote_quorum`/`allow_decline_over_approval` as
+    // known keys; quorum/proposal/task/handoff-rules.schema.json's commitment
+    // object allows only `authority`/`designated_roles`. `buildDecisionPolicy`
+    // adds both fields itself, after calling this helper. Emitting them here
+    // unconditionally (as this SDK and python-sdk's `_commitment_dict` both
+    // used to, for byte-parity with each other rather than with the spec) put
+    // a key the other four modes' schemas do not recognize onto the wire --
+    // inert under today's runtime (which does not enforce
+    // `additionalProperties`) but non-conformant, and a real rejection under
+    // any stricter/future validator.
   };
 }
 
@@ -279,11 +298,14 @@ export function buildDecisionPolicy(
     }
   }
 
-  // Decision-only: extend the shared v1 commitment rules with the schema_version 2
-  // decline-over-approval switch, appended after the shared keys so it does not
-  // leak into the still-v1 quorum/proposal/task/handoff commitment blocks
-  // (parity with python-sdk `_commitment_dict` + `build_decision_policy`).
+  // Decision-only: extend the shared commitment rules with the two keys
+  // decision-rules.schema.json's commitment object allows and the other four
+  // modes' commitment schemas do not -- `require_vote_quorum` and the
+  // schema_version 2 decline-over-approval switch. Appended after the shared
+  // keys so neither leaks into the still-`additionalProperties: false`
+  // quorum/proposal/task/handoff commitment blocks (see serializeCommitment).
   const commitmentSection = serializeCommitment(rules.commitment);
+  commitmentSection.require_vote_quorum = rules.commitment?.requireVoteQuorum ?? false;
   commitmentSection.allow_decline_over_approval = rules.commitment?.allowDeclineOverApproval ?? false;
 
   const rulesJson: Record<string, unknown> = {
