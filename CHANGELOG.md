@@ -47,17 +47,25 @@ project uses [Semantic Versioning](https://semver.org/).
   every canonical rule schema already refused this combination at
   `RegisterPolicy` — this call previously returned a descriptor the runtime
   would reject.
+* **policy:** `buildDecisionPolicy`'s default `schemaVersion` is now `3`
+  (was `2`), decided jointly with `macp-sdk-python`'s identical default flip
+  (issue #85, see `macp-sdk-python`#65). Any `buildDecisionPolicy` call that
+  omits `options.schemaVersion` and uses a binding voting algorithm
+  (`majority`, `unanimous`, etc.) now fails closed on an empty decisive
+  tally instead of silently sealing on zero ballots. Not retroactive — a
+  stored policy always evaluates under its own recorded `schemaVersion`
+  forever (RFC-MACP-0012 §8); this only changes what new callers who don't
+  pass `schemaVersion` explicitly get going forward. Pass
+  `{ schemaVersion: 1 }` or `{ schemaVersion: 2 }` explicitly to keep the
+  old fail-open behavior.
 
 ### Features
 
 * **policy:** `buildDecisionPolicy` accepts a new fourth `options` argument,
-  `{ schemaVersion?: 1 | 2 | 3 }`, to opt a Decision policy into
-  RFC-MACP-0012 `schema_version` 3's fail-closed empty-tally semantics
-  (§4.1's "vacuous participation floor"). Purely additive — every existing
-  3-argument call site compiles and behaves unchanged, since the default
-  stays `2` (fail-open), in byte-parity with `macp-sdk-python`'s own
-  `schema_version: int = 2` default. An out-of-range value throws
-  `MacpSessionError`.
+  `{ schemaVersion?: 1 | 2 | 3 }`, to select a Decision policy's
+  RFC-MACP-0012 empty-tally semantics — `3` (the default) fails closed
+  (§4.1's "vacuous participation floor"); `1`/`2` fail open. An out-of-range
+  value throws `MacpSessionError`.
 
 ### Bug Fixes
 
