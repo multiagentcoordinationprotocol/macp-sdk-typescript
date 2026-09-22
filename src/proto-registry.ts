@@ -136,24 +136,33 @@ export class ProtoRegistry {
   /**
    * Decode an `ext.multi_round.v1` `Contribute` payload, accepting both wire
    * formats: legacy JSON (`{"value":"..."}`, still replayed verbatim from
-   * pre-proto histories) and canonical protobuf (`ContributePayload`). JSON is
-   * tried first — mirroring the runtime's permanent decode order — and the two
-   * encodings are disjoint on their first byte (`{` = 0x7b vs proto field-1
-   * tag 0x0A), so a canonical proto payload never mis-parses as JSON and vice
-   * versa. Both normalize to `{ value: string }`.
+   * pre-proto histories) and canonical protobuf (`ContributePayload`). Both
+   * normalize to `{ value: string }`.
+   *
+   * Parse-then-fallback (issue #93), not a first-byte shortcut: JSON is always
+   * attempted first, and only a `JSON.parse` failure falls through to
+   * protobuf. A first-byte check (`{` = 0x7b vs proto field-1 tag 0x0A) does
+   * not generalize — e.g. legacy JSON with leading whitespace has neither byte
+   * first, and used to reach `decodeMessage` and throw. Parity with
+   * `macp-sdk-python`'s `_decode_json_first_then_proto`, which has always
+   * worked this way. Safe because a canonical proto payload's bytes are
+   * essentially never also syntactically valid JSON.
+   *
+   * An empty payload falls through the same path: `JSON.parse('')` throws, so
+   * it reaches `decodeMessage` on zero bytes, which yields `{}` (proto3
+   * defaults) rather than a decode error. This SDK's decode layer is
+   * observational, not an acceptance gate — whether an empty `Contribute`
+   * should be rejected is a runtime-acceptance question (tracked cross-repo,
+   * `contribute_acceptance.empty_payload` in `schemas/parity/contract.json`,
+   * currently `macp-runtime`-only), not something this method decides.
    */
   private decodeMultiRoundContribute(payload: Buffer): Record<string, unknown> | undefined {
-    if (!payload.length) return this.decodeMessage(MULTI_ROUND_CONTRIBUTE, payload);
-    if (payload[0] === 0x7b) {
-      // Leading `{` — legacy JSON. Parse and normalize to { value }.
-      try {
-        const parsed = JSON.parse(payload.toString('utf8')) as Record<string, unknown>;
-        return { value: typeof parsed.value === 'string' ? parsed.value : String(parsed.value ?? '') };
-      } catch {
-        // Not valid JSON despite the leading brace — fall through to protobuf.
-      }
+    try {
+      const parsed = JSON.parse(payload.toString('utf8')) as Record<string, unknown>;
+      return { value: typeof parsed.value === 'string' ? parsed.value : String(parsed.value ?? '') };
+    } catch {
+      return this.decodeMessage(MULTI_ROUND_CONTRIBUTE, payload);
     }
-    return this.decodeMessage(MULTI_ROUND_CONTRIBUTE, payload);
   }
 
   private lookupType(typeName: string): protobuf.Type {

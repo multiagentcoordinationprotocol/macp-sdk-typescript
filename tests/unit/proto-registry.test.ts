@@ -175,6 +175,15 @@ describe('ProtoRegistry', () => {
       expect(decoded).toEqual({ value: '123' });
     });
 
+    it('decodes a legacy JSON Contribute payload with leading whitespace (issue #93)', () => {
+      // A first-byte `{` check (rather than parse-then-fallback) misses this:
+      // the leading whitespace used to fall through to a protobuf decode of
+      // non-protobuf bytes and throw, instead of decoding the JSON.
+      const encoded = Buffer.from('  \n\t{"value":"deploy"}', 'utf8');
+      const decoded = registry.decodeKnownPayload(MODE_MULTI_ROUND, 'Contribute', encoded);
+      expect(decoded).toEqual({ value: 'deploy' });
+    });
+
     it('decodes an empty Contribute payload via protobuf (default)', () => {
       const decoded = registry.decodeKnownPayload(MODE_MULTI_ROUND, 'Contribute', Buffer.alloc(0));
       expect(decoded).toEqual({});

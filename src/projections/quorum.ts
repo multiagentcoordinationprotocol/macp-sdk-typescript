@@ -1,6 +1,5 @@
 import { MODE_QUORUM } from '../constants';
-import { logger } from '../logging';
-import type { ProjectionAnomaly } from './base';
+import { BaseProjection } from './base';
 import type { Envelope } from '../types';
 import type { ProtoRegistry } from '../proto-registry';
 
@@ -19,131 +18,45 @@ export interface BallotRecord {
   sender: string;
 }
 
-export class QuorumProjection {
+export class QuorumProjection extends BaseProjection {
+  protected readonly mode = MODE_QUORUM;
   readonly requests = new Map<string, ApprovalRequestRecord>();
   readonly ballots = new Map<string, Map<string, BallotRecord>>();
-  /**
-   * The session's accepted history, one envelope per unique `message_id`. See
-   * `BaseProjection.transcript` (`src/projections/base.ts`) for the full
-   * redelivery-idempotence contract (RFC-MACP-0006 §3.2); duplicated here
-   * only as a one-line pointer.
-   */
-  readonly transcript: Envelope[] = [];
-  /**
-   * Cardinality anomalies recorded while replaying this projection's accepted
-   * transcript (e.g. a duplicate ballot across `Approve`/`Reject`/`Abstain`
-   * from the same sender for the same `request_id`). See
-   * `BaseProjection.anomalies` (`src/projections/base.ts`) for the canonical
-   * description; duplicated here only as a one-line pointer.
-   */
-  readonly anomalies: ProjectionAnomaly[] = [];
   phase: 'Pending' | 'Voting' | 'Committed' = 'Pending';
-  commitment?: Record<string, unknown>;
-  /**
-   * `message_id`s already applied to this projection. See
-   * `BaseProjection.seenMessageIds` (`src/projections/base.ts`) for the full
-   * redelivery-idempotence rationale (RFC-MACP-0006 §3.2); duplicated here
-   * only as a one-line pointer.
-   */
-  private readonly seenMessageIds = new Set<string>();
 
-  /**
-   * Apply one envelope to this projection's in-process state.
-   *
-   * Input contract: **accepted-only**, caller-maintained (`Envelope` carries
-   * no acceptance marker). Canonical source: `schemas/conformance/README.md`
-   * "Notes:", RFC-MACP-0007 §5.3, RFC-MACP-0011 §5. Full rationale and failure
-   * mode are documented once, on `BaseProjection.applyEnvelope`
-   * (`src/projections/base.ts`), and duplicated here only as a one-line
-   * pointer so six independent copies of the same prose cannot drift.
-   *
-   * Redelivery idempotence: a redelivered envelope (same `message_id`) is a
-   * non-event — not appended to `transcript`, not passed to the `switch`.
-   * See `BaseProjection.applyEnvelope` for the full RFC-MACP-0006 §3.2
-   * citation; duplicated here only as a one-line pointer.
-   */
-  applyEnvelope(envelope: Envelope, protoRegistry: ProtoRegistry): void {
-    if (envelope.mode !== MODE_QUORUM) return;
-    let seenIdAdded = false;
-    if (envelope.messageId) {
-      if (this.seenMessageIds.has(envelope.messageId)) {
-        logger.debug('projection redelivery ignored', {
-          messageId: envelope.messageId,
-          mode: envelope.mode,
-          messageType: envelope.messageType,
-        });
-        return;
+  /** Handle a Quorum-mode envelope. See `BaseProjection.applyEnvelope` for the accepted-only input contract and redelivery/rollback semantics shared by all built-in modes. */
+  protected applyMode(envelope: Envelope, protoRegistry: ProtoRegistry): void {
+    const payload = protoRegistry.decodeKnownPayload(envelope.mode, envelope.messageType, envelope.payload);
+    switch (envelope.messageType) {
+      case 'ApprovalRequest': {
+        const record = payload as {
+          requestId: string;
+          action: string;
+          summary: string;
+          requiredApprovals: number;
+        };
+        this.requests.set(record.requestId, { ...record, sender: envelope.sender });
+        this.phase = 'Voting';
+        break;
       }
-      this.seenMessageIds.add(envelope.messageId);
-      seenIdAdded = true;
-    }
-    this.transcript.push(envelope);
-    // Rollback invariant -- see BaseProjection.applyEnvelope (src/projections/base.ts)
-    // for the full rationale; duplicated here only as a one-line pointer so six
-    // independent copies of the same prose cannot drift.
-    try {
-      const payload = protoRegistry.decodeKnownPayload(envelope.mode, envelope.messageType, envelope.payload);
-      switch (envelope.messageType) {
-        case 'ApprovalRequest': {
-          const record = payload as {
-            requestId: string;
-            action: string;
-            summary: string;
-            requiredApprovals: number;
-          };
-          this.requests.set(record.requestId, { ...record, sender: envelope.sender });
-          this.phase = 'Voting';
-          break;
-        }
-        case 'Approve': {
-          const record = payload as { requestId: string; reason?: string };
-          this.setBallot(envelope, record.requestId, 'approve', record.reason);
-          break;
-        }
-        case 'Reject': {
-          const record = payload as { requestId: string; reason?: string };
-          this.setBallot(envelope, record.requestId, 'reject', record.reason);
-          break;
-        }
-        case 'Abstain': {
-          const record = payload as { requestId: string; reason?: string };
-          this.setBallot(envelope, record.requestId, 'abstain', record.reason);
-          break;
-        }
-        case 'Commitment': {
-          this.commitment = payload;
-          this.phase = 'Committed';
-          break;
-        }
-        default:
-          break;
+      case 'Approve': {
+        const record = payload as { requestId: string; reason?: string };
+        this.setBallot(envelope, record.requestId, 'approve', record.reason);
+        break;
       }
-    } catch (err) {
-      this.transcript.pop();
-      if (seenIdAdded) this.seenMessageIds.delete(envelope.messageId);
-      throw err;
+      case 'Reject': {
+        const record = payload as { requestId: string; reason?: string };
+        this.setBallot(envelope, record.requestId, 'reject', record.reason);
+        break;
+      }
+      case 'Abstain': {
+        const record = payload as { requestId: string; reason?: string };
+        this.setBallot(envelope, record.requestId, 'abstain', record.reason);
+        break;
+      }
+      default:
+        break;
     }
-  }
-
-  /**
-   * True once at least one `ProjectionAnomaly` has been recorded. See
-   * `BaseProjection.hasAnomalies` (`src/projections/base.ts`) for the
-   * canonical description; duplicated here only as a one-line pointer.
-   */
-  get hasAnomalies(): boolean {
-    return this.anomalies.length > 0;
-  }
-
-  get isCommitted(): boolean {
-    return this.commitment !== undefined;
-  }
-
-  get isPositiveOutcome(): boolean | undefined {
-    if (!this.commitment) return undefined;
-    const val =
-      (this.commitment as Record<string, unknown>).outcomePositive ??
-      (this.commitment as Record<string, unknown>).outcome_positive;
-    return val !== undefined ? Boolean(val) : true;
   }
 
   private setBallot(envelope: Envelope, requestId: string, vote: BallotRecord['vote'], reason?: string): void {
@@ -165,7 +78,7 @@ export class QuorumProjection {
       // by RFC-0011 either; it is parity with RFC-MACP-0007 §5 item 3's
       // explicit first-stands rule for `Vote`, plus macp-runtime's enforced
       // first-wins behaviour.
-      const anomaly: ProjectionAnomaly = {
+      this.recordAnomaly({
         kind: 'duplicate_ballot',
         mode: envelope.mode,
         messageType: envelope.messageType,
@@ -173,9 +86,7 @@ export class QuorumProjection {
         sender: envelope.sender,
         subjectId: requestId,
         detail: `sender ${envelope.sender} already cast '${kept.vote}' on request ${requestId}; discarded '${vote}'`,
-      };
-      this.anomalies.push(anomaly);
-      logger.warn('projection anomaly', anomaly);
+      });
       return;
     }
     senderMap.set(envelope.sender, { requestId, vote, reason, sender: envelope.sender });

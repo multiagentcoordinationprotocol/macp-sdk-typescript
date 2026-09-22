@@ -1,6 +1,5 @@
 import { MODE_DECISION } from '../constants';
-import { logger } from '../logging';
-import type { ProjectionAnomaly } from './base';
+import { BaseProjection } from './base';
 import type { Envelope } from '../types';
 import type { ProtoRegistry } from '../proto-registry';
 
@@ -33,171 +32,83 @@ export interface DecisionVoteRecord {
   sender: string;
 }
 
-export class DecisionProjection {
+export class DecisionProjection extends BaseProjection {
+  protected readonly mode = MODE_DECISION;
   readonly proposals = new Map<string, DecisionProposalRecord>();
   readonly evaluations: DecisionEvaluationRecord[] = [];
   readonly objections: DecisionObjectionRecord[] = [];
   readonly votes = new Map<string, Map<string, DecisionVoteRecord>>();
-  /**
-   * The session's accepted history, one envelope per unique `message_id`. See
-   * `BaseProjection.transcript` (`src/projections/base.ts`) for the full
-   * redelivery-idempotence contract (RFC-MACP-0006 §3.2); duplicated here
-   * only as a one-line pointer.
-   */
-  readonly transcript: Envelope[] = [];
-  /**
-   * Cardinality anomalies recorded while replaying this projection's accepted
-   * transcript (e.g. a duplicate `Vote` from the same sender for the same
-   * `proposal_id`). See `BaseProjection.anomalies` (`src/projections/base.ts`)
-   * for the canonical description; duplicated here only as a one-line
-   * pointer.
-   */
-  readonly anomalies: ProjectionAnomaly[] = [];
   phase: 'Proposal' | 'Evaluation' | 'Voting' | 'Committed' = 'Proposal';
-  commitment?: Record<string, unknown>;
-  /**
-   * `message_id`s already applied to this projection. See
-   * `BaseProjection.seenMessageIds` (`src/projections/base.ts`) for the full
-   * redelivery-idempotence rationale (RFC-MACP-0006 §3.2); duplicated here
-   * only as a one-line pointer.
-   */
-  private readonly seenMessageIds = new Set<string>();
 
-  /**
-   * Apply one envelope to this projection's in-process state.
-   *
-   * Input contract: **accepted-only**, caller-maintained (`Envelope` carries
-   * no acceptance marker). Canonical source: `schemas/conformance/README.md`
-   * "Notes:", RFC-MACP-0007 §5.3, RFC-MACP-0011 §5. Full rationale and failure
-   * mode are documented once, on `BaseProjection.applyEnvelope`
-   * (`src/projections/base.ts`), and duplicated here only as a one-line
-   * pointer so six independent copies of the same prose cannot drift.
-   *
-   * Redelivery idempotence: a redelivered envelope (same `message_id`) is a
-   * non-event — not appended to `transcript`, not passed to the `switch`.
-   * See `BaseProjection.applyEnvelope` for the full RFC-MACP-0006 §3.2
-   * citation; duplicated here only as a one-line pointer.
-   */
-  applyEnvelope(envelope: Envelope, protoRegistry: ProtoRegistry): void {
-    if (envelope.mode !== MODE_DECISION) return;
-    let seenIdAdded = false;
-    if (envelope.messageId) {
-      if (this.seenMessageIds.has(envelope.messageId)) {
-        logger.debug('projection redelivery ignored', {
-          messageId: envelope.messageId,
-          mode: envelope.mode,
-          messageType: envelope.messageType,
+  /** Handle a Decision-mode envelope. See `BaseProjection.applyEnvelope` for the accepted-only input contract and redelivery/rollback semantics shared by all built-in modes. */
+  protected applyMode(envelope: Envelope, protoRegistry: ProtoRegistry): void {
+    const payload = protoRegistry.decodeKnownPayload(envelope.mode, envelope.messageType, envelope.payload);
+    switch (envelope.messageType) {
+      case 'Proposal': {
+        const record = payload as { proposalId: string; option: string; rationale?: string };
+        this.proposals.set(record.proposalId, {
+          proposalId: record.proposalId,
+          option: record.option,
+          rationale: record.rationale,
+          sender: envelope.sender,
         });
-        return;
+        this.phase = 'Evaluation';
+        break;
       }
-      this.seenMessageIds.add(envelope.messageId);
-      seenIdAdded = true;
-    }
-    this.transcript.push(envelope);
-    // Rollback invariant -- see BaseProjection.applyEnvelope (src/projections/base.ts)
-    // for the full rationale; duplicated here only as a one-line pointer so six
-    // independent copies of the same prose cannot drift.
-    try {
-      const payload = protoRegistry.decodeKnownPayload(envelope.mode, envelope.messageType, envelope.payload);
-      switch (envelope.messageType) {
-        case 'Proposal': {
-          const record = payload as { proposalId: string; option: string; rationale?: string };
-          this.proposals.set(record.proposalId, {
-            proposalId: record.proposalId,
-            option: record.option,
-            rationale: record.rationale,
+      case 'Evaluation': {
+        const record = payload as { proposalId: string; recommendation: string; confidence: number; reason?: string };
+        this.evaluations.push({ ...record, sender: envelope.sender });
+        break;
+      }
+      case 'Objection': {
+        const record = payload as { proposalId: string; reason: string; severity?: string };
+        this.objections.push({ ...record, severity: record.severity ?? 'medium', sender: envelope.sender });
+        break;
+      }
+      case 'Vote': {
+        const record = payload as { proposalId: string; vote: string; reason?: string };
+        const bySender = this.votes.get(record.proposalId) ?? new Map<string, DecisionVoteRecord>();
+        const kept = bySender.get(envelope.sender);
+        if (kept !== undefined) {
+          // RFC-MACP-0007 §5 item 3: the first accepted Vote stands. A conforming
+          // runtime NACKs the duplicate (macp-runtime decision.rs), so reaching
+          // here means the transcript was not filtered to a conforming
+          // runtime's accepted history.
+          this.recordAnomaly({
+            kind: 'duplicate_vote',
+            mode: envelope.mode,
+            messageType: envelope.messageType,
+            messageId: envelope.messageId,
             sender: envelope.sender,
+            subjectId: record.proposalId,
+            detail: `sender ${envelope.sender} already voted '${kept.vote}' on proposal ${record.proposalId}; discarded '${record.vote}'`,
           });
-          this.phase = 'Evaluation';
           break;
         }
-        case 'Evaluation': {
-          const record = payload as { proposalId: string; recommendation: string; confidence: number; reason?: string };
-          this.evaluations.push({ ...record, sender: envelope.sender });
-          break;
+        bySender.set(envelope.sender, { ...record, sender: envelope.sender });
+        this.votes.set(record.proposalId, bySender);
+        // RFC-MACP-0001 §7.2 (`:218`): RESOLVED is terminal and sessions
+        // MUST transition monotonically w.r.t. termination — never back to
+        // OPEN/SUSPENDED. §7.3 (`:240`, restated `:249`) says a conforming
+        // runtime rejects any session-scoped message once the session is
+        // non-OPEN, so a `Vote` cannot legally follow a `Commitment` in
+        // accepted history. If one reaches here anyway (the caller violated
+        // the accepted-only contract — see `applyEnvelope`'s docblock), do
+        // not regress `phase` out of `'Committed'`. Note "phase" itself is
+        // not a normative MACP term (it appears once, in passing, at
+        // RFC-MACP-0012 `:211`); this guard is justified by session
+        // terminality, not by a phase specification. An anomaly would be
+        // recorded here too, but `ProjectionAnomalyKind` (`base.ts:8-9`) is
+        // deliberately frozen pending cross-SDK agreement with
+        // macp-sdk-python.
+        if (this.phase !== 'Committed') {
+          this.phase = 'Voting';
         }
-        case 'Objection': {
-          const record = payload as { proposalId: string; reason: string; severity?: string };
-          this.objections.push({ ...record, severity: record.severity ?? 'medium', sender: envelope.sender });
-          break;
-        }
-        case 'Vote': {
-          const record = payload as { proposalId: string; vote: string; reason?: string };
-          const bySender = this.votes.get(record.proposalId) ?? new Map<string, DecisionVoteRecord>();
-          const kept = bySender.get(envelope.sender);
-          if (kept !== undefined) {
-            // RFC-MACP-0007 §5 item 3: the first accepted Vote stands. A conforming
-            // runtime NACKs the duplicate (macp-runtime decision.rs), so reaching
-            // here means the transcript was not filtered to a conforming
-            // runtime's accepted history.
-            const anomaly: ProjectionAnomaly = {
-              kind: 'duplicate_vote',
-              mode: envelope.mode,
-              messageType: envelope.messageType,
-              messageId: envelope.messageId,
-              sender: envelope.sender,
-              subjectId: record.proposalId,
-              detail: `sender ${envelope.sender} already voted '${kept.vote}' on proposal ${record.proposalId}; discarded '${record.vote}'`,
-            };
-            this.anomalies.push(anomaly);
-            logger.warn('projection anomaly', anomaly);
-            break;
-          }
-          bySender.set(envelope.sender, { ...record, sender: envelope.sender });
-          this.votes.set(record.proposalId, bySender);
-          // RFC-MACP-0001 §7.2 (`:218`): RESOLVED is terminal and sessions
-          // MUST transition monotonically w.r.t. termination — never back to
-          // OPEN/SUSPENDED. §7.3 (`:240`, restated `:249`) says a conforming
-          // runtime rejects any session-scoped message once the session is
-          // non-OPEN, so a `Vote` cannot legally follow a `Commitment` in
-          // accepted history. If one reaches here anyway (the caller violated
-          // the accepted-only contract — see `applyEnvelope`'s docblock), do
-          // not regress `phase` out of `'Committed'`. Note "phase" itself is
-          // not a normative MACP term (it appears once, in passing, at
-          // RFC-MACP-0012 `:211`); this guard is justified by session
-          // terminality, not by a phase specification. An anomaly would be
-          // recorded here too, but `ProjectionAnomalyKind` (`base.ts:8-9`) is
-          // deliberately frozen pending cross-SDK agreement with
-          // macp-sdk-python.
-          if (this.phase !== 'Committed') {
-            this.phase = 'Voting';
-          }
-          break;
-        }
-        case 'Commitment': {
-          this.commitment = payload;
-          this.phase = 'Committed';
-          break;
-        }
-        default:
-          break;
+        break;
       }
-    } catch (err) {
-      this.transcript.pop();
-      if (seenIdAdded) this.seenMessageIds.delete(envelope.messageId);
-      throw err;
+      default:
+        break;
     }
-  }
-
-  /**
-   * True once at least one `ProjectionAnomaly` has been recorded. See
-   * `BaseProjection.hasAnomalies` (`src/projections/base.ts`) for the
-   * canonical description; duplicated here only as a one-line pointer.
-   */
-  get hasAnomalies(): boolean {
-    return this.anomalies.length > 0;
-  }
-
-  get isCommitted(): boolean {
-    return this.commitment !== undefined;
-  }
-
-  get isPositiveOutcome(): boolean | undefined {
-    if (!this.commitment) return undefined;
-    const val =
-      (this.commitment as Record<string, unknown>).outcomePositive ??
-      (this.commitment as Record<string, unknown>).outcome_positive;
-    return val !== undefined ? Boolean(val) : true;
   }
 
   voteTotals(): Record<string, number> {
