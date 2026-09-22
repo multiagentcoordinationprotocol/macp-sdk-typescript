@@ -254,11 +254,9 @@ Recording an anomaly does two things:
    variable.
 
 `BaseProjection` also exposes a `protected recordAnomaly(anomaly)` helper
-that does both of the above, for custom (ext-mode) projections built on
-`BaseProjection`. The built-in `DecisionProjection` and `QuorumProjection` do
-not extend `BaseProjection` (see [BaseProjection
-(custom modes)](#baseprojection-custom-modes) below) and inline the same two
-lines directly at their duplicate-detection call sites instead.
+that does both of the above; `DecisionProjection` and `QuorumProjection` (see
+[BaseProjection (custom modes)](#baseprojection-custom-modes) below) call it
+from their duplicate-detection call sites.
 
 ## Design intent: shared projection instance
 
@@ -293,12 +291,16 @@ away without noticing.
 
 ## BaseProjection (custom modes)
 
-`BaseProjection` is the abstract base for projections of custom (extension)
-modes — pair it with `BaseSession`. It handles `Commitment` (sets `commitment`,
-moves `phase` to `'Committed'`) and the transcript for free; subclasses supply
-the `mode` string and override `applyMode(envelope, protoRegistry)` for the
-mode-specific message types. The five built-in projections below pre-date
-`BaseProjection` and implement the same surface directly.
+`BaseProjection` is the abstract base for all six projections in this SDK,
+including custom (extension) modes — pair a custom subclass with
+`BaseSession`. It handles `Commitment` (sets `commitment`, moves `phase` to
+`'Committed'`), the transcript, `message_id` redelivery dedup, and the
+rollback-on-failed-decode invariant for free; subclasses supply the `mode`
+string and override `applyMode(envelope, protoRegistry)` for the
+mode-specific message types. The five built-in projections below all extend
+`BaseProjection` this way (issue #91 — this was previously five independent
+copies of the same dedup/transcript/rollback logic; see
+`src/projections/base.ts`'s `applyEnvelope` for the shared implementation).
 
 ## DecisionProjection
 

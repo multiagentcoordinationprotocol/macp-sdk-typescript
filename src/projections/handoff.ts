@@ -1,6 +1,5 @@
 import { MODE_HANDOFF } from '../constants';
-import { logger } from '../logging';
-import type { ProjectionAnomaly } from './base';
+import { BaseProjection } from './base';
 import type { Envelope } from '../types';
 import type { ProtoRegistry } from '../proto-registry';
 
@@ -22,190 +21,105 @@ export interface HandoffRecord {
   implicit?: boolean;
 }
 
-export class HandoffProjection {
+export class HandoffProjection extends BaseProjection {
+  protected readonly mode = MODE_HANDOFF;
   readonly handoffs = new Map<string, HandoffRecord>();
-  /**
-   * The session's accepted history, one envelope per unique `message_id`. See
-   * `BaseProjection.transcript` (`src/projections/base.ts`) for the full
-   * redelivery-idempotence contract (RFC-MACP-0006 §3.2); duplicated here
-   * only as a one-line pointer.
-   */
-  readonly transcript: Envelope[] = [];
-  /**
-   * Cardinality anomalies recorded while replaying this projection's accepted
-   * transcript. See `BaseProjection.anomalies` (`src/projections/base.ts`)
-   * for the canonical description; duplicated here only as a one-line
-   * pointer. No built-in detection populates this for Handoff mode.
-   */
-  readonly anomalies: ProjectionAnomaly[] = [];
   phase: 'Pending' | 'OfferPending' | 'ContextSharing' | 'Accepted' | 'Declined' | 'Committed' = 'Pending';
-  commitment?: Record<string, unknown>;
-  /**
-   * `message_id`s already applied to this projection. See
-   * `BaseProjection.seenMessageIds` (`src/projections/base.ts`) for the full
-   * redelivery-idempotence rationale (RFC-MACP-0006 §3.2); duplicated here
-   * only as a one-line pointer.
-   */
-  private readonly seenMessageIds = new Set<string>();
 
-  /**
-   * Apply one envelope to this projection's in-process state.
-   *
-   * Input contract: **accepted-only**, caller-maintained (`Envelope` carries
-   * no acceptance marker). Canonical source: `schemas/conformance/README.md`
-   * "Notes:", RFC-MACP-0007 §5.3, RFC-MACP-0011 §5. Full rationale and failure
-   * mode are documented once, on `BaseProjection.applyEnvelope`
-   * (`src/projections/base.ts`), and duplicated here only as a one-line
-   * pointer so six independent copies of the same prose cannot drift.
-   *
-   * Redelivery idempotence: a redelivered envelope (same `message_id`) is a
-   * non-event — not appended to `transcript`, not passed to the `switch`.
-   * See `BaseProjection.applyEnvelope` for the full RFC-MACP-0006 §3.2
-   * citation; duplicated here only as a one-line pointer.
-   */
-  applyEnvelope(envelope: Envelope, protoRegistry: ProtoRegistry): void {
-    if (envelope.mode !== MODE_HANDOFF) return;
-    let seenIdAdded = false;
-    if (envelope.messageId) {
-      if (this.seenMessageIds.has(envelope.messageId)) {
-        logger.debug('projection redelivery ignored', {
-          messageId: envelope.messageId,
-          mode: envelope.mode,
-          messageType: envelope.messageType,
+  /** Handle a Handoff-mode envelope. See `BaseProjection.applyEnvelope` for the accepted-only input contract and redelivery/rollback semantics shared by all built-in modes. */
+  protected applyMode(envelope: Envelope, protoRegistry: ProtoRegistry): void {
+    const payload = protoRegistry.decodeKnownPayload(envelope.mode, envelope.messageType, envelope.payload);
+    switch (envelope.messageType) {
+      case 'HandoffOffer': {
+        const record = payload as { handoffId: string; targetParticipant: string; scope: string; reason?: string };
+        this.handoffs.set(record.handoffId, {
+          handoffId: record.handoffId,
+          targetParticipant: record.targetParticipant,
+          scope: record.scope,
+          reason: record.reason,
+          sender: envelope.sender,
+          status: 'offered',
         });
-        return;
+        this.phase = 'OfferPending';
+        break;
       }
-      this.seenMessageIds.add(envelope.messageId);
-      seenIdAdded = true;
-    }
-    this.transcript.push(envelope);
-    // Rollback invariant -- see BaseProjection.applyEnvelope (src/projections/base.ts)
-    // for the full rationale; duplicated here only as a one-line pointer so six
-    // independent copies of the same prose cannot drift.
-    try {
-      const payload = protoRegistry.decodeKnownPayload(envelope.mode, envelope.messageType, envelope.payload);
-      switch (envelope.messageType) {
-        case 'HandoffOffer': {
-          const record = payload as { handoffId: string; targetParticipant: string; scope: string; reason?: string };
-          this.handoffs.set(record.handoffId, {
-            handoffId: record.handoffId,
-            targetParticipant: record.targetParticipant,
-            scope: record.scope,
-            reason: record.reason,
-            sender: envelope.sender,
-            status: 'offered',
-          });
-          this.phase = 'OfferPending';
-          break;
-        }
-        case 'HandoffContext': {
-          const record = payload as { handoffId: string; contentType: string };
-          const handoff = this.handoffs.get(record.handoffId);
-          if (handoff) {
-            // Per RFC-MACP-0010 §2.1: context after accept is permitted as supplementary docs.
-            // Only update status if not already accepted/declined.
-            if (handoff.status === 'offered') {
-              handoff.status = 'context_sent';
-            }
-            handoff.contextContentType = record.contentType;
+      case 'HandoffContext': {
+        const record = payload as { handoffId: string; contentType: string };
+        const handoff = this.handoffs.get(record.handoffId);
+        if (handoff) {
+          // Per RFC-MACP-0010 §2.1: context after accept is permitted as supplementary docs.
+          // Only update status if not already accepted/declined.
+          if (handoff.status === 'offered') {
+            handoff.status = 'context_sent';
           }
-          if (this.phase === 'OfferPending') this.phase = 'ContextSharing';
-          break;
+          handoff.contextContentType = record.contentType;
         }
-        case 'HandoffAccept': {
-          const record = payload as { handoffId: string; acceptedBy: string; implicit?: boolean };
-          const handoff = this.handoffs.get(record.handoffId);
-          if (!handoff) {
-            // RFC-MACP-0010 §5 rule 2 (`:65`): "HandoffContext, HandoffAccept,
-            // and HandoffDecline MUST reference an existing handoff_id." An
-            // accept for an unknown/never-offered handoff_id is invalid input
-            // (e.g. an unfiltered transcript) and MUST NOT mutate `phase` or
-            // fabricate a handoff record. An anomaly would be recorded here,
-            // but `ProjectionAnomalyKind` (`base.ts:8-9`) is deliberately
-            // frozen pending cross-SDK agreement with macp-sdk-python.
-            break;
-          }
-          // RFC-MACP-0010 §5 rule 4 (`:68`): "Once an offer has been
-          // accepted, no competing accept for that same `handoff_id` is
-          // valid." §5.1(4) (`:113-116`) settles the decline-after-accept
-          // direction too: a `handoff_id` transitions
-          // offered -> accepted | declined exactly once. Only settle if this
-          // handoff hasn't already resolved — the same shape as the
-          // HandoffContext guard just above. An anomaly would be recorded when
-          // this guard discards a competing accept, but `ProjectionAnomalyKind`
-          // (`base.ts:8-9`) is deliberately frozen pending cross-SDK agreement
-          // with macp-sdk-python.
-          if (handoff.status === 'offered' || handoff.status === 'context_sent') {
-            handoff.status = 'accepted';
-            handoff.acceptedBy = record.acceptedBy;
-            // proto3 bool defaults are materialized to `false` on decode
-            // (proto-registry), so this is always a real boolean once proto 0.1.6
-            // is loaded — `true` marks a runtime synthetic implicit accept.
-            handoff.implicit = record.implicit ?? false;
-            this.phase = 'Accepted';
-          }
-          break;
-        }
-        case 'HandoffDecline': {
-          const record = payload as { handoffId: string; declinedBy: string };
-          const handoff = this.handoffs.get(record.handoffId);
-          if (!handoff) {
-            // RFC-MACP-0010 §5 rule 2 (`:65`): "HandoffContext, HandoffAccept,
-            // and HandoffDecline MUST reference an existing handoff_id." A
-            // decline for an unknown/never-offered handoff_id is invalid input
-            // (e.g. an unfiltered transcript) and MUST NOT mutate `phase` or
-            // fabricate a handoff record. An anomaly would be recorded here,
-            // but `ProjectionAnomalyKind` (`base.ts:8-9`) is deliberately
-            // frozen pending cross-SDK agreement with macp-sdk-python.
-            break;
-          }
-          // RFC-MACP-0010 §5 rule 4 (`:68`) + §5.1(4) (`:113-116`): a
-          // `handoff_id` settles once. A decline after the handoff already
-          // settled (accepted or declined) is invalid and ignored. An anomaly
-          // would be recorded here too, but `ProjectionAnomalyKind`
-          // (`base.ts:8-9`) is deliberately frozen pending cross-SDK agreement
-          // with macp-sdk-python.
-          if (handoff.status === 'offered' || handoff.status === 'context_sent') {
-            handoff.status = 'declined';
-            handoff.declinedBy = record.declinedBy;
-            this.phase = 'Declined';
-          }
-          break;
-        }
-        case 'Commitment': {
-          this.commitment = payload;
-          this.phase = 'Committed';
-          break;
-        }
-        default:
-          break;
+        if (this.phase === 'OfferPending') this.phase = 'ContextSharing';
+        break;
       }
-    } catch (err) {
-      this.transcript.pop();
-      if (seenIdAdded) this.seenMessageIds.delete(envelope.messageId);
-      throw err;
+      case 'HandoffAccept': {
+        const record = payload as { handoffId: string; acceptedBy: string; implicit?: boolean };
+        const handoff = this.handoffs.get(record.handoffId);
+        if (!handoff) {
+          // RFC-MACP-0010 §5 rule 2 (`:65`): "HandoffContext, HandoffAccept,
+          // and HandoffDecline MUST reference an existing handoff_id." An
+          // accept for an unknown/never-offered handoff_id is invalid input
+          // (e.g. an unfiltered transcript) and MUST NOT mutate `phase` or
+          // fabricate a handoff record. An anomaly would be recorded here,
+          // but `ProjectionAnomalyKind` (`base.ts:8-9`) is deliberately
+          // frozen pending cross-SDK agreement with macp-sdk-python.
+          break;
+        }
+        // RFC-MACP-0010 §5 rule 4 (`:68`): "Once an offer has been
+        // accepted, no competing accept for that same `handoff_id` is
+        // valid." §5.1(4) (`:113-116`) settles the decline-after-accept
+        // direction too: a `handoff_id` transitions
+        // offered -> accepted | declined exactly once. Only settle if this
+        // handoff hasn't already resolved — the same shape as the
+        // HandoffContext guard just above. An anomaly would be recorded when
+        // this guard discards a competing accept, but `ProjectionAnomalyKind`
+        // (`base.ts:8-9`) is deliberately frozen pending cross-SDK agreement
+        // with macp-sdk-python.
+        if (handoff.status === 'offered' || handoff.status === 'context_sent') {
+          handoff.status = 'accepted';
+          handoff.acceptedBy = record.acceptedBy;
+          // proto3 bool defaults are materialized to `false` on decode
+          // (proto-registry), so this is always a real boolean once proto 0.1.6
+          // is loaded — `true` marks a runtime synthetic implicit accept.
+          handoff.implicit = record.implicit ?? false;
+          this.phase = 'Accepted';
+        }
+        break;
+      }
+      case 'HandoffDecline': {
+        const record = payload as { handoffId: string; declinedBy: string };
+        const handoff = this.handoffs.get(record.handoffId);
+        if (!handoff) {
+          // RFC-MACP-0010 §5 rule 2 (`:65`): "HandoffContext, HandoffAccept,
+          // and HandoffDecline MUST reference an existing handoff_id." A
+          // decline for an unknown/never-offered handoff_id is invalid input
+          // (e.g. an unfiltered transcript) and MUST NOT mutate `phase` or
+          // fabricate a handoff record. An anomaly would be recorded here,
+          // but `ProjectionAnomalyKind` (`base.ts:8-9`) is deliberately
+          // frozen pending cross-SDK agreement with macp-sdk-python.
+          break;
+        }
+        // RFC-MACP-0010 §5 rule 4 (`:68`) + §5.1(4) (`:113-116`): a
+        // `handoff_id` settles once. A decline after the handoff already
+        // settled (accepted or declined) is invalid and ignored. An anomaly
+        // would be recorded here too, but `ProjectionAnomalyKind`
+        // (`base.ts:8-9`) is deliberately frozen pending cross-SDK agreement
+        // with macp-sdk-python.
+        if (handoff.status === 'offered' || handoff.status === 'context_sent') {
+          handoff.status = 'declined';
+          handoff.declinedBy = record.declinedBy;
+          this.phase = 'Declined';
+        }
+        break;
+      }
+      default:
+        break;
     }
-  }
-
-  /**
-   * True once at least one `ProjectionAnomaly` has been recorded. See
-   * `BaseProjection.hasAnomalies` (`src/projections/base.ts`) for the
-   * canonical description; duplicated here only as a one-line pointer.
-   */
-  get hasAnomalies(): boolean {
-    return this.anomalies.length > 0;
-  }
-
-  get isCommitted(): boolean {
-    return this.commitment !== undefined;
-  }
-
-  get isPositiveOutcome(): boolean | undefined {
-    if (!this.commitment) return undefined;
-    const val =
-      (this.commitment as Record<string, unknown>).outcomePositive ??
-      (this.commitment as Record<string, unknown>).outcome_positive;
-    return val !== undefined ? Boolean(val) : true;
   }
 
   getHandoff(handoffId: string): HandoffRecord | undefined {

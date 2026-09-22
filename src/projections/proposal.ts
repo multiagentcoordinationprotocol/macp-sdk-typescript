@@ -1,6 +1,5 @@
 import { MODE_PROPOSAL } from '../constants';
-import { logger } from '../logging';
-import type { ProjectionAnomaly } from './base';
+import { BaseProjection } from './base';
 import type { Envelope } from '../types';
 import type { ProtoRegistry } from '../proto-registry';
 
@@ -27,7 +26,8 @@ export interface ProposalRejectRecord {
   sender: string;
 }
 
-export class ProposalProjection {
+export class ProposalProjection extends BaseProjection {
+  protected readonly mode = MODE_PROPOSAL;
   readonly proposals = new Map<string, ProposalRecord>();
   readonly accepts: ProposalAcceptRecord[] = [];
   readonly rejections: ProposalRejectRecord[] = [];
@@ -45,161 +45,75 @@ export class ProposalProjection {
    * acceptance set, and the same commitment eligibility."
    */
   private readonly latestAcceptBySender = new Map<string, ProposalAcceptRecord>();
-  /**
-   * The session's accepted history, one envelope per unique `message_id`. See
-   * `BaseProjection.transcript` (`src/projections/base.ts`) for the full
-   * redelivery-idempotence contract (RFC-MACP-0006 §3.2); duplicated here
-   * only as a one-line pointer.
-   */
-  readonly transcript: Envelope[] = [];
-  /**
-   * Cardinality anomalies recorded while replaying this projection's accepted
-   * transcript. See `BaseProjection.anomalies` (`src/projections/base.ts`)
-   * for the canonical description; duplicated here only as a one-line
-   * pointer. No built-in detection populates this for Proposal mode.
-   */
-  readonly anomalies: ProjectionAnomaly[] = [];
   phase: 'Negotiating' | 'TerminalRejected' | 'Committed' = 'Negotiating';
-  commitment?: Record<string, unknown>;
-  /**
-   * `message_id`s already applied to this projection. See
-   * `BaseProjection.seenMessageIds` (`src/projections/base.ts`) for the full
-   * redelivery-idempotence rationale (RFC-MACP-0006 §3.2); duplicated here
-   * only as a one-line pointer.
-   */
-  private readonly seenMessageIds = new Set<string>();
 
-  /**
-   * Apply one envelope to this projection's in-process state.
-   *
-   * Input contract: **accepted-only**, caller-maintained (`Envelope` carries
-   * no acceptance marker). Canonical source: `schemas/conformance/README.md`
-   * "Notes:", RFC-MACP-0007 §5.3, RFC-MACP-0011 §5. Full rationale and failure
-   * mode are documented once, on `BaseProjection.applyEnvelope`
-   * (`src/projections/base.ts`), and duplicated here only as a one-line
-   * pointer so six independent copies of the same prose cannot drift.
-   *
-   * Redelivery idempotence: a redelivered envelope (same `message_id`) is a
-   * non-event — not appended to `transcript`, not passed to the `switch`.
-   * See `BaseProjection.applyEnvelope` for the full RFC-MACP-0006 §3.2
-   * citation; duplicated here only as a one-line pointer.
-   */
-  applyEnvelope(envelope: Envelope, protoRegistry: ProtoRegistry): void {
-    if (envelope.mode !== MODE_PROPOSAL) return;
-    let seenIdAdded = false;
-    if (envelope.messageId) {
-      if (this.seenMessageIds.has(envelope.messageId)) {
-        logger.debug('projection redelivery ignored', {
-          messageId: envelope.messageId,
-          mode: envelope.mode,
-          messageType: envelope.messageType,
+  /** Handle a Proposal-mode envelope. See `BaseProjection.applyEnvelope` for the accepted-only input contract and redelivery/rollback semantics shared by all built-in modes. */
+  protected applyMode(envelope: Envelope, protoRegistry: ProtoRegistry): void {
+    const payload = protoRegistry.decodeKnownPayload(envelope.mode, envelope.messageType, envelope.payload);
+    switch (envelope.messageType) {
+      case 'Proposal': {
+        const record = payload as { proposalId: string; title: string; summary?: string; tags?: string[] };
+        this.proposals.set(record.proposalId, {
+          proposalId: record.proposalId,
+          title: record.title,
+          summary: record.summary,
+          tags: record.tags,
+          sender: envelope.sender,
+          status: 'open',
         });
-        return;
+        break;
       }
-      this.seenMessageIds.add(envelope.messageId);
-      seenIdAdded = true;
-    }
-    this.transcript.push(envelope);
-    // Rollback invariant -- see BaseProjection.applyEnvelope (src/projections/base.ts)
-    // for the full rationale; duplicated here only as a one-line pointer so six
-    // independent copies of the same prose cannot drift.
-    try {
-      const payload = protoRegistry.decodeKnownPayload(envelope.mode, envelope.messageType, envelope.payload);
-      switch (envelope.messageType) {
-        case 'Proposal': {
-          const record = payload as { proposalId: string; title: string; summary?: string; tags?: string[] };
-          this.proposals.set(record.proposalId, {
-            proposalId: record.proposalId,
-            title: record.title,
-            summary: record.summary,
-            tags: record.tags,
-            sender: envelope.sender,
-            status: 'open',
-          });
-          break;
-        }
-        case 'CounterProposal': {
-          const record = payload as {
-            proposalId: string;
-            supersedesProposalId: string;
-            title: string;
-            summary?: string;
-          };
-          this.proposals.set(record.proposalId, {
-            proposalId: record.proposalId,
-            title: record.title,
-            summary: record.summary,
-            sender: envelope.sender,
-            supersedes: record.supersedesProposalId,
-            status: 'open',
-          });
-          break;
-        }
-        case 'Accept': {
-          const record = payload as { proposalId: string; reason?: string };
-          const accept: ProposalAcceptRecord = { ...record, sender: envelope.sender };
-          this.accepts.push(accept);
-          // RFC-MACP-0008 §5 rule 5 (`:70`): this Accept supersedes any earlier
-          // one from the same sender for the live acceptance set.
-          this.latestAcceptBySender.set(envelope.sender, accept);
-          break;
-        }
-        case 'Reject': {
-          const record = payload as { proposalId: string; terminal?: boolean; reason?: string };
-          const terminal = record.terminal ?? false;
-          this.rejections.push({
-            proposalId: record.proposalId,
-            terminal,
-            reason: record.reason,
-            sender: envelope.sender,
-          });
-          if (terminal) {
-            const proposal = this.proposals.get(record.proposalId);
-            if (proposal) proposal.status = 'rejected';
-            this.phase = 'TerminalRejected';
-          }
-          break;
-        }
-        case 'Withdraw': {
-          const record = payload as { proposalId: string };
+      case 'CounterProposal': {
+        const record = payload as {
+          proposalId: string;
+          supersedesProposalId: string;
+          title: string;
+          summary?: string;
+        };
+        this.proposals.set(record.proposalId, {
+          proposalId: record.proposalId,
+          title: record.title,
+          summary: record.summary,
+          sender: envelope.sender,
+          supersedes: record.supersedesProposalId,
+          status: 'open',
+        });
+        break;
+      }
+      case 'Accept': {
+        const record = payload as { proposalId: string; reason?: string };
+        const accept: ProposalAcceptRecord = { ...record, sender: envelope.sender };
+        this.accepts.push(accept);
+        // RFC-MACP-0008 §5 rule 5 (`:70`): this Accept supersedes any earlier
+        // one from the same sender for the live acceptance set.
+        this.latestAcceptBySender.set(envelope.sender, accept);
+        break;
+      }
+      case 'Reject': {
+        const record = payload as { proposalId: string; terminal?: boolean; reason?: string };
+        const terminal = record.terminal ?? false;
+        this.rejections.push({
+          proposalId: record.proposalId,
+          terminal,
+          reason: record.reason,
+          sender: envelope.sender,
+        });
+        if (terminal) {
           const proposal = this.proposals.get(record.proposalId);
-          if (proposal) proposal.status = 'withdrawn';
-          break;
+          if (proposal) proposal.status = 'rejected';
+          this.phase = 'TerminalRejected';
         }
-        case 'Commitment': {
-          this.commitment = payload;
-          this.phase = 'Committed';
-          break;
-        }
-        default:
-          break;
+        break;
       }
-    } catch (err) {
-      this.transcript.pop();
-      if (seenIdAdded) this.seenMessageIds.delete(envelope.messageId);
-      throw err;
+      case 'Withdraw': {
+        const record = payload as { proposalId: string };
+        const proposal = this.proposals.get(record.proposalId);
+        if (proposal) proposal.status = 'withdrawn';
+        break;
+      }
+      default:
+        break;
     }
-  }
-
-  /**
-   * True once at least one `ProjectionAnomaly` has been recorded. See
-   * `BaseProjection.hasAnomalies` (`src/projections/base.ts`) for the
-   * canonical description; duplicated here only as a one-line pointer.
-   */
-  get hasAnomalies(): boolean {
-    return this.anomalies.length > 0;
-  }
-
-  get isCommitted(): boolean {
-    return this.commitment !== undefined;
-  }
-
-  get isPositiveOutcome(): boolean | undefined {
-    if (!this.commitment) return undefined;
-    const val =
-      (this.commitment as Record<string, unknown>).outcomePositive ??
-      (this.commitment as Record<string, unknown>).outcome_positive;
-    return val !== undefined ? Boolean(val) : true;
   }
 
   activeProposals(): ProposalRecord[] {
