@@ -24,6 +24,7 @@ import {
   QuorumSession,
   SessionLifecycleWatcher,
   buildDecisionPolicy,
+  buildHandoffPolicy,
   newSessionId,
 } from '../../src/index';
 import { GrpcTransportAdapter } from '../../src/agent/transports';
@@ -485,6 +486,125 @@ describe('Handoff mode — decline path', () => {
     expect(ack.ok).toBe(true);
     expect(session.projection.isDeclined('hd1')).toBe(true);
     expect(session.projection.isAccepted('hd1')).toBe(false);
+  });
+});
+
+// ── Handoff mode — implicit accept (timeout) ─────────────────────────
+//
+// macp-runtime 0.8.0 (PR #171) makes every new session's semantics_rev
+// unconditionally 2, which makes HandoffMode::due_synthetic_envelope
+// reachable for the first time in any released runtime: an outstanding
+// HandoffOffer whose implicit_accept_timeout_ms elapses unactioned is
+// accepted by the runtime itself, which appends a real HandoffAccept
+// envelope (sender = target, message_id = `implicit-accept:<handoff_id>`,
+// payload implicit: true) to accepted history and publishes it. This test
+// pins that wire behavior against a live runtime (issue #95) -- the client
+// side (HandoffAcceptPayload.implicit, HandoffSession.acceptHandoff's
+// implicit-strip, HandoffProjection.isImplicitlyAccepted) was already
+// covered by tests/unit/projections/handoff.test.ts before any runtime
+// ever emitted this envelope; only the live-runtime gap was missing.
+//
+// RFC-MACP-0010 §5.1(2): the deadline is only *observed* lazily, ahead of
+// the next session-scoped message -- or eagerly, on MACP_CLEANUP_INTERVAL_SECS
+// (default 60s, too slow for this suite's 15s testTimeout). So after the
+// timeout elapses, this test sends a HandoffContext for the same handoff_id
+// as a deliberate trigger: RFC-MACP-0010 §2.1 permits context after
+// accept/decline with no disposition check, so it can't collide with the
+// "at most one offer outstanding, and once accepted no further offers may
+// be issued" rule the way a second HandoffOffer would.
+
+describe('Handoff mode — implicit accept (timeout)', () => {
+  it('an unattended offer resolves via a runtime-emitted synthetic HandoffAccept', async () => {
+    const policyId = `handoff-implicit-accept-${Date.now()}`;
+    const implicitAcceptTimeoutMs = 300;
+    const descriptor = buildHandoffPolicy(policyId, 'Implicit accept timeout test', {
+      acceptance: { implicitAcceptTimeoutMs },
+    });
+    const registerResult = await client.registerPolicy(descriptor, { auth: agentAlice });
+    expect(registerResult.ok).toBe(true);
+
+    try {
+      const handoffId = 'implicit1';
+      const session = new HandoffSession(client, { auth: agentAlice, policyVersion: policyId });
+      const startAck = await session.start({
+        intent: 'Unattended handoff',
+        participants: ['alice', 'bob'],
+        ttlMs: 30_000,
+        sender: 'alice',
+      });
+      expect(startAck.ok).toBe(true);
+
+      const offerAck = await session.offer({
+        handoffId,
+        targetParticipant: 'bob',
+        scope: 'ops rotation',
+        sender: 'alice',
+      });
+      expect(offerAck.ok).toBe(true);
+
+      // Deliberately no acceptHandoff/decline from bob -- wait past the
+      // policy's implicit_accept_timeout_ms so the runtime's deadline
+      // (offer acceptance time + timeout) actually elapses in wall-clock
+      // time; this cannot be replaced by polling.
+      await new Promise((r) => setTimeout(r, implicitAcceptTimeoutMs + 250));
+
+      const triggerAck = await session.addContext({
+        handoffId,
+        contentType: 'text/plain',
+        context: Buffer.from('late context, after the implicit-accept deadline'),
+        sender: 'alice',
+      });
+      expect(triggerAck.ok).toBe(true);
+
+      // Cross-check against the runtime's own committed state, not just
+      // this test's in-process view: a fresh client (bob's) opens a new
+      // stream and replays accepted history for the session from scratch
+      // -- proving the synthetic accept is durable, not merely an artifact
+      // this test's own calls happened to observe.
+      const bobClient = makeClient(agentBob);
+      try {
+        const stream = bobClient.openStream();
+        await stream.sendSubscribe(session.sessionId);
+
+        const seenMessageTypes: string[] = [];
+        let implicitAcceptEnvelope: Awaited<ReturnType<typeof stream.read>> = null;
+        const consumer = (async () => {
+          for await (const env of stream.responses()) {
+            if (env.sessionId !== session.sessionId) continue;
+            seenMessageTypes.push(env.messageType);
+            if (env.messageType === 'HandoffAccept') implicitAcceptEnvelope = env;
+            if (seenMessageTypes.includes('HandoffAccept') && seenMessageTypes.includes('HandoffContext')) break;
+          }
+        })();
+
+        const timeout = new Promise<void>((_, reject) =>
+          setTimeout(() => reject(new Error('replay timeout -- runtime never emitted the implicit accept')), 5000),
+        );
+        await Promise.race([consumer, timeout]);
+        stream.close();
+
+        expect(implicitAcceptEnvelope).not.toBeNull();
+        expect(implicitAcceptEnvelope!.messageId).toBe(`implicit-accept:${handoffId}`);
+        expect(implicitAcceptEnvelope!.sender).toBe('bob');
+
+        session.projection.applyEnvelope(implicitAcceptEnvelope!, client.protoRegistry);
+      } finally {
+        bobClient.close();
+      }
+
+      expect(session.projection.isAccepted(handoffId)).toBe(true);
+      expect(session.projection.isImplicitlyAccepted(handoffId)).toBe(true);
+      expect(session.projection.getHandoff(handoffId)?.acceptedBy).toBe('bob');
+
+      await session.commit({
+        action: 'Handoff resolved without explicit action',
+        authorityScope: 'team',
+        reason: 'Implicit accept observed',
+        sender: 'alice',
+      });
+    } finally {
+      await client.unregisterPolicy(policyId, { auth: agentAlice });
+    }
   });
 });
 
