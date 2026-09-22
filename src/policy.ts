@@ -218,11 +218,21 @@ export interface DecisionPolicyOptions {
    * - `3`: an empty decisive tally is fail-*closed* for every algorithm
    *   except `'none'` (RFC-MACP-0012 §4.1, adopted in spec PR #99).
    *
-   * Defaults to `2` to keep existing callers' semantics unchanged -- a
-   * deliberate default, not an oversight, kept in byte-parity with
-   * `macp-sdk-python`'s own `schema_version: int = 2`. Pass `3` explicitly
-   * to opt into fail-closed empty tallies. This is descriptor metadata, not
-   * a rule: it is never part of the serialized `rules` JSON.
+   * Defaults to `3` (issue #85, decided jointly with `macp-sdk-python`'s
+   * identical `schema_version: int = 3` default -- see that repo's issue
+   * #65): RFC-MACP-0012's authoring guidance is that new non-`'none'`
+   * policies SHOULD declare `schemaVersion: 3`, and the old default of `2`
+   * was fail-*open* on an empty tally for exactly the callers who opted into
+   * a binding algorithm (`majority`, `unanimous`, etc.) -- silently
+   * satisfying a vote that received zero ballots, which contradicts what
+   * asking for a binding algorithm means. RFC-MACP-0012 §8 makes the choice
+   * reversible and non-retroactive: a stored policy always evaluates under
+   * its own declared version forever, so this default change carries no
+   * migration risk for existing registered policies -- it only changes what
+   * new callers who don't pass `schemaVersion` explicitly get going forward.
+   * Pass `1` or `2` explicitly to keep fail-open empty-tally semantics. This
+   * is descriptor metadata, not a rule: it is never part of the serialized
+   * `rules` JSON.
    */
   schemaVersion?: 1 | 2 | 3;
 }
@@ -233,7 +243,7 @@ export function buildDecisionPolicy(
   rules: DecisionPolicyRulesInput,
   options?: DecisionPolicyOptions,
 ): PolicyDescriptor {
-  const schemaVersion = options?.schemaVersion ?? 2;
+  const schemaVersion = options?.schemaVersion ?? 3;
   if (!DECISION_SCHEMA_VERSIONS.has(schemaVersion)) {
     throw new MacpSessionError(
       `schemaVersion must be one of ${[...DECISION_SCHEMA_VERSIONS].sort().join(', ')}, got '${schemaVersion}'`,

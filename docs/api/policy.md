@@ -11,7 +11,7 @@ interface PolicyDescriptor {
   description: string;
   rules: string;               // JSON-encoded governance rules
   schemaVersion: number;       // Rule schema version: 1 for quorum/proposal/task/handoff;
-                                // 2 (default) or 3 for decision, see buildDecisionPolicy below
+                                // 1, 2, or 3 (default) for decision, see buildDecisionPolicy below
   registeredAtUnixMs?: number; // Set by runtime
 }
 ```
@@ -27,7 +27,7 @@ the other four modes remain schema version 1.
 
 ```typescript
 interface DecisionPolicyOptions {
-  schemaVersion?: 1 | 2 | 3;   // default: 2 -- see "schemaVersion" below
+  schemaVersion?: 1 | 2 | 3;   // default: 3 -- see "schemaVersion" below
 }
 ```
 
@@ -40,18 +40,22 @@ interface DecisionPolicyOptions {
 > | `1` / `2` | Fail-**open**: a binding algorithm (e.g. `majority`) passes on zero ballots unless `commitment.requireVoteQuorum` is `true` (default `false`). |
 > | `3` | Fail-**closed** for every algorithm except `'none'` (RFC-MACP-0012 §4.1's "vacuous participation floor", spec PR #99). |
 >
-> **The default stays `2`** — not `3` — deliberately, to keep existing
-> callers' semantics unchanged, in byte-parity with `macp-sdk-python`'s own
-> `schema_version: int = 2` default. v1/v2 semantics are preserved
-> permanently for replay (RFC-MACP-0012 §8 item 3) and are a supported
-> choice, not a transitional one. Whether the *default* itself should move to
-> `3` for new callers is an open cross-SDK question — see
-> `plans/adopt-policy-schema-v3.md` Open Questions Q1 — pending a joint
-> decision with `macp-sdk-python` so both SDKs' default emitted descriptors
-> never silently disagree. Pass `{ schemaVersion: 3 }` explicitly today to
-> opt in. An out-of-range value (anything other than `1`, `2`, or `3`) throws
-> `MacpSessionError`. `schemaVersion` is descriptor metadata, not a rule — it
-> never changes the serialized `rules` JSON for the same rule input.
+> **The default is `3`** (issue #85, decided jointly with `macp-sdk-python`'s
+> identical `schema_version: int = 3` default — see that repo's issue #65):
+> RFC-MACP-0012's authoring guidance is that new non-`'none'` policies SHOULD
+> declare `schemaVersion: 3`, and the old default of `2` was fail-open on an
+> empty tally for exactly the callers who opted into a binding algorithm —
+> silently satisfying a vote that received zero ballots, which contradicts
+> what asking for a binding algorithm means. v1/v2 semantics are preserved
+> permanently for replay (RFC-MACP-0012 §8 item 3) and remain a supported
+> choice, not a transitional one — pass `{ schemaVersion: 1 }` or
+> `{ schemaVersion: 2 }` explicitly to keep fail-open empty-tally semantics.
+> A stored policy always evaluates under its own declared version forever, so
+> this default change carries no migration risk for existing registered
+> policies. An out-of-range value (anything other than `1`, `2`, or `3`)
+> throws `MacpSessionError`. `schemaVersion` is descriptor metadata, not a
+> rule — it never changes the serialized `rules` JSON for the same rule
+> input.
 >
 > TypeScript has no keyword arguments, so this is a fourth positional
 > `options` object rather than Python's `schema_version=` keyword — the two

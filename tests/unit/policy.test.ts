@@ -21,8 +21,9 @@ describe('policy builders', () => {
       expect(descriptor.policyId).toBe('policy.test');
       expect(descriptor.mode).toBe('macp.mode.decision.v1');
       expect(descriptor.description).toBe('Test policy');
-      // RFC-MACP-0012 schema_version 2 (additive Decision decline-gating fields).
-      expect(descriptor.schemaVersion).toBe(2);
+      // RFC-MACP-0012 schema_version 3 default (issue #85): fail-closed empty
+      // tallies for binding algorithms.
+      expect(descriptor.schemaVersion).toBe(3);
     });
 
     it('includes default voting rules', () => {
@@ -146,10 +147,10 @@ describe('policy builders', () => {
   });
 
   describe('buildDecisionPolicy schemaVersion override (RFC-MACP-0012 §8)', () => {
-    it('AC3: options omitted, {}, and undefined all emit schemaVersion 2', () => {
-      expect(buildDecisionPolicy('p', 'd', {}).schemaVersion).toBe(2);
-      expect(buildDecisionPolicy('p', 'd', {}, {}).schemaVersion).toBe(2);
-      expect(buildDecisionPolicy('p', 'd', {}, undefined).schemaVersion).toBe(2);
+    it('AC3: options omitted, {}, and undefined all emit schemaVersion 3', () => {
+      expect(buildDecisionPolicy('p', 'd', {}).schemaVersion).toBe(3);
+      expect(buildDecisionPolicy('p', 'd', {}, {}).schemaVersion).toBe(3);
+      expect(buildDecisionPolicy('p', 'd', {}, undefined).schemaVersion).toBe(3);
     });
 
     it.each([1, 2, 3] as const)('AC2: explicit schemaVersion %i round-trips', (schemaVersion) => {
