@@ -4,6 +4,17 @@ All notable changes to `macp-sdk-typescript` are documented here. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the
 project uses [Semantic Versioning](https://semver.org/).
 
+## [0.11.0](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/compare/v0.10.0...v0.11.0) (2026-09-22)
+
+
+### ⚠ BREAKING CHANGES
+
+* **policy:** buildDecisionPolicy's default schemaVersion is now 3 (was 2). A call that omits options.schemaVersion and uses a binding voting algorithm now fails closed on an empty decisive tally instead of silently sealing on zero ballots. Pass { schemaVersion: 1 } or { schemaVersion: 2 } explicitly to keep the old fail-open behavior.
+
+### Features
+
+* **policy:** flip Decision-policy schemaVersion default from 2 to 3 ([#97](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/issues/97)) ([a82972a](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/commit/a82972ae43550f4b953a6bd0e32bfb387fd25806))
+
 ## [Unreleased]
 
 ### ⚠ BREAKING CHANGES
