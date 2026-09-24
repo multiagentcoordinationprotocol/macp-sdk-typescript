@@ -7,6 +7,8 @@ export * from './runner';
 export {
   GrpcTransportAdapter,
   HttpTransportAdapter,
+  DEFAULT_SUBSCRIBE_RETRY_POLICY,
   type TransportAdapter,
   type HttpPollingConfig,
+  type SubscribeRetryPolicy,
 } from './transports';

@@ -1,5 +1,6 @@
 import type { AuthConfig } from '../auth';
 import type { MacpClient, MacpStream } from '../client';
+import { MacpTransportError } from '../errors';
 import type { Envelope } from '../types';
 import type { IncomingMessage } from './types';
 
@@ -24,10 +25,38 @@ function normalizeEnvelope(
   };
 }
 
+/**
+ * Bounded retry policy for the startup subscribe race (issue #100, ported
+ * from macp-sdk-python#75): the runtime replies `NOT_FOUND` to `StreamSession`/`sendSubscribe` when a
+ * sibling participant hasn't finished the initiator's SessionStart yet, so
+ * the session doesn't exist *yet* rather than not existing at all. Distinct
+ * from `src/retry.ts`'s `RetryPolicy`, which is scoped to retryable **ack**
+ * (NACK) codes on `Send` — this policy is a gRPC **stream**-open retry and
+ * has no `retryableCodes` set: the one retryable condition (transient
+ * `NOT_FOUND` before any envelope has been delivered) is hardcoded in
+ * `GrpcTransportAdapter.start()`, not configurable per-code.
+ */
+export interface SubscribeRetryPolicy {
+  maxRetries: number;
+  backoffBase: number;
+  backoffMax: number;
+}
+
+export const DEFAULT_SUBSCRIBE_RETRY_POLICY: SubscribeRetryPolicy = {
+  maxRetries: 4,
+  backoffBase: 0.1,
+  backoffMax: 2.0,
+};
+
+function sleep(seconds: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, seconds * 1000));
+}
+
 export class GrpcTransportAdapter implements TransportAdapter {
   private stream: MacpStream | null = null;
   private seq = 0;
   private delivered = 0;
+  private readonly subscribeRetryPolicy: SubscribeRetryPolicy;
 
   /**
    * `message_id`s already counted into `delivered`, so the resume cursor
@@ -50,7 +79,10 @@ export class GrpcTransportAdapter implements TransportAdapter {
     private readonly client: MacpClient,
     private readonly sessionId: string,
     private readonly auth?: AuthConfig,
-  ) {}
+    subscribeRetryPolicy?: Partial<SubscribeRetryPolicy>,
+  ) {
+    this.subscribeRetryPolicy = { ...DEFAULT_SUBSCRIBE_RETRY_POLICY, ...subscribeRetryPolicy };
+  }
 
   /**
    * The server passive-subscribe ordinal of the last delivered envelope (the
@@ -74,76 +106,110 @@ export class GrpcTransportAdapter implements TransportAdapter {
   }
 
   async *start(): AsyncIterable<IncomingMessage> {
-    // A prior stream from an earlier start() (without an intervening stop())
-    // must not keep feeding this adapter's counter — two live generators
-    // would both advance `delivered` from two differently-positioned
-    // replays. `MacpStream.close()` is `this.call.end()` (`src/client.ts:223-227`),
-    // a write-side half-close — it does not itself force the server to stop
-    // pushing. It is enough here because macp-runtime's StreamSession loop
-    // reads the resulting end-of-request-stream as `StreamAction::ClientDone`,
-    // whose arm drains any already-buffered envelopes once and then breaks,
-    // ending that stream's response side too
-    // (macp-runtime/src/server.rs:654-666). Close it before opening the new
-    // one so re-entrant start() and stop()-then-start() behave identically.
-    if (this.stream) {
-      this.stream.close();
-      this.stream = null;
-    }
-    this.stream = this.client.openStream({ auth: this.auth });
+    // Startup subscribe race (issue #100, ported from macp-sdk-python#75): a
+    // sibling participant may not have observed the initiator's SessionStart
+    // yet, so the runtime's very first reply to sendSubscribe() can be a
+    // transient NOT_FOUND for a session that simply doesn't exist *yet* —
+    // not a real error. `receivedAny` seeds `true` when `this.delivered > 0`
+    // (a prior start() on this same adapter already proved the session
+    // exists), so a stop()+start() reconnect never re-enters the retry
+    // budget it doesn't need. Once any envelope for this session has been
+    // delivered in this call, the session demonstrably exists and a later
+    // NOT_FOUND (e.g. the session expired mid-stream) must propagate
+    // immediately, not retry.
+    let receivedAny = this.delivered > 0;
+    let attempt = 0;
 
-    // RFC-MACP-0006 §3.2: subscribe to the session, resuming from this
-    // adapter's own cursor. `this.delivered` is 0 before anything has been
-    // delivered, by construction, and `afterSequence = 0` is normatively
-    // "replay from the session's first accepted envelope" — so the first
-    // subscribe and every later one (e.g. after stop()+start()) are the same
-    // expression. There is no separate first-subscribe/reconnect branch to
-    // keep in sync with the counter.
-    await this.stream.sendSubscribe(this.sessionId, this.delivered);
+    while (true) {
+      // A prior stream from an earlier start() (without an intervening stop())
+      // must not keep feeding this adapter's counter — two live generators
+      // would both advance `delivered` from two differently-positioned
+      // replays. `MacpStream.close()` is `this.call.end()` (`src/client.ts:223-227`),
+      // a write-side half-close — it does not itself force the server to stop
+      // pushing. It is enough here because macp-runtime's StreamSession loop
+      // reads the resulting end-of-request-stream as `StreamAction::ClientDone`,
+      // whose arm drains any already-buffered envelopes once and then breaks,
+      // ending that stream's response side too
+      // (macp-runtime/src/server.rs:654-666). Close it before opening the new
+      // one so re-entrant start() and stop()-then-start() (including a
+      // subscribe-retry reconnect) behave identically.
+      if (this.stream) {
+        this.stream.close();
+        this.stream = null;
+      }
+      this.stream = this.client.openStream({ auth: this.auth });
 
-    for await (const envelope of this.stream.responses()) {
-      if (envelope.sessionId !== this.sessionId) continue;
-      // Count this envelope into the resume cursor only *after* the
-      // consumer has come back for more, not when it is handed off. `yield`
-      // suspends here until the consumer's `for await` either calls
-      // `.next()` again (it took this envelope and kept iterating — the
-      // code below runs) or closes the iterator via `break`/`return`/throw
-      // (e.g. `Participant.run()` observing `!this.running` and breaking
-      // out of its loop without processing this envelope). In the latter
-      // case `.return()` on this generator resumes at this `yield` as if a
-      // `return` had been written here, so nothing below it runs: the
-      // cursor is never advanced past an envelope the consumer never
-      // actually took past the loop boundary, and the next `start()`
-      // redelivers it instead of silently skipping it. See #66 — counting
-      // before yielding let a stop-mid-stream permanently drop an envelope
-      // once #65 made the resume cursor authoritative.
-      const message = normalizeEnvelope(
-        envelope,
-        (mode, mt, p) => this.client.protoRegistry.decodeKnownPayload(mode, mt, p),
-        this.seq++,
-      );
-      yield message;
-      // RFC-MACP-0006 §3.2 Redelivery: a redelivery MUST NOT advance the
-      // resume cursor, and a consumer that accumulates state per envelope
-      // MUST be idempotent w.r.t. `message_id`. An empty/absent messageId
-      // has no identity to dedup on and increments unconditionally — the
-      // same carve-out the projection guard documents at
-      // `src/projections/base.ts:224-227`, so the two dedup sites read the
-      // same way. In practice the `else` below can never run against a
-      // conformant runtime: `validate_envelope_shape` rejects any envelope
-      // with an empty `message_id` as `InvalidEnvelope` before it can be
-      // accepted (`macp-runtime/src/server.rs:118`), and RFC-MACP-0001 §8.2
-      // makes `message_id` the runtime's dedup identity, so no accepted
-      // envelope in any session history can carry one. The branch stays
-      // anyway — it costs nothing and errs toward still counting the
-      // envelope instead of silently dropping it if a non-conformant server
-      // ever sends one.
-      if (envelope.messageId) {
-        if (!this.seenMessageIds.has(envelope.messageId)) {
-          this.seenMessageIds.add(envelope.messageId);
-          this.delivered++;
+      // RFC-MACP-0006 §3.2: subscribe to the session, resuming from this
+      // adapter's own cursor. `this.delivered` is 0 before anything has been
+      // delivered, by construction, and `afterSequence = 0` is normatively
+      // "replay from the session's first accepted envelope" — so the first
+      // subscribe and every later one (e.g. after stop()+start(), or a
+      // subscribe retry below) are the same expression. There is no separate
+      // first-subscribe/reconnect branch to keep in sync with the counter.
+      await this.stream.sendSubscribe(this.sessionId, this.delivered);
+
+      try {
+        for await (const envelope of this.stream.responses()) {
+          if (envelope.sessionId !== this.sessionId) continue;
+          receivedAny = true;
+          // Count this envelope into the resume cursor only *after* the
+          // consumer has come back for more, not when it is handed off. `yield`
+          // suspends here until the consumer's `for await` either calls
+          // `.next()` again (it took this envelope and kept iterating — the
+          // code below runs) or closes the iterator via `break`/`return`/throw
+          // (e.g. `Participant.run()` observing `!this.running` and breaking
+          // out of its loop without processing this envelope). In the latter
+          // case `.return()` on this generator resumes at this `yield` as if a
+          // `return` had been written here, so nothing below it runs: the
+          // cursor is never advanced past an envelope the consumer never
+          // actually took past the loop boundary, and the next `start()`
+          // redelivers it instead of silently skipping it. See #66 — counting
+          // before yielding let a stop-mid-stream permanently drop an envelope
+          // once #65 made the resume cursor authoritative.
+          const message = normalizeEnvelope(
+            envelope,
+            (mode, mt, p) => this.client.protoRegistry.decodeKnownPayload(mode, mt, p),
+            this.seq++,
+          );
+          yield message;
+          // RFC-MACP-0006 §3.2 Redelivery: a redelivery MUST NOT advance the
+          // resume cursor, and a consumer that accumulates state per envelope
+          // MUST be idempotent w.r.t. `message_id`. An empty/absent messageId
+          // has no identity to dedup on and increments unconditionally — the
+          // same carve-out the projection guard documents at
+          // `src/projections/base.ts:224-227`, so the two dedup sites read the
+          // same way. In practice the `else` below can never run against a
+          // conformant runtime: `validate_envelope_shape` rejects any envelope
+          // with an empty `message_id` as `InvalidEnvelope` before it can be
+          // accepted (`macp-runtime/src/server.rs:118`), and RFC-MACP-0001 §8.2
+          // makes `message_id` the runtime's dedup identity, so no accepted
+          // envelope in any session history can carry one. The branch stays
+          // anyway — it costs nothing and errs toward still counting the
+          // envelope instead of silently dropping it if a non-conformant server
+          // ever sends one.
+          if (envelope.messageId) {
+            if (!this.seenMessageIds.has(envelope.messageId)) {
+              this.seenMessageIds.add(envelope.messageId);
+              this.delivered++;
+            }
+          } else {
+            this.delivered++;
+          }
         }
-      } else {
-        this.delivered++;
+        return;
+      } catch (err) {
+        const isTransientNotFound =
+          !receivedAny &&
+          err instanceof MacpTransportError &&
+          err.code === 'NOT_FOUND' &&
+          attempt < this.subscribeRetryPolicy.maxRetries;
+        if (!isTransientNotFound) throw err;
+        attempt++;
+        const delay = Math.min(
+          this.subscribeRetryPolicy.backoffBase * 2 ** (attempt - 1),
+          this.subscribeRetryPolicy.backoffMax,
+        );
+        await sleep(delay);
       }
     }
   }
