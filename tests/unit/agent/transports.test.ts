@@ -385,6 +385,150 @@ describe('GrpcTransportAdapter', () => {
     await expect(consume()).rejects.toMatchObject({ code: 'FAILED_PRECONDITION' });
     expect(mockStream.sendSubscribe).toHaveBeenCalledTimes(1);
   });
+
+  // issue #100 (ported from macp-sdk-python#75): sendSubscribe() right after
+  // opening the stream can race a sibling participant that hasn't observed
+  // the initiator's SessionStart yet, so the runtime's first reply is a
+  // transient NOT_FOUND for a session that doesn't exist *yet*. A bounded
+  // retry absorbs exactly that race; every other error shape is unchanged.
+  describe('subscribe retry on transient NOT_FOUND', () => {
+    function makeThrowingStream(code: string, message = 'stream error') {
+      return {
+        responses: async function* (): AsyncGenerator<Envelope, void, void> {
+          throw new MacpTransportError(message, code);
+        },
+        sendSubscribe: vi.fn().mockResolvedValue(undefined),
+        close: vi.fn(),
+      };
+    }
+
+    it('retries a transient NOT_FOUND before any envelope is delivered, then succeeds', async () => {
+      const envelope = makeEnvelope({ sessionId: 'session-1' });
+      const failingStream = makeThrowingStream('NOT_FOUND', 'session not found (yet)');
+      const okStream = makeMockStream([envelope]);
+      const openStream = vi.fn().mockReturnValueOnce(failingStream).mockReturnValueOnce(okStream);
+      const mockClient = {
+        openStream,
+        protoRegistry: { decodeKnownPayload: vi.fn().mockReturnValue({}) },
+      } as any;
+
+      const adapter = new GrpcTransportAdapter(mockClient, 'session-1', undefined, {
+        backoffBase: 0,
+        backoffMax: 0,
+      });
+      const messages = [];
+      for await (const msg of adapter.start()) {
+        messages.push(msg);
+      }
+
+      expect(messages).toHaveLength(1);
+      expect(openStream).toHaveBeenCalledTimes(2);
+      // The errored stream is closed before the retry opens a fresh one.
+      expect(failingStream.close).toHaveBeenCalledTimes(1);
+      expect(okStream.sendSubscribe).toHaveBeenCalledWith('session-1', 0);
+    });
+
+    it('raises a non-NOT_FOUND stream error immediately, with no retry', async () => {
+      const failingStream = makeThrowingStream('PERMISSION_DENIED', 'not authorized');
+      const openStream = vi.fn().mockReturnValue(failingStream);
+      const mockClient = {
+        openStream,
+        protoRegistry: { decodeKnownPayload: vi.fn().mockReturnValue({}) },
+      } as any;
+
+      const adapter = new GrpcTransportAdapter(mockClient, 'session-1');
+      const consume = async () => {
+        for await (const _ of adapter.start()) {
+          // unreachable
+        }
+      };
+
+      await expect(consume()).rejects.toMatchObject({ code: 'PERMISSION_DENIED' });
+      expect(openStream).toHaveBeenCalledTimes(1);
+    });
+
+    it('propagates NOT_FOUND once the retry budget is exhausted', async () => {
+      const openStream = vi.fn(() => makeThrowingStream('NOT_FOUND', 'session not found (yet)'));
+      const mockClient = {
+        openStream,
+        protoRegistry: { decodeKnownPayload: vi.fn().mockReturnValue({}) },
+      } as any;
+
+      const adapter = new GrpcTransportAdapter(mockClient, 'session-1', undefined, {
+        maxRetries: 2,
+        backoffBase: 0,
+        backoffMax: 0,
+      });
+      const consume = async () => {
+        for await (const _ of adapter.start()) {
+          // unreachable
+        }
+      };
+
+      await expect(consume()).rejects.toMatchObject({ code: 'NOT_FOUND' });
+      // 1 initial attempt + 2 retries = 3 total stream opens.
+      expect(openStream).toHaveBeenCalledTimes(3);
+    });
+
+    it('a NOT_FOUND after an envelope has already been delivered raises immediately, with no retry', async () => {
+      const envelope = makeEnvelope({ sessionId: 'session-1' });
+      const stream = {
+        responses: async function* (): AsyncGenerator<Envelope, void, void> {
+          yield envelope;
+          throw new MacpTransportError('session expired mid-stream', 'NOT_FOUND');
+        },
+        sendSubscribe: vi.fn().mockResolvedValue(undefined),
+        close: vi.fn(),
+      };
+      const openStream = vi.fn().mockReturnValue(stream);
+      const mockClient = {
+        openStream,
+        protoRegistry: { decodeKnownPayload: vi.fn().mockReturnValue({}) },
+      } as any;
+
+      const adapter = new GrpcTransportAdapter(mockClient, 'session-1');
+      const messages: unknown[] = [];
+      const consume = async () => {
+        for await (const msg of adapter.start()) {
+          messages.push(msg);
+        }
+      };
+
+      await expect(consume()).rejects.toMatchObject({ code: 'NOT_FOUND' });
+      expect(messages).toHaveLength(1);
+      expect(openStream).toHaveBeenCalledTimes(1);
+    });
+
+    it('a reconnect via stop()+start() does not retry a NOT_FOUND, even on its first response', async () => {
+      // Once `delivered > 0` from an earlier start() on this adapter, the
+      // session demonstrably exists, so a fresh start() must not spend its
+      // retry budget on a NOT_FOUND even though no envelope has landed yet
+      // *on this call*.
+      const firstEnvelope = makeEnvelope({ sessionId: 'session-1', messageId: 'msg-1' });
+      const firstStream = makeMockStream([firstEnvelope]);
+      const secondStream = makeThrowingStream('NOT_FOUND', 'session expired');
+      const openStream = vi.fn().mockReturnValueOnce(firstStream).mockReturnValueOnce(secondStream);
+      const mockClient = {
+        openStream,
+        protoRegistry: { decodeKnownPayload: vi.fn().mockReturnValue({}) },
+      } as any;
+
+      const adapter = new GrpcTransportAdapter(mockClient, 'session-1');
+      for await (const _ of adapter.start()) {
+        // drain the first pass
+      }
+      await adapter.stop();
+
+      const consume = async () => {
+        for await (const _ of adapter.start()) {
+          // unreachable
+        }
+      };
+
+      await expect(consume()).rejects.toMatchObject({ code: 'NOT_FOUND' });
+      expect(openStream).toHaveBeenCalledTimes(2);
+    });
+  });
 });
 
 describe('HttpTransportAdapter', () => {
