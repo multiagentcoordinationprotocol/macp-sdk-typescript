@@ -1610,3 +1610,76 @@ on Phase 2, now must capture all four of Phase 2's barrel symbols
 `ANOMALY_DUPLICATE_BALLOT`, `PROJECTION_ANOMALY_FIELD_ORDER`) in its
 snapshot, not two.
 
+### Phase 3 — DONE (2026-09-25)
+
+**Verdict:** PASS, first round. **Verifier tier:** fresh Opus subagent
+(default tier — no public one-way door, no trust-boundary crossing; the
+guard is a local dev-time test, not a shipped contract).
+
+**Implementation:** `tests/unit/public-api.test.ts` (new) imports
+`* as sdk from '../../src/index'`, computes
+`Object.keys(sdk).filter(k => k !== 'default').sort()`, and asserts it
+equals the committed `tests/unit/public-api-snapshot.json` (109 names,
+generated from a fresh `dist/index.js` build — not hand-transcribed).
+Failure message names the snapshot file to update. Non-vacuity proven
+during implementation (temporary `__PARITY_CANARY` export → test fails →
+reverted), not kept as a permanent test.
+
+**Process incident (caught and fixed within this phase, not carried
+forward):** the canary revert used `git checkout -- src/index.ts`. Because
+Phase 2's own edit to `src/index.ts` (`isCanonicalCommitmentHash` added to
+the named `commitment-hash` export line) was still uncommitted — per this
+run's binding no-commit-until-asked posture — the checkout reverted the
+whole file to the last git commit (`ffb0251`), silently taking Phase 2's
+change with it. Caught immediately by diffing `git diff main --
+src/index.ts` and noticing the Phase 2 export was gone; fixed by manually
+re-applying the identical edit (same export line, same comment). **Lesson
+recorded for the rest of this run:** never use `git checkout --` to discard
+a scratch/proof change in a file that also carries other uncommitted,
+legitimate edits — a targeted `Edit`/manual revert is the safe tool for
+that, since it touches only the lines actually added for the proof.
+
+**Verification:** the fresh-Opus verifier independently reproduced
+everything rather than trusting the summary — reran `git diff main --
+src/index.ts` and confirmed it contains *only* the Phase 2 change (export
+line + comment reflow), confirmed zero `CANARY` residue anywhere in `src/`,
+cross-checked the diff against Phase 2's own recorded "Files touched" list,
+rebuilt `dist/` from scratch and confirmed the snapshot byte-matches the
+live runtime surface, reproduced the non-vacuity proof itself twice (an
+addition and, as an extra check, a removal), and reran the full gate
+independently. Verdict: PASS, with 2 non-blocking cosmetic observations —
+(a) the file's docblock sat after the imports instead of before, unlike
+every other docblock-carrying test file in the repo; (b) the new test file
+wasn't yet listed in `CLAUDE.md`'s "Test Structure" section or
+`docs/guides/testing.md`'s directory tree, both of which are the
+established convention for a new test file (Phase 1/2 also did this). Both
+fixed in this same pass: docblock moved above the imports; one-line entries
+added to both docs.
+
+**Files touched this phase:** `tests/unit/public-api.test.ts` (new),
+`tests/unit/public-api-snapshot.json` (new), `CLAUDE.md` (local, gitignored
+— test-list entry), `docs/guides/testing.md` (directory-tree entry), plus
+the recovery edit to `src/index.ts` (which restored, not changed, Phase 2's
+own intended diff — see `plans/sdk-parity-typescript.md` Phase 2 and Phase 3
+sections for the full account).
+
+**Gate (final, green):** `npm run check` / `lint` / `format:check` /
+`test:coverage` (1039 passed, 20 skipped, 0 failed — +1 vs. Phase 2's 1038)
+/ `build` / `make verify-fixtures` — all exit 0. Coverage unchanged at
+95.79/88.67/94.14/96.73 vs. floors 92/84/91/94 (the new test imports
+already-covered modules, so no coverage movement expected or seen).
+
+**ASSUMPTIONS.md:** no entry needed — nothing ambiguous was decided this
+phase; the process incident was a mistake-then-fix, not a judgment call
+with a wrong-guess blast radius (it was caught before any test ran green
+that would have masked the missing export — `npm run check`/`test` would
+have failed loudly the moment Phase 3's own new import of
+`isCanonicalCommitmentHash`-adjacent surface, or any pre-existing test
+depending on that export, next ran, though in fact it was caught even
+earlier via direct `git diff` inspection).
+
+**What's next:** Phase 4 (type-check the examples) — no dependency on
+Phase 2 or 3, uses the corrected `tsconfig.examples.json` with an explicit
+`rootDir: "."` override (see Phase 4's own plan section for the exact
+config, reverified by the plan-review round before implementation started).
+
