@@ -4,6 +4,18 @@ All notable changes to `macp-sdk-typescript` are documented here. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the
 project uses [Semantic Versioning](https://semver.org/).
 
+## [0.12.0](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/compare/v0.11.0...v0.12.0) (2026-09-25)
+
+
+### Features
+
+* **parity:** add isCanonicalCommitmentHash + anomaly constant exports ([bbde8d2](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/commit/bbde8d2f72b6fa2d1dc9024bafa587a21243d051))
+
+
+### Bug Fixes
+
+* **agent:** retry a transient NOT_FOUND on subscribe ([#100](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/issues/100)) ([#101](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/issues/101)) ([ffb0251](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/commit/ffb02514aaaeb9351bf465c00e808833536d3568))
+
 ## [0.11.0](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/compare/v0.10.0...v0.11.0) (2026-09-22)
 
 
