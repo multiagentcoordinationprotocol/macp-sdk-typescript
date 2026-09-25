@@ -4,3 +4,4 @@ coverage/
 docs/
 *.proto
 tests/vectors/cmt-hash/
+tests/parity/contract.json

@@ -1359,3 +1359,746 @@ defensive-validation idea was considered and deliberately left as an
 optional follow-up, not silently assumed into scope. Filed
 `macp-sdk-python#67` for that repo's identical `require_vote_quorum` bug
 (cross-repo, not fixed here).
+
+## PLAN-TYPESCRIPT re-verification (2026-09-25) — repo map for Phases 2-6
+
+Plan: `plans/sdk-parity-typescript.md`. Phase 1 was DONE as of 2026-09-20 (see
+that plan file). This section is the repo map `/implement` should read instead
+of re-scanning the repo for Phases 2-6, written while re-verifying the plan
+against `main` @ `ffb0251` (v0.11.0) five days after the original draft.
+
+- `src/commitment-hash.ts` (253 lines) — exports only `canonicalizeCommitmentPayload`
+  and `commitmentHash` today; Phase 2 adds `isCanonicalCommitmentHash` here.
+- `src/validation.ts:133` — `validateCommitmentHash` (throwing), same
+  `/^sha256:[0-9a-f]{64}$/` regex Phase 2's predicate mirrors non-throwing.
+- `src/projections/base.ts` (290 lines) — `ProjectionAnomalyKind` union at :11
+  (`'duplicate_vote' | 'duplicate_ballot'`), `ProjectionAnomaly` 7-field
+  interface at :39-53, `_ProjectionAnomalyFieldSetIsFrozen` compile guard at
+  :92-95 (a one-way door, do not touch). Phase 2 adds
+  `ANOMALY_DUPLICATE_VOTE`/`ANOMALY_DUPLICATE_BALLOT` here. `DecisionProjection`/
+  `QuorumProjection` (base.ts:37, :139) currently inline the literal strings
+  rather than calling a shared helper with these constants — updating those
+  call sites is optional cleanup, not required by Phase 2's acceptance criteria.
+- `src/index.ts` (33 lines) — mixed narrowed-named-export + `export *` barrel;
+  `commitmentHash` only (not `canonicalizeCommitmentPayload`) at :14; 15
+  `export *` modules plus `export * as agent from './agent'` at :32. Phase 3's
+  snapshot test imports `* as sdk` from here.
+- `src/constants.ts` (34 lines, full file) — already exports every one of the
+  16 `error_codes.permanent` strings the spec repo's parity manifest pins, plus
+  `MACP_VERSION`, `STANDARD_MODES`, `MODE_MULTI_ROUND`, and all three
+  `DEFAULT_*_VERSION` constants — Phase 5's parity test reads these directly,
+  no new exports needed here.
+- `src/policy.ts:246` — `buildDecisionPolicy`'s `schemaVersion` default is
+  already `3`, matching the parity manifest's `defaults.policy_builder_schema_version`
+  (confirms commit `a82972a`/#97 is already parity-correct).
+- `src/retry.ts:20-25` — `DEFAULT_RETRY_POLICY` (`maxRetries: 3, backoffBase: 0.1,
+  backoffMax: 2.0, retryableCodes: {RATE_LIMITED, INTERNAL_ERROR}`) — field-for-field
+  match to the manifest's `retry` section; Phase 5's parity test asserts this object
+  directly.
+- `src/proto-registry.ts` — `encodeKnownPayload`/`decodeKnownPayload` for
+  `MODE_MULTI_ROUND`/`Contribute`; `decodeMultiRoundContribute` already does
+  parse-JSON-then-fallback-to-protobuf (fixed by #93/`27ef4ec`). Phase 5's
+  parity test round-trips the manifest's 4 `contribute_payload.vectors`
+  through these two functions.
+- `tests/unit/proto-registry.test.ts:156-194` — existing Contribute encode/decode
+  coverage (canonical protobuf, legacy JSON, non-string coercion, leading
+  whitespace/#93 regression, empty payload). Phase 5 does not duplicate this;
+  it only asserts the specific manifest-pinned vectors.
+- `tests/unit/public-api*` — does not exist yet (Phase 3 creates
+  `tests/unit/public-api.test.ts` + `tests/unit/public-api-snapshot.json`).
+- `tsconfig.json:10,17` — `rootDir: "src"`, `include: ["src/**/*.ts"]` only;
+  `examples/` (12 files, listed in the plan's Phase 4) is outside every gate
+  today but currently type-checks clean under a throwaway probe tsconfig.
+  Phase 4 adds `tsconfig.examples.json` + a `check:examples` script chained
+  into `"check"` (`package.json`'s current `"check"` is `tsc -p tsconfig.json
+  --noEmit`).
+- `.github/workflows/ci.yml:40` — runs `npm run check` already; confirmed no
+  CI edit needed for Phase 4 as long as `check:examples` chains into `check`.
+- `Makefile` — `verify-fixtures`/`sync-fixtures` (multi-file, bidirectional
+  drift/EXTRA loops against `$(SPEC_CONFORMANCE_DIR)`) is the template Phase
+  5's new `verify-parity`/`sync-parity` targets mirror, single-file version
+  (`SPEC_PARITY_DIR := ../multiagentcoordinationprotocol/schemas/parity`).
+  `check: lint format build test` does NOT include `verify-fixtures` today —
+  `verify-parity` should stay standalone too, not folded into `check`.
+- `.github/workflows/conformance-fixtures.yml` — already checks out the spec
+  repo to `_spec` for the `verify-fixtures` job; Phase 5 adds one step to this
+  SAME job (`make verify-parity SPEC_PARITY_DIR="$GITHUB_WORKSPACE/_spec/schemas/parity"`)
+  rather than a new job, to reuse the existing checkout.
+- `tests/vectors/cmt-hash/SOURCE.md` — the template Phase 5's new
+  `tests/parity/SOURCE.md` should follow (provenance, why it lives where it
+  does, how the copy is kept honest, "do not hand-edit").
+- Spec repo `schemas/parity/contract.json` (8832 bytes, `contract_version:
+  "1.0.0"`) — read in full this session via `gh api`; sections `protocol`,
+  `modes`, `defaults`, `error_codes`, `retry`, `projection_anomaly`,
+  `commitment_hash`, `contribute_payload` all name `macp-sdk-typescript` in
+  `applies_to`; `contribute_acceptance` is `macp-runtime`-only, out of scope.
+  Filed/merged via spec issue #134 (closed). Companion `schemas/parity/README.md`
+  documents versioning rules (PATCH/MINOR/MAJOR) and five "Open items" this
+  plan deliberately does not resolve.
+- Spec repo issue #135 (open) — the naming-reconciliation decision issue;
+  already filed, nothing for this plan to do but wait.
+- `docs/index.md` (5052 bytes, full ToC read) — Phase 3/6 both touch this:
+  Phase 6 needs to add `determinism.md`/`security.md` links; neither exists
+  today under any name (checked `docs/`, `docs/guides/`, and both bare names).
+- Sibling `/Users/ajitkoti/code/multiagentcoordinationprotocol/macp-sdk-python/docs/{determinism,security}.md`
+  (also reachable at `/Users/Shared/multiagentcoordinationprotocol/macp-sdk-python`,
+  same tree) — 69 and 78 lines respectively, both read this session, Phase 6's
+  adaptation source. `security.md` cross-links Python's own `auth.md`; the TS
+  equivalent to retarget that link to is `docs/guides/authentication.md`.
+
+### Fresh-Opus review round (2026-09-25) — corrections applied to the plan
+
+Verdict: REVISE, 10 findings (4 load-bearing), all applied to
+`plans/sdk-parity-typescript.md` directly. Corrections that also affect this
+repo map (supersedes the bullets above where they conflict):
+
+- Anomaly-literal inline sites are `src/projections/decision.ts:78` and
+  `src/projections/quorum.ts:82` — **not** `base.ts:37`/`:139` as first
+  written above (`:37` is a docblock line, `:139` is unrelated).
+- `src/index.ts` is 32 lines (not 33) with **18** `export *` modules (not 15,
+  recounted from the live file).
+- Phase 2 now also delivers `PROJECTION_ANOMALY_FIELD_ORDER` (new, added by
+  the review round) — a runtime tuple in `src/projections/base.ts`, with its
+  own compile-time guard `_ProjectionAnomalyFieldOrderIsFrozen` mirroring the
+  file's existing `FrozenProjectionAnomalyField`/`_ProjectionAnomalyFieldSetIsFrozen`
+  idiom. **Correction found during Phase 2's own verification round (2026-09-25):**
+  this bullet originally said "exported from that module only (not the public
+  barrel)" — that was wrong. `src/projections/base.ts` reaches `src/index.ts`
+  via a wildcard `export *` chain (`src/projections.ts` → `src/index.ts`),
+  which cannot selectively omit one name the way `commitment-hash.ts`'s named
+  export line can; `PROJECTION_ANOMALY_FIELD_ORDER` reaches the runtime public
+  barrel regardless of intent (verified: `node -e "require('./dist/index.js')
+  .PROJECTION_ANOMALY_FIELD_ORDER"` prints the array). Harmless — comparable
+  to `STANDARD_MODES`'s existing barrel exposure — so the fix was correcting
+  this doc and the source docblock, not restructuring the export chain. See
+  `src/projections/base.ts`'s `PROJECTION_ANOMALY_FIELD_ORDER` docblock and
+  `plans/sdk-parity-typescript.md` Phase 2/Phase 3 for the full corrected text.
+  Phase 5's `projection_anomaly.fields` assertion uses this constant instead
+  of a hardcoded-in-the-test list.
+- Phase 4's `tsconfig.examples.json` needs `"compilerOptions": { "rootDir":
+  "." }` — extending `tsconfig.json` alone inherits `rootDir: "src"` and
+  fails with 12× `TS6059` on every example file. Reverified working with
+  `rootDir: "."` + `include: ["src/**/*.ts", "examples/**/*.ts"]`.
+- Phase 5's `commitment_hash.reject` array has 11 entries, not 10.
+- Phase 5's `verify-parity` Makefile target needs an explicit
+  `[ ! -f "$(SPEC_PARITY_DIR)/contract.json" ]` guard (mirroring
+  `verify-fixtures`'s two-guard shape), plus a `.prettierignore` entry for
+  `tests/parity/contract.json` (mirroring the existing `tests/vectors/cmt-hash/`
+  entry) and cases added to `tests/unit/fixture-drift-gate.test.ts` rather
+  than a manual hand-edit proof.
+- Phase 6 pages go at `docs/guides/determinism.md`/`docs/guides/security.md`,
+  not `docs/` top level — `docs/` holds nothing but `index.md`, and its ToC
+  only ever points into `guides/`/`api/`. `npm run format:check` does not
+  cover `docs/` (`.prettierignore` excludes it) and must not be cited as an
+  acceptance check for this phase.
+- Phase 1's DONE status line ("all six sites") is now stale prose describing
+  pre-#91 code; corrected in the plan with a dated addendum rather than
+  rewritten, since it's a historical record of what Phase 1 actually did.
+
+### `/implement` run (2026-09-25) — PR strategy and commit posture
+
+**PR strategy: ONE PR for Phases 2-6.** All five are small, additive,
+non-breaking, and cumulative on the same release train (no phase changes
+public behavior; Phase 5 depends on Phase 2's new exports; the rest are
+independent but low-value to review in isolation). Matches this repo's own
+established convention for a set of small interdependent phases (RFC-0013
+Phases 1-3, issue #55 Phases 1-7 both shipped as one PR each — see the
+history above). Branch: `feat/sdk-parity-phases-2-6`, cut from `main` @
+`ffb0251`.
+
+**Commit posture — binding ground rule from the plan itself:** "Never commit
+or push without explicit user instruction." Interpreted literally (per
+CLAUDE.md's own wording, which the plan's Ground Rules section quotes): no
+`git commit` runs during this implementation pass, phase-by-phase or
+otherwise, until the user is asked. Each phase below is still fully executed,
+gated, and verified (fresh Opus per phase) with its `Status: DONE` recorded
+in the plan and its tracked-file updates made here — only the actual `git
+commit` invocation is deferred to a single explicit go/no-go after all
+phases (and finalization) complete, at which point the user will also be
+asked how they want the commits shaped (one commit for the whole PR, or one
+per phase mirroring history convention).
+
+### Phase 2 — DONE (2026-09-25)
+
+**Verdict:** PASS, after 2 verification rounds. **Verifier tier:** fresh Opus
+subagent both rounds (default tier — nothing in Phase 2 crossed the
+Fable-critical bar: no public one-way door landed, since the barrel exposure
+below turned out to be pre-existing wildcard behavior, not a new contract
+choice).
+
+**Round 1 verdict:** GAPS — 1 substantive, 3 minor.
+- Substantive: `PROJECTION_ANOMALY_FIELD_ORDER` was designed/documented as
+  "exported but deliberately NOT added to the public barrel," modeled on
+  `canonicalizeCommitmentPayload`'s named-export exclusion in
+  `commitment-hash.ts`. False: `src/projections/base.ts` reaches
+  `src/index.ts` via a **wildcard** `export *` chain
+  (`src/projections.ts` → `src/index.ts`), which cannot selectively omit one
+  name the way a named export line can — the constant reaches the runtime
+  barrel regardless of intent (`node -e
+  "require('./dist/index.js').PROJECTION_ANOMALY_FIELD_ORDER"` prints the
+  array).
+- Minor (×3): stale pre-issue-#91 claims that `DecisionProjection`/
+  `QuorumProjection` "don't extend `BaseProjection`" / "never call
+  `recordAnomaly`," surviving in `src/projections/base.ts`'s field
+  docblocks, `tests/unit/projections/anomalies.test.ts`'s header + an inline
+  comment, `CLAUDE.md`, and `docs/guides/testing.md`.
+
+**Gap closure (this round):** fixed the `PROJECTION_ANOMALY_FIELD_ORDER`
+docblock in `src/projections/base.ts` to state the barrel exposure honestly
+(harmless, comparable to `STANDARD_MODES`; fix is documentation, not
+restructuring the export chain) — same correction applied to
+`plans/sdk-parity-typescript.md`'s Phase 2 approach text, Phase 5's
+`projection_anomaly.fields` row, and Phase 3's "Depends on"/acceptance
+criteria (now "all four" symbols, not two). Fixed all 3 minor gaps at their
+5 actual locations (`base.ts` ×2 docblocks, `anomalies.test.ts` ×2 spots,
+`CLAUDE.md`, `docs/guides/testing.md` — `docs/api/projections.md` checked
+and confirmed already clean). Full local gate re-run green before
+re-verify.
+
+**Round 2 (re-verify against the round-1 gap list, not a cold review):**
+PASS on all 4 gaps, each independently re-confirmed by the fresh verifier
+(re-ran the `node -e` barrel check itself, re-ran a `tsc` probe, grepped for
+stale phrase variants, confirmed the export-mechanism diff was
+documentation-only). Verifier also flagged 2 residual restatements of the
+same false claim that the round-1 fix pass had missed: `PROGRESS.md`'s own
+repo-map bullet (this file, then-lines ~1460-1462) and this plan's own Final
+report checklist line ("Phase 2's two new exports and their
+`dist/index.d.ts` presence"). Both fixed in this same pass (see the
+corrected bullet above this section, and the plan's Final report checklist).
+Non-blocking, pre-existing findings outside Phase 2's file scope (not
+fixed, flagged for future awareness only): the same stale
+`recordAnomaly`/`BaseProjection` claim class also appears in
+`tests/unit/projections/rollback-invariant.test.ts:218`,
+`tests/unit/projections/message-id-dedup.test.ts:72`, and two gitignored
+plan files (`plans/sdk-parity.md:336`, `plans/rfc-0007-first-vote-stands.md:255,589`)
+— none of these are Phase 2 deliverable files, so touching them here would
+be scope creep; leaving them for whichever phase/task next touches those
+files.
+
+**Files touched this phase:** `src/commitment-hash.ts`,
+`src/index.ts`, `src/projections/base.ts`, `tests/commitment-hash.test.ts`,
+`tests/unit/projections/anomalies.test.ts`, `CLAUDE.md` (local, gitignored),
+`docs/guides/testing.md`, plus tracked-file updates to
+`plans/sdk-parity-typescript.md` (local, gitignored) and this file.
+
+**Gate (final, both rounds green):** `npm run check` / `lint` /
+`format:check` / `test:coverage` (1038 passed, 20 skipped, 0 failed) /
+`build` / `make verify-fixtures` — all exit 0. Coverage 95.79% stmts /
+88.67% branches / 94.14% funcs / 96.73% lines, vs. floors 92/84/91/94 in
+`vitest.config.ts` — all above floor, no recalibration needed this phase
+(deferred to Finalization per this run's own working decision, see below).
+
+**ASSUMPTIONS.md:** no entry needed for the barrel-exposure divergence —
+it was a factual correction (the code already behaved this way; nothing was
+*chosen* that could be wrong), not an ambiguous judgment call requiring a
+logged assumption.
+
+**Coverage recalibration — working decision, now recorded:** floors stay at
+94/84/91/92 through Phases 2-6; recalibration (if any) happens once, at
+Finalization (§4), against the cumulative diff — not after every phase.
+Reasoning: recalibrating per-phase against a plan with 5 more phases still
+to land would mean touching `vitest.config.ts` up to 5 times for numbers
+that will keep moving until the feature is whole; one recalibration at the
+end, against final cumulative coverage, is the actual signal worth acting
+on. Not logged to `ASSUMPTIONS.md` (this is a `PROGRESS.md`-appropriate
+implementation-sequencing call per the Autonomy ladder's "consequential but
+decidable" tier, not an ambiguity with a wrong-guess blast radius).
+
+**What's next:** Phase 3 (public runtime-surface snapshot guard) — depends
+on Phase 2, now must capture all four of Phase 2's barrel symbols
+(`isCanonicalCommitmentHash`, `ANOMALY_DUPLICATE_VOTE`,
+`ANOMALY_DUPLICATE_BALLOT`, `PROJECTION_ANOMALY_FIELD_ORDER`) in its
+snapshot, not two.
+
+### Phase 3 — DONE (2026-09-25)
+
+**Verdict:** PASS, first round. **Verifier tier:** fresh Opus subagent
+(default tier — no public one-way door, no trust-boundary crossing; the
+guard is a local dev-time test, not a shipped contract).
+
+**Implementation:** `tests/unit/public-api.test.ts` (new) imports
+`* as sdk from '../../src/index'`, computes
+`Object.keys(sdk).filter(k => k !== 'default').sort()`, and asserts it
+equals the committed `tests/unit/public-api-snapshot.json` (109 names,
+generated from a fresh `dist/index.js` build — not hand-transcribed).
+Failure message names the snapshot file to update. Non-vacuity proven
+during implementation (temporary `__PARITY_CANARY` export → test fails →
+reverted), not kept as a permanent test.
+
+**Process incident (caught and fixed within this phase, not carried
+forward):** the canary revert used `git checkout -- src/index.ts`. Because
+Phase 2's own edit to `src/index.ts` (`isCanonicalCommitmentHash` added to
+the named `commitment-hash` export line) was still uncommitted — per this
+run's binding no-commit-until-asked posture — the checkout reverted the
+whole file to the last git commit (`ffb0251`), silently taking Phase 2's
+change with it. Caught immediately by diffing `git diff main --
+src/index.ts` and noticing the Phase 2 export was gone; fixed by manually
+re-applying the identical edit (same export line, same comment). **Lesson
+recorded for the rest of this run:** never use `git checkout --` to discard
+a scratch/proof change in a file that also carries other uncommitted,
+legitimate edits — a targeted `Edit`/manual revert is the safe tool for
+that, since it touches only the lines actually added for the proof.
+
+**Verification:** the fresh-Opus verifier independently reproduced
+everything rather than trusting the summary — reran `git diff main --
+src/index.ts` and confirmed it contains *only* the Phase 2 change (export
+line + comment reflow), confirmed zero `CANARY` residue anywhere in `src/`,
+cross-checked the diff against Phase 2's own recorded "Files touched" list,
+rebuilt `dist/` from scratch and confirmed the snapshot byte-matches the
+live runtime surface, reproduced the non-vacuity proof itself twice (an
+addition and, as an extra check, a removal), and reran the full gate
+independently. Verdict: PASS, with 2 non-blocking cosmetic observations —
+(a) the file's docblock sat after the imports instead of before, unlike
+every other docblock-carrying test file in the repo; (b) the new test file
+wasn't yet listed in `CLAUDE.md`'s "Test Structure" section or
+`docs/guides/testing.md`'s directory tree, both of which are the
+established convention for a new test file (Phase 1/2 also did this). Both
+fixed in this same pass: docblock moved above the imports; one-line entries
+added to both docs.
+
+**Files touched this phase:** `tests/unit/public-api.test.ts` (new),
+`tests/unit/public-api-snapshot.json` (new), `CLAUDE.md` (local, gitignored
+— test-list entry), `docs/guides/testing.md` (directory-tree entry), plus
+the recovery edit to `src/index.ts` (which restored, not changed, Phase 2's
+own intended diff — see `plans/sdk-parity-typescript.md` Phase 2 and Phase 3
+sections for the full account).
+
+**Gate (final, green):** `npm run check` / `lint` / `format:check` /
+`test:coverage` (1039 passed, 20 skipped, 0 failed — +1 vs. Phase 2's 1038)
+/ `build` / `make verify-fixtures` — all exit 0. Coverage unchanged at
+95.79/88.67/94.14/96.73 vs. floors 92/84/91/94 (the new test imports
+already-covered modules, so no coverage movement expected or seen).
+
+**ASSUMPTIONS.md:** no entry needed — nothing ambiguous was decided this
+phase; the process incident was a mistake-then-fix, not a judgment call
+with a wrong-guess blast radius (it was caught before any test ran green
+that would have masked the missing export — `npm run check`/`test` would
+have failed loudly the moment Phase 3's own new import of
+`isCanonicalCommitmentHash`-adjacent surface, or any pre-existing test
+depending on that export, next ran, though in fact it was caught even
+earlier via direct `git diff` inspection).
+
+**What's next:** Phase 4 (type-check the examples) — no dependency on
+Phase 2 or 3, uses the corrected `tsconfig.examples.json` with an explicit
+`rootDir: "."` override (see Phase 4's own plan section for the exact
+config, reverified by the plan-review round before implementation started).
+
+### Phase 4 — DONE (2026-09-25)
+
+**Verdict:** PASS, first round. **Verifier tier:** fresh Opus subagent
+(default tier — a dev-time compile gate, not a public contract or trust
+boundary).
+
+**Implementation:** new `tsconfig.examples.json` at the repo root, exactly
+matching the plan's spec block (`extends: "./tsconfig.json"`,
+`rootDir: "."` explicit override, `include: ["src/**/*.ts",
+"examples/**/*.ts"]`). `package.json`'s `"check"` script changed to
+`"tsc -p tsconfig.json --noEmit && npm run check:examples"`, with a new
+`"check:examples": "tsc -p tsconfig.examples.json"` script. No
+`examples/*.ts` file edited — all 12 examples type-check clean today with
+zero changes, confirmed by both the plan-review round and this phase's
+implementation. `.github/workflows/ci.yml` untouched — it already runs
+`npm run check` at line 40, so chaining `check:examples` into `check`
+covers CI for free.
+
+**Non-vacuity (AC1) proven twice, independently:** once during
+implementation (temporary type error injected into
+`examples/decision-smoke.ts`, `npm run check` failed with `TS2322`,
+reverted via `git checkout --` — safe this time since that file had no
+other uncommitted changes, confirmed via `git diff main --
+examples/decision-smoke.ts` before reverting, unlike the Phase 3 incident);
+once again by the verifier, independently, in a *different* file
+(`examples/quorum-smoke.ts`), reverted via a targeted `Edit` rather than
+`git checkout --` and confirmed byte-identical to baseline by sha256
+afterward.
+
+**Adversarial check the verifier ran on its own initiative:** built a
+`tsconfig.examples.json` variant with the `rootDir: "."` override removed,
+to check whether the earlier plan-review round's claimed `TS6059` bug was
+real or overstated. It reproduced exactly 12× `TS6059`, one per example
+file — confirming the fix is load-bearing, not defensive boilerplate.
+
+**Files touched this phase:** `tsconfig.examples.json` (new),
+`package.json` (2-line script diff only — confirmed via `git diff main --
+package.json`: no dependency change, no version bump, no other script
+touched), `CLAUDE.md` (local, gitignored — Build Commands entry for
+`check:examples`).
+
+**Gate (final, green):** `npm run check` (now includes the examples
+compile) / `lint` / `format:check` / `test:coverage` (1039 passed, 20
+skipped, 0 failed — unchanged from Phase 3, since this phase adds a compile
+gate, not a test) / `build` / `make verify-fixtures` — all exit 0. Coverage
+unchanged at 95.79/88.67/94.14/96.73 vs. floors 92/84/91/94.
+
+**ASSUMPTIONS.md:** no entry needed — nothing ambiguous, the one open
+question from the plan-review round (whether the 12 examples still compile
+clean under the corrected config) was resolved as a verified fact, not an
+assumption.
+
+**What's next:** Phase 5 (vendor and gate the spec-repo parity contract) —
+depends on Phase 2 (the parity test asserts `isCanonicalCommitmentHash` and
+the two `ANOMALY_DUPLICATE_*` constants). This is the largest remaining
+phase: vendoring `schemas/parity/contract.json`, a new `tests/parity/`
+directory, `Makefile` `sync-parity`/`verify-parity` targets, a CI step, and
+extending `tests/unit/fixture-drift-gate.test.ts`. See Phase 5's own plan
+section for the full per-manifest-section mapping table.
+
+### Phase 5 — DONE (2026-09-25)
+
+**Verdict:** PASS, first round. **Verifier tier:** fresh Opus subagent
+(default tier — this phase reads a spec-repo manifest and asserts local
+runtime values against it; it does not create a new public contract of this
+SDK's own, so no Fable-critical bar was crossed).
+
+**Implementation, matching the plan's per-manifest-section table exactly:**
+- `tests/parity/contract.json` — vendored from the spec-repo sibling
+  checkout (`../multiagentcoordinationprotocol/schemas/parity/contract.json`,
+  commit `4f15b96cac6e39d62925a5baa1ef80a42c2f818d`), confirmed byte-identical
+  (`diff -q` clean, sha256 match) and re-confirmed by the verifier
+  independently via a fresh sha256 comparison.
+- `tests/parity/SOURCE.md` — provenance note, modeled on
+  `tests/vectors/cmt-hash/SOURCE.md`'s structure; verifier independently
+  confirmed the cited commit hash matches `git log -1` in the sibling repo
+  and that `schemas/parity/` is genuinely a sibling of `schemas/conformance/`
+  in the spec repo (not a subdirectory), which is the actual reason this
+  needs its own directory rather than folding into `tests/conformance/`.
+- `tests/parity/contract.test.ts` — 19 tests, one per approach-table row,
+  covering all 8 manifest sections whose `applies_to` names
+  `macp-sdk-typescript` (`protocol`, `modes` ×2, `defaults` ×2,
+  `error_codes` ×2, `retry` ×2, `projection_anomaly` ×2, `commitment_hash`
+  ×3, `contribute_payload` ×4). `contribute_acceptance`
+  (`applies_to: [macp-runtime]` only) deliberately not asserted. Every
+  assertion reads the live manifest content (`import contract from
+  './contract.json'`) rather than hand-copying values, except the two the
+  plan explicitly permits to be hardcoded (`error_codes.deprecated` and
+  `commitment_hash.pattern`'s literal — neither has a `src/` counterpart to
+  read live). A `contract_version === '1.0.0'` tripwire test means any
+  future MINOR/MAJOR manifest bump forces a human to re-review this whole
+  file rather than silently passing against sections that no longer apply.
+- `Makefile` — `SPEC_PARITY_DIR`, `sync-parity`, `verify-parity`, full
+  two-guard shape (directory-missing, then file-missing, each a distinct
+  named error) mirroring `verify-fixtures`'s guard style, both added to
+  `.PHONY`, kept standalone (not folded into `check`).
+- `.prettierignore` — `tests/parity/contract.json` added (verifier confirmed
+  it actually bites: `prettier --file-info` reports `ignored: true`).
+- `.github/workflows/conformance-fixtures.yml` — one new step ("Verify
+  parity contract (no drift)") added to the existing `verify-fixtures` job,
+  reusing the pre-existing `_spec` checkout — no new job, no second
+  checkout. Display name cosmetically renamed to "Conformance fixtures &
+  parity contract" (left to implementer discretion by the plan).
+- `tests/unit/fixture-drift-gate.test.ts` — extended with 7 new cases (the
+  plan's acceptance criterion 2 estimated "6", actual count needed to cover
+  both `sync-parity` guards individually plus the clean/drift/verify-side
+  guards turned out to be 7 — a plan-estimate correction, not a gap) driving
+  the real `make sync-parity`/`verify-parity` recipes via `spawnSync`
+  against synthetic trees, including the specific edge case the plan's own
+  acceptance criterion called out: canonical directory present but
+  `contract.json` missing inside it, which a directory-only guard (like the
+  pre-existing `verify-fixtures` before this phase) would miss.
+- `docs/guides/testing.md` — new "Parity Contract Gate" subsection
+  mirroring "Fixture Drift Gate"'s structure, plus a `tests/parity/`
+  directory-tree entry and a corrected one-line description for
+  `fixture-drift-gate.test.ts` (now drives 4 make targets, not 2).
+  `CLAUDE.md` (local, gitignored) — Build Commands + test-list entries.
+
+**Verification — fresh-Opus verifier reproduced everything independently
+rather than trusting the summary:** re-ran `diff -q` and a sha256 comparison
+on the vendored file; ran `make verify-parity` from a clean state; read
+every new fixture-drift-gate case and confirmed each drives the real
+Makefile recipe via `spawnSync`, not a reimplementation; went row-by-row
+through the approach table cross-checking `contract.test.ts` against the
+spec repo's own `schemas/parity/README.md` (confirmed exactly 8 sections
+name `macp-sdk-typescript`, all 8 asserted); validated the CI workflow YAML
+parses and confirmed via `git diff` that exactly one step was added, no new
+job/checkout; ran the full local gate independently; and ran 4 targeted
+adversarial probes: (1) introduced literal drift into the vendored
+`contract.json` and confirmed `verify-parity` fails with `DRIFT:`, then
+`sync-parity` restores it and `verify-parity` re-passes; (2) confirmed both
+Makefile guards fire with distinct messages, not a bare `diff`/`cp` error;
+(3) temporarily changed `DEFAULT_RETRY_POLICY.maxRetries` in `src/retry.ts`
+from `3` to `4` via a targeted `Edit` (not `git checkout --`, learning from
+the Phase 3 incident) and confirmed `contract.test.ts` fails, then reverted
+cleanly and confirmed `git status --short` was byte-identical to the
+pre-probe snapshot; (4) confirmed no scope creep or accidental file loss
+elsewhere in the working tree.
+
+**Gap closure (this round):** verdict was PASS with 6 non-blocking nits;
+the verifier's own count also caught a task-brief error (7 new
+fixture-drift-gate cases, not 6 as originally estimated — a plan-estimate
+correction, not an implementation gap). Fixed the 3 nits worth fixing: a
+comment claiming "one of the manifest's own vectors" while hardcoding a
+literal (now reads `vectors[0].value` instead), an accept-vector test
+missing a `toHaveLength(1)` non-vacuity guard (added, matching the
+pre-existing `reject`'s `toHaveLength(11)`) and a `contribute_payload`
+vectors test missing `toHaveLength(4)` (added), and one overstated test
+title (renamed to describe what the test actually checks). Left 3 nits
+unfixed per the verifier's own explicit judgment that none were worth
+fixing as a merge condition (a cosmetic wording difference between
+`verify-fixtures`'s and `verify-parity`'s drift-line text; a
+defense-in-depth-only `.prettierignore` entry, since the repo's own
+`format`/`format:check` globs never matched `tests/parity/contract.json` in
+the first place; this `PROGRESS.md` entry itself, written now).
+
+**Files touched this phase:** `tests/parity/contract.json` (new, vendored),
+`tests/parity/SOURCE.md` (new), `tests/parity/contract.test.ts` (new),
+`.prettierignore`, `Makefile`, `.github/workflows/conformance-fixtures.yml`,
+`tests/unit/fixture-drift-gate.test.ts`, `docs/guides/testing.md`,
+`CLAUDE.md` (local, gitignored).
+
+**Gate (final, green):** `npm run check` / `lint` / `format:check` /
+`test:coverage` (1065 passed, 20 skipped, 0 failed — +26 vs. Phase 4's
+1039: 19 from `contract.test.ts` + 7 from `fixture-drift-gate.test.ts`) /
+`build` / `make verify-fixtures` (unaffected, still green) / `make
+verify-parity` (new, green) — all exit 0. Coverage unchanged at
+95.79/88.67/94.14/96.73 vs. floors 92/84/91/94 (this phase adds tests for
+already-covered `src/` code paths plus a Makefile-driving test that imports
+nothing from `src/`, so no coverage movement expected or seen).
+
+**ASSUMPTIONS.md:** no entry needed. The one candidate — "6 vs. 7 new
+fixture-drift-gate cases" — was a plan-estimate imprecision caught and
+corrected during implementation/verification, not an ambiguous design
+choice with a wrong-guess blast radius.
+
+**Cross-repo:** read-only, as planned — this phase reads
+`schemas/parity/contract.json` from the spec repo; it does not write to it
+or to `macp-sdk-python`. No new issue filed (5a/5b were already satisfied
+before this phase started, per the plan's own "Already satisfied, no
+action" section).
+
+**What's next:** Phase 6 (docs: port the two contract-relevant Python pages
+— explicitly marked cuttable in the plan). All 5 non-cuttable phases (1-5)
+are now DONE. Before starting Phase 6, the user has not yet been asked
+whether to include or skip it, per the plan's own framing — will ask once
+Phase 6 is reached, rather than assuming either way.
+
+### Phase 6 — DONE (2026-09-25)
+
+**User decision:** asked whether to include this cuttable phase or skip
+straight to finalization; user chose "Do Phase 6, then finalize."
+
+**Verdict:** PASS, first round. **Verifier tier:** fresh Opus subagent
+(default tier — a docs-only phase, no public contract or trust boundary).
+
+**Implementation:** `docs/guides/determinism.md` and
+`docs/guides/security.md`, adapted from `macp-sdk-python`'s
+`docs/determinism.md`/`docs/security.md` (sibling checkout at
+`/Users/Shared/multiagentcoordinationprotocol/macp-sdk-python`). Same
+structural sections and guidance as the Python originals; every code
+sample rewritten to this SDK's actual TypeScript API rather than
+transliterated — `Auth.bearer(token, { expectedSender })`/`Auth.devAgent`,
+`new MacpClient({ address, secure, allowInsecure, rootCertificates, auth })`,
+`session.commit({ action, authorityScope, reason })`, `new
+DecisionSession(client, { modeVersion, configurationVersion,
+policyVersion })`, camelCase `RetryPolicy`
+(`maxRetries`/`backoffBase`/`backoffMax`/`retryableCodes: Set<string>`) +
+`retrySend(client, envelope, { policy, auth })`, and
+`DecisionProjection.applyEnvelope(envelope, protoRegistry)` — note the TS
+signature takes a second `protoRegistry` argument that Python's
+`apply_envelope(envelope)` doesn't need. Python-specific content (version-era
+prose, `frozenset`, `AuthConfig.for_*`) dropped rather than translated.
+Both pages linked from `docs/index.md`'s Guides ToC, inserted between
+"Agent Framework" and "Testing". Two links that would otherwise have
+pointed at Python-only pages this phase deliberately does NOT port
+(`session-discovery.md`, `protocol.md#envelopes`) were retargeted to real
+TS-side pages instead, avoiding a dangling reference to something that
+doesn't exist here.
+
+**Verification — fresh-Opus verifier went further than reading the diff:**
+extracted all 6 code samples verbatim into a throwaway probe file and
+`tsc`-compiled them against this repo's real `tsconfig.json` (strict mode,
+`noUncheckedIndexedAccess`) — exit 0, proving every constructor option and
+method call is real, not just grep-plausible. Cross-checked every symbol
+against its actual source (`src/decision.ts`, `src/base-session.ts`,
+`src/projections/base.ts`, `src/projections/decision.ts`, `src/client.ts`,
+`src/auth.ts`, `src/errors.ts`, `src/retry.ts`, `src/watchers.ts`) and
+several behavioral claims (e.g. that the identity guard fires before the
+envelope leaves the process — traced through `senderFor`/
+`assertSenderMatchesIdentity` in `src/decision.ts`). Independently resolved
+all 11 internal cross-links — file exists, heading text exists, and the
+anchor matches GitHub's slug algorithm (parens/colons/backticks stripped) —
+plus spot-checked that each linked section's content actually delivers on
+what the "see X for the full walkthrough" promise claims. Grepped both
+files against 29 Python-idiom patterns (snake_case method names, `self.`,
+`mypy`, `poetry`, Python assert style, etc.) — zero hits. Confirmed none of
+the four deliberately-unported Python pages (`protocol.md`,
+`guides/building-orchestrators.md`, `guides/session-discovery.md`,
+`guides/direct-agent-auth.md`) were accidentally created anywhere in this
+repo. Re-ran the full local gate and confirmed test count/coverage are
+byte-for-byte unchanged from Phase 5 (1065 passed, 95.79/88.67/94.14/96.73)
+— proving this phase really is docs-only.
+
+**Gap closure (this round):** verdict PASS with 2 bookkeeping gaps (this
+plan's own Status line still said TODO and asserted the pages didn't exist;
+no `PROGRESS.md` entry existed yet) — both fixed in this same pass, per
+this run's own established convention from Phases 1-5. 3 cosmetic nits
+left unfixed, on the verifier's own assessment that all three mirror the
+Python original's own conventions rather than being defects introduced by
+this port: an external-spec link that carries no anchor (the actual spec
+heading is worded slightly differently but the link still resolves to the
+right page, and the three named patterns genuinely map onto that section);
+the TLS code sample being near-duplicate of `authentication.md`'s own TLS
+example (intentional — the page links out for the full walkthrough, and
+Python's original did the same); a bare `expect()`-style illustrative
+snippet with no visible import, matching Python's bare `assert` convention
+for a doc code block that was never meant to be literally executable
+(docs code blocks are outside `check:examples`'s `examples/**/*.ts` glob
+by design — see Phase 4).
+
+**Files touched this phase:** `docs/guides/determinism.md` (new),
+`docs/guides/security.md` (new), `docs/index.md` (2-line addition only).
+
+**Gate (final, green, unchanged from Phase 5):** `npm run check` / `lint`
+/ `format:check` / `test:coverage` (1065 passed, 20 skipped, 0 failed —
+identical to Phase 5, confirming zero code impact) / `build` / `make
+verify-fixtures` / `make verify-parity` — all exit 0. Coverage identical
+at 95.79/88.67/94.14/96.73 vs. floors 92/84/91/94.
+
+**ASSUMPTIONS.md:** no entry needed — the two pages to port were named
+explicitly in the plan, the adaptation approach (rewrite API calls, drop
+Python-specific content) was specified in the plan's own "Approach" text,
+and no ambiguous judgment call arose during implementation.
+
+**What's next:** all 6 phases of `plans/sdk-parity-typescript.md` are now
+DONE. Proceed to the `/implement` Finalization pass (§4): whole-feature
+tests for behavior the phases collectively introduced but no single
+phase's tests cover, integration-test coverage for any untested boundary,
+a final docs/tracked-file sweep, then one cumulative fresh-Opus
+verification pass over the whole diff (not just the last phase) before
+asking the user about commits.
+
+## Finalization pass (2026-09-25)
+
+**Tests, whole-feature re-check:** re-ran the full gate from a genuinely
+clean state (`rm -rf dist coverage`, not incremental) — `check`/`lint`/
+`format:check`/`test:coverage`/`build`/`verify-fixtures`/`verify-parity`,
+all green, identical numbers to every individual phase's own gate (1065
+passed, 20 skipped, 95.79/88.67/94.14/96.73). Reviewed every seam between
+phases for an untested cross-phase interaction: Phase 2↔3 (Phase 3's
+snapshot capturing all four of Phase 2's barrel symbols — tested, twice,
+by two different verifiers), Phase 2↔5 (Phase 5's parity test asserting
+Phase 2's exports against the manifest — tested), Phase 4↔CI (examples
+gate reachable via `npm run check`, which CI already runs at
+`ci.yml:40` — confirmed unaffected, no CI edit needed, and confirmed
+`prepublishOnly` (`package.json:40`) transitively covers it too since it
+also calls `npm run check`), Phase 5↔CI (`verify-parity` step added and
+simulated locally against the exact CI invocation — green). No untested
+seam found. As an extra whole-feature proof beyond any single phase's own
+test (none of which imports from the *built* package — `public-api.test.ts`
+deliberately tests against `src/index`, matching this SDK's own established
+design, see Phase 3), ran a one-time manual smoke test against the real
+`dist/index.js` build exercising `isCanonicalCommitmentHash`,
+`ANOMALY_DUPLICATE_VOTE`/`_BALLOT`, `PROJECTION_ANOMALY_FIELD_ORDER`, and
+`DecisionProjection` together — all present and correct, and the
+public-api-snapshot count matched the live runtime surface exactly.
+
+**Integration tests:** no new I/O/network/process boundary was introduced
+by Phases 2-6 that isn't already covered — Phase 5's Makefile-driving
+`fixture-drift-gate.test.ts` cases (`spawnSync('make', ...)`, a real
+process boundary) are the closest thing to an integration test this
+feature has, and they were written and verified as part of Phase 5 itself.
+No live-runtime boundary was touched (this feature is entirely local
+tooling/API additions), so `tests/integration/runtime.test.ts` needed no
+changes and none were made.
+
+**Docs sweep beyond the per-phase Docs fields:** found two additional
+stale spots the cumulative diff created, neither owned by a single phase's
+own Files list: `docs/api/envelope.md` had no mention of Phase 2's new
+`isCanonicalCommitmentHash` (added a short section right after
+`buildCommitmentRef`, matching that file's existing precedent of
+documenting `commitment-hash.ts` exports alongside `envelope.ts`'s own);
+`docs/api/projections.md`'s "Anomalies" section had no mention of Phase 2's
+`ANOMALY_DUPLICATE_VOTE`/`_BALLOT`/`PROJECTION_ANOMALY_FIELD_ORDER` (added
+a short paragraph after the `ProjectionAnomaly` interface block, linking to
+Phase 5's new "Parity Contract Gate" section). Both link targets verified
+to resolve. Full gate re-confirmed green after these two additions.
+
+**Tracked files:** `plans/sdk-parity-typescript.md` — all 6 phases
+`Status: DONE`. `PROGRESS.md` — full checkpoint trail, this section being
+the last entry before the final cumulative verify. `ASSUMPTIONS.md` —
+checked, pre-existing (dated 2026-08-31, from an earlier feature), no new
+entries needed from any of Phases 2-6 — every phase's own completion
+record already confirmed no ambiguous judgment call arose that would
+warrant one.
+
+**Files touched, this finalization pass only:** `docs/api/envelope.md`,
+`docs/api/projections.md`.
+
+**Next:** one cumulative fresh-Opus verification pass over the whole
+Phases 2-6 diff (not just the last phase), per `/implement` §4. Then ask
+the user explicitly before any `git commit`/push/PR, per the binding
+commit posture recorded above — including how they want the commits
+shaped (one commit for the whole PR vs. one per phase, matching this
+repo's own established convention for small interdependent phase sets —
+see "PR strategy" above).
+
+**Coverage-floor recalibration — decided, not deferred further:**
+`vitest.config.ts:40-44` floors, reordered to match this doc's own
+stmts/branches/funcs/lines measured-tuple convention, are statements 92 /
+branches 84 / functions 91 / lines 94; measured across all 6 phases stayed
+a constant 95.79/88.67/94.14/96.73, i.e. +3.79 / +4.67 / +3.14 / +2.73pp
+of headroom on every axis (statements/branches/functions/lines), unmoved
+by any phase despite Phases 2-6 adding real test files
+(`public-api.test.ts`, `contract.test.ts`, 7 new
+`fixture-drift-gate.test.ts` cases). Decision: **leave the floors as-is,
+do not recalibrate.** The "measured−2pp, recalibrated when new tests
+land" convention exists to keep the floor honest as a tripwire close to
+current reality — it's not "recalibrate on any diff that touches tests."
+Here the new tests covered code whose surrounding files were already
+well-exercised, so the percentage didn't move; tightening the floor now
+would buy no additional protection (nothing is within 2.7pp of any floor)
+and would add fragility for zero signal. Recalibrate later if a future
+change actually shifts the measured numbers, not preemptively here.
+
+## Final cumulative verification (2026-09-25) — PASS
+
+Fresh Opus verifier, scope: the whole Phases 2-6 diff against the plan as
+a whole, per `/implement` §4 — not a re-verify of Phase 6 alone. Ran every
+gate command cold itself (`check`, `lint`, `format:check`,
+`test:coverage`, `build`, `verify-fixtures`, `verify-parity`, plus a
+simulated CI-exact `verify-parity` invocation) and reproduced the same
+green results independently. Checked every named cross-phase seam —
+Phase 2↔3 (`node -e` against the built `dist/index.js`: 109 live keys vs.
+109 in the snapshot, zero drift, all four Phase 2 symbols present),
+Phase 2↔5 (independently enumerated the parity manifest: exactly 8
+sections name `macp-sdk-typescript`, all 8 asserted, `contribute_acceptance`
+correctly skipped as runtime-only), Phase 4↔CI (`check:examples` reachable
+via `ci.yml:40`'s `npm run check` and via `prepublishOnly`;
+`examples/` diff confirmed empty), Phase 5↔CI (step placement, cwd, and
+target all verified against the actual workflow file) — and extracted
+every code sample from the two new Phase 6 docs into a probe file,
+compiling it `--strict` against `src/index` to prove the API calls are
+real, not just the 15 internal links resolving. Also independently
+verified the `PROJECTION_ANOMALY_FIELD_ORDER` barrel correction is
+consistent across all three places it's stated (plan, PROGRESS.md,
+`base.ts`).
+
+**One correction identified, applied above:** the coverage-headroom
+figures in the "Coverage-floor recalibration" section above mis-paired
+axis labels (the 95.79/88.67/94.14/96.73 measured tuple is
+statements/branches/functions/lines order, matching this doc's own
+convention elsewhere — e.g. the Phase 5/6 completion records' "95.79%
+stmts / 88.67% branches / 94.14% funcs / 96.73% lines" phrasing — but the
+floors had been listed lines-first and paired against it unreordered).
+Corrected to statements 92/branches 84/functions 91/lines 94 floors,
++3.79/+4.67/+3.14/+2.73pp headroom. The recalibration decision itself
+(leave floors as-is) was unaffected — the smallest real headroom, 2.73pp
+on lines, still clears the section's own bar for "not worth
+recalibrating."
+
+No other gaps found. All 6 phases confirmed `Status: DONE` in
+`plans/sdk-parity-typescript.md`; `ASSUMPTIONS.md` confirmed untouched
+(predates this session); `PROGRESS.md`'s trail confirmed coherent, no
+contradictions between any phase's own section and this Finalization
+pass.
+
+**This closes `/implement`'s Finalization pass (§4) end to end.** No
+`git commit` was run at any point up to and including this verification
+pass, per the binding "never commit or push without explicit user
+instruction" constraint. The user was then asked explicitly and chose:
+one commit per phase (Phases 2-6, 5 commits) on branch
+`feat/sdk-parity-phases-2-6`, followed by push + one PR. Executed as
+`bbde8d2` (Phase 2), `2c26d96` (Phase 3), `213ec6a` (Phase 4), `7e83482`
+(Phase 5), and the Phase 6 commit closing this file's own history (this
+commit) — each phase's `PROGRESS.md` slice committed as a prefix of this
+file's final content, so every commit's diff is exactly that phase's own
+completion record, never a later phase's.

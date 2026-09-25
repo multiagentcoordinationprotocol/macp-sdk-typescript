@@ -122,6 +122,26 @@ const hash = commitmentHash(priorCommitmentPayload); // 'sha256:' + 64 lowercase
 const ref = buildCommitmentRef({ sessionId: 'old-session', commitmentHash: hash });
 ```
 
+## `isCanonicalCommitmentHash(value)`
+
+A non-throwing counterpart to the shape check `buildCommitmentRef`/
+`buildCommitmentPayload` perform internally (which throw `MacpSessionError`
+on a malformed hash): returns `true`/`false` for whether `value` matches
+`sha256:<64 lowercase hex>`, never throwing for any input. Use this where a
+boolean fits better than a thrown exception — filtering a list of candidate
+hashes, or a non-fatal validity check — rather than wrapping a `try`/`catch`
+around `buildCommitmentRef`.
+
+```typescript
+import { commitmentHash, isCanonicalCommitmentHash } from 'macp-sdk-typescript';
+
+const hash = commitmentHash(payload);
+isCanonicalCommitmentHash(hash);        // true
+isCanonicalCommitmentHash('not-a-hash'); // false
+```
+
+Pinned as part of the cross-SDK parity contract — see [Testing § Parity Contract Gate](../guides/testing.md#parity-contract-gate).
+
 ## `buildSignalPayload(input)` / `buildProgressPayload(input)`
 
 Ambient-plane payload builders used by `client.sendSignal()` and

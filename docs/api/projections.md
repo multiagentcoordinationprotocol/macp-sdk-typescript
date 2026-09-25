@@ -219,7 +219,14 @@ export interface ProjectionAnomaly {
 
 This is a **cross-SDK frozen contract**, agreed with `macp-sdk-python` (same
 seven fields, snake_case there) — do not add, rename, or remove a field
-without cross-SDK agreement.
+without cross-SDK agreement. Two related exports pin this contract further:
+`ANOMALY_DUPLICATE_VOTE`/`ANOMALY_DUPLICATE_BALLOT` are the two
+`ProjectionAnomalyKind` string values as named constants, and
+`PROJECTION_ANOMALY_FIELD_ORDER` is the field list above as a runtime
+`readonly` tuple, in order — both are asserted against the spec repo's
+`schemas/parity/contract.json` manifest (`projection_anomaly.kinds`/
+`.fields`) by this SDK's own test suite; see
+[Testing § Parity Contract Gate](../guides/testing.md#parity-contract-gate).
 
 **What an anomaly means — deliberately narrow, agreed wording across both
 SDKs:** an anomaly records that a second distinct `Vote` from this sender for

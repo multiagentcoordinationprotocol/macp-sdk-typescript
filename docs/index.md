@@ -15,6 +15,8 @@ The MACP TypeScript SDK connects TypeScript/Node.js applications to the [Multi-A
 - [Streaming](guides/streaming.md) — Session streams, registry watchers, signal watchers, and policy watchers
 - [Policy Framework](guides/policy.md) — Governance policies, rule builders, and policy lifecycle
 - [Agent Framework](guides/agent-framework.md) — Participant abstraction, strategies, and bootstrap
+- [Determinism and Replay](guides/determinism.md) — Version binding, replay testing, and determinism classes
+- [Security](guides/security.md) — TLS defaults, sender identity guardrail, and a production checklist
 - [Testing](guides/testing.md) — Running tests, coverage gates, conformance fixtures, and integration test patterns
 
 ### Coordination Modes

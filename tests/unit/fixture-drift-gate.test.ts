@@ -6,6 +6,13 @@
  * `plans/gate-cmt-hash-vectors.md`) without needing the real spec repo
  * checked out.
  *
+ * A second, later `describe` block below drives `make sync-parity` /
+ * `make verify-parity` the same way, against the single vendored
+ * `tests/parity/contract.json` file (`plans/sdk-parity-typescript.md`
+ * Phase 5) — a separate, simpler target pair (one file, not a directory of
+ * fixtures), so it gets its own small `makeParityCanon`/`makeParityRepo`/
+ * `runMakeParity` helpers rather than reusing the fixture-shaped ones above.
+ *
  * Every case builds a throwaway "repo" (just the two fixture directories
  * the Makefile cares about) and a throwaway "canonical" tree, then invokes
  * `make -f <this repo's Makefile> <target> SPEC_CONFORMANCE_DIR=<canonical>`
@@ -310,6 +317,130 @@ describe.skipIf(!makeAvailable)('fixture drift gate (Makefile verify-fixtures/sy
     expect(syncResult.status).toBe(0);
     expect(fs.readFileSync(path.join(repo, 'tests', 'conformance', 'a.json'), 'utf8')).toBe('A');
     expect(fs.readFileSync(path.join(repo, 'tests', 'vectors', 'cmt-hash', 'b.json'), 'utf8')).toBe('B');
+    expect(verifyResult.status).toBe(0);
+  });
+});
+
+/** Build a throwaway canonical tree mirroring `$(SPEC_PARITY_DIR)`: an
+ * optional single `contract.json` file directly inside it. */
+function makeParityCanon(root: string, opts: { contract?: string } = {}): string {
+  const canon = path.join(root, 'canon-parity');
+  fs.mkdirSync(canon, { recursive: true });
+  if (opts.contract !== undefined) {
+    fs.writeFileSync(path.join(canon, 'contract.json'), opts.contract, 'utf8');
+  }
+  return canon;
+}
+
+/** Build a throwaway repo tree holding just `tests/parity/`, the directory
+ * `verify-parity`/`sync-parity` check. */
+function makeParityRepo(root: string, opts: { contract?: string } = {}): string {
+  const repo = path.join(root, 'repo-parity');
+  fs.mkdirSync(path.join(repo, 'tests', 'parity'), { recursive: true });
+  if (opts.contract !== undefined) {
+    fs.writeFileSync(path.join(repo, 'tests', 'parity', 'contract.json'), opts.contract, 'utf8');
+  }
+  return repo;
+}
+
+function runMakeParity(repo: string, target: string, specDir: string) {
+  const env: NodeJS.ProcessEnv = { ...process.env };
+  delete env.MAKEFLAGS;
+  delete env.MAKELEVEL;
+  delete env.MFLAGS;
+  return spawnSync('make', ['-f', MAKEFILE, target, `SPEC_PARITY_DIR=${specDir}`], {
+    cwd: repo,
+    env,
+    encoding: 'utf8',
+    timeout: 120_000,
+  });
+}
+
+describe.skipIf(!makeAvailable)('parity contract drift gate (Makefile verify-parity/sync-parity)', () => {
+  it('passes when the vendored contract.json is byte-identical to canonical', () => {
+    const root = mkTmp('macp-parity-clean-');
+    const canon = makeParityCanon(root, { contract: '{"a":1}' });
+    const repo = makeParityRepo(root, { contract: '{"a":1}' });
+
+    const result = runMakeParity(repo, 'verify-parity', canon);
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('tests/parity/contract.json matches the canonical source.');
+    expect(result.stdout).not.toContain('DRIFT');
+  });
+
+  it('flags drift when the vendored contract.json differs from canonical', () => {
+    const root = mkTmp('macp-parity-drift-');
+    const canon = makeParityCanon(root, { contract: '{"a":"canonical"}' });
+    const repo = makeParityRepo(root, { contract: '{"a":"stale"}' });
+
+    const result = runMakeParity(repo, 'verify-parity', canon);
+
+    expect(result.status).not.toBe(0);
+    expect(result.stdout).toContain('DRIFT: tests/parity/contract.json differs from canonical');
+    expect(result.stdout).toContain("Parity contract drifted from canonical. Run 'make sync-parity' and commit.");
+  });
+
+  it('verify-parity fails with a named error when the spec repo directory is missing', () => {
+    const root = mkTmp('macp-parity-dir-missing-');
+    const missingCanon = path.join(root, 'does-not-exist');
+    const repo = makeParityRepo(root, { contract: '{"a":1}' });
+
+    const result = runMakeParity(repo, 'verify-parity', missingCanon);
+
+    expect(result.status).not.toBe(0);
+    expect(result.stdout).toContain(`Error: Spec repo not found at ${missingCanon}`);
+  });
+
+  it('verify-parity fails with a distinct named error when contract.json itself is missing (not a bare diff/cp error)', () => {
+    // The two-guard shape this phase added: a present-but-empty SPEC_PARITY_DIR
+    // (directory exists, file renamed/moved upstream) must not fall through to
+    // a cryptic `diff: No such file or directory` -- it gets its own message.
+    const root = mkTmp('macp-parity-file-missing-');
+    const canon = makeParityCanon(root); // directory exists, no contract.json inside
+    const repo = makeParityRepo(root, { contract: '{"a":1}' });
+
+    const result = runMakeParity(repo, 'verify-parity', canon);
+
+    expect(result.status).not.toBe(0);
+    expect(result.stdout).toContain(`Error: canonical parity contract not found at ${canon}/contract.json`);
+    expect(result.stdout).not.toContain('No such file or directory');
+  });
+
+  it('sync-parity fails with a named error when the spec repo directory is missing', () => {
+    const root = mkTmp('macp-parity-sync-dir-missing-');
+    const missingCanon = path.join(root, 'does-not-exist');
+    const repo = makeParityRepo(root);
+
+    const result = runMakeParity(repo, 'sync-parity', missingCanon);
+
+    expect(result.status).not.toBe(0);
+    expect(result.stdout).toContain(`Error: Spec repo not found at ${missingCanon}`);
+    expect(fs.existsSync(path.join(repo, 'tests', 'parity', 'contract.json'))).toBe(false);
+  });
+
+  it('sync-parity fails with a named error when contract.json itself is missing', () => {
+    const root = mkTmp('macp-parity-sync-file-missing-');
+    const canon = makeParityCanon(root); // directory exists, no contract.json inside
+    const repo = makeParityRepo(root);
+
+    const result = runMakeParity(repo, 'sync-parity', canon);
+
+    expect(result.status).not.toBe(0);
+    expect(result.stdout).toContain(`Error: canonical parity contract not found at ${canon}/contract.json`);
+    expect(fs.existsSync(path.join(repo, 'tests', 'parity', 'contract.json'))).toBe(false);
+  });
+
+  it('sync-parity copies contract.json into a synthetic tree correctly', () => {
+    const root = mkTmp('macp-parity-sync-');
+    const canon = makeParityCanon(root, { contract: '{"a":1,"b":2}' });
+    const repo = makeParityRepo(root);
+
+    const syncResult = runMakeParity(repo, 'sync-parity', canon);
+    const verifyResult = runMakeParity(repo, 'verify-parity', canon);
+
+    expect(syncResult.status).toBe(0);
+    expect(fs.readFileSync(path.join(repo, 'tests', 'parity', 'contract.json'), 'utf8')).toBe('{"a":1,"b":2}');
     expect(verifyResult.status).toBe(0);
   });
 });
