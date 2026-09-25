@@ -1871,3 +1871,234 @@ are now DONE. Before starting Phase 6, the user has not yet been asked
 whether to include or skip it, per the plan's own framing — will ask once
 Phase 6 is reached, rather than assuming either way.
 
+### Phase 6 — DONE (2026-09-25)
+
+**User decision:** asked whether to include this cuttable phase or skip
+straight to finalization; user chose "Do Phase 6, then finalize."
+
+**Verdict:** PASS, first round. **Verifier tier:** fresh Opus subagent
+(default tier — a docs-only phase, no public contract or trust boundary).
+
+**Implementation:** `docs/guides/determinism.md` and
+`docs/guides/security.md`, adapted from `macp-sdk-python`'s
+`docs/determinism.md`/`docs/security.md` (sibling checkout at
+`/Users/Shared/multiagentcoordinationprotocol/macp-sdk-python`). Same
+structural sections and guidance as the Python originals; every code
+sample rewritten to this SDK's actual TypeScript API rather than
+transliterated — `Auth.bearer(token, { expectedSender })`/`Auth.devAgent`,
+`new MacpClient({ address, secure, allowInsecure, rootCertificates, auth })`,
+`session.commit({ action, authorityScope, reason })`, `new
+DecisionSession(client, { modeVersion, configurationVersion,
+policyVersion })`, camelCase `RetryPolicy`
+(`maxRetries`/`backoffBase`/`backoffMax`/`retryableCodes: Set<string>`) +
+`retrySend(client, envelope, { policy, auth })`, and
+`DecisionProjection.applyEnvelope(envelope, protoRegistry)` — note the TS
+signature takes a second `protoRegistry` argument that Python's
+`apply_envelope(envelope)` doesn't need. Python-specific content (version-era
+prose, `frozenset`, `AuthConfig.for_*`) dropped rather than translated.
+Both pages linked from `docs/index.md`'s Guides ToC, inserted between
+"Agent Framework" and "Testing". Two links that would otherwise have
+pointed at Python-only pages this phase deliberately does NOT port
+(`session-discovery.md`, `protocol.md#envelopes`) were retargeted to real
+TS-side pages instead, avoiding a dangling reference to something that
+doesn't exist here.
+
+**Verification — fresh-Opus verifier went further than reading the diff:**
+extracted all 6 code samples verbatim into a throwaway probe file and
+`tsc`-compiled them against this repo's real `tsconfig.json` (strict mode,
+`noUncheckedIndexedAccess`) — exit 0, proving every constructor option and
+method call is real, not just grep-plausible. Cross-checked every symbol
+against its actual source (`src/decision.ts`, `src/base-session.ts`,
+`src/projections/base.ts`, `src/projections/decision.ts`, `src/client.ts`,
+`src/auth.ts`, `src/errors.ts`, `src/retry.ts`, `src/watchers.ts`) and
+several behavioral claims (e.g. that the identity guard fires before the
+envelope leaves the process — traced through `senderFor`/
+`assertSenderMatchesIdentity` in `src/decision.ts`). Independently resolved
+all 11 internal cross-links — file exists, heading text exists, and the
+anchor matches GitHub's slug algorithm (parens/colons/backticks stripped) —
+plus spot-checked that each linked section's content actually delivers on
+what the "see X for the full walkthrough" promise claims. Grepped both
+files against 29 Python-idiom patterns (snake_case method names, `self.`,
+`mypy`, `poetry`, Python assert style, etc.) — zero hits. Confirmed none of
+the four deliberately-unported Python pages (`protocol.md`,
+`guides/building-orchestrators.md`, `guides/session-discovery.md`,
+`guides/direct-agent-auth.md`) were accidentally created anywhere in this
+repo. Re-ran the full local gate and confirmed test count/coverage are
+byte-for-byte unchanged from Phase 5 (1065 passed, 95.79/88.67/94.14/96.73)
+— proving this phase really is docs-only.
+
+**Gap closure (this round):** verdict PASS with 2 bookkeeping gaps (this
+plan's own Status line still said TODO and asserted the pages didn't exist;
+no `PROGRESS.md` entry existed yet) — both fixed in this same pass, per
+this run's own established convention from Phases 1-5. 3 cosmetic nits
+left unfixed, on the verifier's own assessment that all three mirror the
+Python original's own conventions rather than being defects introduced by
+this port: an external-spec link that carries no anchor (the actual spec
+heading is worded slightly differently but the link still resolves to the
+right page, and the three named patterns genuinely map onto that section);
+the TLS code sample being near-duplicate of `authentication.md`'s own TLS
+example (intentional — the page links out for the full walkthrough, and
+Python's original did the same); a bare `expect()`-style illustrative
+snippet with no visible import, matching Python's bare `assert` convention
+for a doc code block that was never meant to be literally executable
+(docs code blocks are outside `check:examples`'s `examples/**/*.ts` glob
+by design — see Phase 4).
+
+**Files touched this phase:** `docs/guides/determinism.md` (new),
+`docs/guides/security.md` (new), `docs/index.md` (2-line addition only).
+
+**Gate (final, green, unchanged from Phase 5):** `npm run check` / `lint`
+/ `format:check` / `test:coverage` (1065 passed, 20 skipped, 0 failed —
+identical to Phase 5, confirming zero code impact) / `build` / `make
+verify-fixtures` / `make verify-parity` — all exit 0. Coverage identical
+at 95.79/88.67/94.14/96.73 vs. floors 92/84/91/94.
+
+**ASSUMPTIONS.md:** no entry needed — the two pages to port were named
+explicitly in the plan, the adaptation approach (rewrite API calls, drop
+Python-specific content) was specified in the plan's own "Approach" text,
+and no ambiguous judgment call arose during implementation.
+
+**What's next:** all 6 phases of `plans/sdk-parity-typescript.md` are now
+DONE. Proceed to the `/implement` Finalization pass (§4): whole-feature
+tests for behavior the phases collectively introduced but no single
+phase's tests cover, integration-test coverage for any untested boundary,
+a final docs/tracked-file sweep, then one cumulative fresh-Opus
+verification pass over the whole diff (not just the last phase) before
+asking the user about commits.
+
+## Finalization pass (2026-09-25)
+
+**Tests, whole-feature re-check:** re-ran the full gate from a genuinely
+clean state (`rm -rf dist coverage`, not incremental) — `check`/`lint`/
+`format:check`/`test:coverage`/`build`/`verify-fixtures`/`verify-parity`,
+all green, identical numbers to every individual phase's own gate (1065
+passed, 20 skipped, 95.79/88.67/94.14/96.73). Reviewed every seam between
+phases for an untested cross-phase interaction: Phase 2↔3 (Phase 3's
+snapshot capturing all four of Phase 2's barrel symbols — tested, twice,
+by two different verifiers), Phase 2↔5 (Phase 5's parity test asserting
+Phase 2's exports against the manifest — tested), Phase 4↔CI (examples
+gate reachable via `npm run check`, which CI already runs at
+`ci.yml:40` — confirmed unaffected, no CI edit needed, and confirmed
+`prepublishOnly` (`package.json:40`) transitively covers it too since it
+also calls `npm run check`), Phase 5↔CI (`verify-parity` step added and
+simulated locally against the exact CI invocation — green). No untested
+seam found. As an extra whole-feature proof beyond any single phase's own
+test (none of which imports from the *built* package — `public-api.test.ts`
+deliberately tests against `src/index`, matching this SDK's own established
+design, see Phase 3), ran a one-time manual smoke test against the real
+`dist/index.js` build exercising `isCanonicalCommitmentHash`,
+`ANOMALY_DUPLICATE_VOTE`/`_BALLOT`, `PROJECTION_ANOMALY_FIELD_ORDER`, and
+`DecisionProjection` together — all present and correct, and the
+public-api-snapshot count matched the live runtime surface exactly.
+
+**Integration tests:** no new I/O/network/process boundary was introduced
+by Phases 2-6 that isn't already covered — Phase 5's Makefile-driving
+`fixture-drift-gate.test.ts` cases (`spawnSync('make', ...)`, a real
+process boundary) are the closest thing to an integration test this
+feature has, and they were written and verified as part of Phase 5 itself.
+No live-runtime boundary was touched (this feature is entirely local
+tooling/API additions), so `tests/integration/runtime.test.ts` needed no
+changes and none were made.
+
+**Docs sweep beyond the per-phase Docs fields:** found two additional
+stale spots the cumulative diff created, neither owned by a single phase's
+own Files list: `docs/api/envelope.md` had no mention of Phase 2's new
+`isCanonicalCommitmentHash` (added a short section right after
+`buildCommitmentRef`, matching that file's existing precedent of
+documenting `commitment-hash.ts` exports alongside `envelope.ts`'s own);
+`docs/api/projections.md`'s "Anomalies" section had no mention of Phase 2's
+`ANOMALY_DUPLICATE_VOTE`/`_BALLOT`/`PROJECTION_ANOMALY_FIELD_ORDER` (added
+a short paragraph after the `ProjectionAnomaly` interface block, linking to
+Phase 5's new "Parity Contract Gate" section). Both link targets verified
+to resolve. Full gate re-confirmed green after these two additions.
+
+**Tracked files:** `plans/sdk-parity-typescript.md` — all 6 phases
+`Status: DONE`. `PROGRESS.md` — full checkpoint trail, this section being
+the last entry before the final cumulative verify. `ASSUMPTIONS.md` —
+checked, pre-existing (dated 2026-08-31, from an earlier feature), no new
+entries needed from any of Phases 2-6 — every phase's own completion
+record already confirmed no ambiguous judgment call arose that would
+warrant one.
+
+**Files touched, this finalization pass only:** `docs/api/envelope.md`,
+`docs/api/projections.md`.
+
+**Next:** one cumulative fresh-Opus verification pass over the whole
+Phases 2-6 diff (not just the last phase), per `/implement` §4. Then ask
+the user explicitly before any `git commit`/push/PR, per the binding
+commit posture recorded above — including how they want the commits
+shaped (one commit for the whole PR vs. one per phase, matching this
+repo's own established convention for small interdependent phase sets —
+see "PR strategy" above).
+
+**Coverage-floor recalibration — decided, not deferred further:**
+`vitest.config.ts:40-44` floors, reordered to match this doc's own
+stmts/branches/funcs/lines measured-tuple convention, are statements 92 /
+branches 84 / functions 91 / lines 94; measured across all 6 phases stayed
+a constant 95.79/88.67/94.14/96.73, i.e. +3.79 / +4.67 / +3.14 / +2.73pp
+of headroom on every axis (statements/branches/functions/lines), unmoved
+by any phase despite Phases 2-6 adding real test files
+(`public-api.test.ts`, `contract.test.ts`, 7 new
+`fixture-drift-gate.test.ts` cases). Decision: **leave the floors as-is,
+do not recalibrate.** The "measured−2pp, recalibrated when new tests
+land" convention exists to keep the floor honest as a tripwire close to
+current reality — it's not "recalibrate on any diff that touches tests."
+Here the new tests covered code whose surrounding files were already
+well-exercised, so the percentage didn't move; tightening the floor now
+would buy no additional protection (nothing is within 2.7pp of any floor)
+and would add fragility for zero signal. Recalibrate later if a future
+change actually shifts the measured numbers, not preemptively here.
+
+## Final cumulative verification (2026-09-25) — PASS
+
+Fresh Opus verifier, scope: the whole Phases 2-6 diff against the plan as
+a whole, per `/implement` §4 — not a re-verify of Phase 6 alone. Ran every
+gate command cold itself (`check`, `lint`, `format:check`,
+`test:coverage`, `build`, `verify-fixtures`, `verify-parity`, plus a
+simulated CI-exact `verify-parity` invocation) and reproduced the same
+green results independently. Checked every named cross-phase seam —
+Phase 2↔3 (`node -e` against the built `dist/index.js`: 109 live keys vs.
+109 in the snapshot, zero drift, all four Phase 2 symbols present),
+Phase 2↔5 (independently enumerated the parity manifest: exactly 8
+sections name `macp-sdk-typescript`, all 8 asserted, `contribute_acceptance`
+correctly skipped as runtime-only), Phase 4↔CI (`check:examples` reachable
+via `ci.yml:40`'s `npm run check` and via `prepublishOnly`;
+`examples/` diff confirmed empty), Phase 5↔CI (step placement, cwd, and
+target all verified against the actual workflow file) — and extracted
+every code sample from the two new Phase 6 docs into a probe file,
+compiling it `--strict` against `src/index` to prove the API calls are
+real, not just the 15 internal links resolving. Also independently
+verified the `PROJECTION_ANOMALY_FIELD_ORDER` barrel correction is
+consistent across all three places it's stated (plan, PROGRESS.md,
+`base.ts`).
+
+**One correction identified, applied above:** the coverage-headroom
+figures in the "Coverage-floor recalibration" section above mis-paired
+axis labels (the 95.79/88.67/94.14/96.73 measured tuple is
+statements/branches/functions/lines order, matching this doc's own
+convention elsewhere — e.g. the Phase 5/6 completion records' "95.79%
+stmts / 88.67% branches / 94.14% funcs / 96.73% lines" phrasing — but the
+floors had been listed lines-first and paired against it unreordered).
+Corrected to statements 92/branches 84/functions 91/lines 94 floors,
++3.79/+4.67/+3.14/+2.73pp headroom. The recalibration decision itself
+(leave floors as-is) was unaffected — the smallest real headroom, 2.73pp
+on lines, still clears the section's own bar for "not worth
+recalibrating."
+
+No other gaps found. All 6 phases confirmed `Status: DONE` in
+`plans/sdk-parity-typescript.md`; `ASSUMPTIONS.md` confirmed untouched
+(predates this session); `PROGRESS.md`'s trail confirmed coherent, no
+contradictions between any phase's own section and this Finalization
+pass.
+
+**This closes `/implement`'s Finalization pass (§4) end to end.** No
+`git commit` was run at any point up to and including this verification
+pass, per the binding "never commit or push without explicit user
+instruction" constraint. The user was then asked explicitly and chose:
+one commit per phase (Phases 2-6, 5 commits) on branch
+`feat/sdk-parity-phases-2-6`, followed by push + one PR. Executed as
+`bbde8d2` (Phase 2), `2c26d96` (Phase 3), `213ec6a` (Phase 4), `7e83482`
+(Phase 5), and the Phase 6 commit closing this file's own history (this
+commit) — each phase's `PROGRESS.md` slice committed as a prefix of this
+file's final content, so every commit's diff is exactly that phase's own
+completion record, never a later phase's.
