@@ -20,7 +20,8 @@
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "check": "tsc -p tsconfig.json --noEmit",
+    "check": "tsc -p tsconfig.json --noEmit && npm run check:examples",
+    "check:examples": "tsc -p tsconfig.examples.json",
     "lint": "eslint src/",
     "lint:fix": "eslint src/ --fix",
     "format": "prettier --write 'src/**/*.ts' 'tests/**/*.ts' --ignore-unknown",

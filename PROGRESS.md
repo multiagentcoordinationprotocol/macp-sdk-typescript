@@ -1683,3 +1683,63 @@ Phase 2 or 3, uses the corrected `tsconfig.examples.json` with an explicit
 `rootDir: "."` override (see Phase 4's own plan section for the exact
 config, reverified by the plan-review round before implementation started).
 
+### Phase 4 — DONE (2026-09-25)
+
+**Verdict:** PASS, first round. **Verifier tier:** fresh Opus subagent
+(default tier — a dev-time compile gate, not a public contract or trust
+boundary).
+
+**Implementation:** new `tsconfig.examples.json` at the repo root, exactly
+matching the plan's spec block (`extends: "./tsconfig.json"`,
+`rootDir: "."` explicit override, `include: ["src/**/*.ts",
+"examples/**/*.ts"]`). `package.json`'s `"check"` script changed to
+`"tsc -p tsconfig.json --noEmit && npm run check:examples"`, with a new
+`"check:examples": "tsc -p tsconfig.examples.json"` script. No
+`examples/*.ts` file edited — all 12 examples type-check clean today with
+zero changes, confirmed by both the plan-review round and this phase's
+implementation. `.github/workflows/ci.yml` untouched — it already runs
+`npm run check` at line 40, so chaining `check:examples` into `check`
+covers CI for free.
+
+**Non-vacuity (AC1) proven twice, independently:** once during
+implementation (temporary type error injected into
+`examples/decision-smoke.ts`, `npm run check` failed with `TS2322`,
+reverted via `git checkout --` — safe this time since that file had no
+other uncommitted changes, confirmed via `git diff main --
+examples/decision-smoke.ts` before reverting, unlike the Phase 3 incident);
+once again by the verifier, independently, in a *different* file
+(`examples/quorum-smoke.ts`), reverted via a targeted `Edit` rather than
+`git checkout --` and confirmed byte-identical to baseline by sha256
+afterward.
+
+**Adversarial check the verifier ran on its own initiative:** built a
+`tsconfig.examples.json` variant with the `rootDir: "."` override removed,
+to check whether the earlier plan-review round's claimed `TS6059` bug was
+real or overstated. It reproduced exactly 12× `TS6059`, one per example
+file — confirming the fix is load-bearing, not defensive boilerplate.
+
+**Files touched this phase:** `tsconfig.examples.json` (new),
+`package.json` (2-line script diff only — confirmed via `git diff main --
+package.json`: no dependency change, no version bump, no other script
+touched), `CLAUDE.md` (local, gitignored — Build Commands entry for
+`check:examples`).
+
+**Gate (final, green):** `npm run check` (now includes the examples
+compile) / `lint` / `format:check` / `test:coverage` (1039 passed, 20
+skipped, 0 failed — unchanged from Phase 3, since this phase adds a compile
+gate, not a test) / `build` / `make verify-fixtures` — all exit 0. Coverage
+unchanged at 95.79/88.67/94.14/96.73 vs. floors 92/84/91/94.
+
+**ASSUMPTIONS.md:** no entry needed — nothing ambiguous, the one open
+question from the plan-review round (whether the 12 examples still compile
+clean under the corrected config) was resolved as a verified fact, not an
+assumption.
+
+**What's next:** Phase 5 (vendor and gate the spec-repo parity contract) —
+depends on Phase 2 (the parity test asserts `isCanonicalCommitmentHash` and
+the two `ANOMALY_DUPLICATE_*` constants). This is the largest remaining
+phase: vendoring `schemas/parity/contract.json`, a new `tests/parity/`
+directory, `Makefile` `sync-parity`/`verify-parity` targets, a CI step, and
+extending `tests/unit/fixture-drift-gate.test.ts`. See Phase 5's own plan
+section for the full per-manifest-section mapping table.
+
