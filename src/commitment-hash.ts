@@ -250,3 +250,21 @@ export function commitmentHash(payload: CommitmentPayload): string {
   const digest = createHash('sha256').update(Buffer.from(preimage, 'utf8')).digest('hex');
   return `sha256:${digest}`;
 }
+
+/**
+ * The same shape `commitmentHash` always produces: `sha256:` followed by 64
+ * lowercase hex digits. Non-throwing counterpart to `validateCommitmentHash`
+ * (`src/validation.ts`, which throws `MacpSessionError` on mismatch) — use
+ * this predicate where a boolean fits better than a thrown exception, e.g.
+ * filtering a list or a non-fatal check. Both share one regex family
+ * (`/^sha256:[0-9a-f]{64}$/`); keep them in sync if either changes.
+ *
+ * Never throws, for any input. `$` without the `m` flag anchors to the
+ * absolute end of the string (not "before a trailing newline", unlike some
+ * regex engines) — so a trailing `\n` after an otherwise-valid hash already
+ * fails to match with no special-casing needed, matching Python's
+ * `fullmatch` semantics for this pattern.
+ */
+export function isCanonicalCommitmentHash(value: string): boolean {
+  return /^sha256:[0-9a-f]{64}$/.test(value);
+}

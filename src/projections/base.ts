@@ -54,9 +54,14 @@ export interface ProjectionAnomaly {
 
 /**
  * The exact `ProjectionAnomaly` member set this alias guards against drift.
- * Expressed as a type rather than a runtime array because there is no
+ * Originally a type rather than a runtime array because there was no
  * runtime field list to compare it against — parity with
  * `commitment-hash.ts`'s `HashedCommitmentField` (issue #47).
+ * `PROJECTION_ANOMALY_FIELD_ORDER` below is now that runtime list (added
+ * for the spec repo's parity manifest); this type-only guard stays anyway,
+ * independently pinning `ProjectionAnomaly` itself rather than pinning two
+ * runtime lists to each other — see `_ProjectionAnomalyFieldOrderIsFrozen`'s
+ * own docblock for why both are kept.
  */
 type FrozenProjectionAnomalyField = 'kind' | 'mode' | 'messageType' | 'messageId' | 'sender' | 'subjectId' | 'detail';
 
@@ -92,6 +97,70 @@ type AssertNever<T extends never> = T;
 type _ProjectionAnomalyFieldSetIsFrozen = AssertNever<
   | Exclude<keyof ProjectionAnomaly, FrozenProjectionAnomalyField>
   | Exclude<FrozenProjectionAnomalyField, keyof ProjectionAnomaly>
+>;
+
+/**
+ * The two `ProjectionAnomalyKind` values as named constants. Cross-SDK
+ * contract, now literally pinned by the spec repo's
+ * `schemas/parity/contract.json` (`projection_anomaly.kinds`) — `satisfies`
+ * links each constant to the union above at compile time, so a drifted value
+ * fails `npm run check` before it can ever reach `make verify-parity`.
+ */
+export const ANOMALY_DUPLICATE_VOTE = 'duplicate_vote' satisfies ProjectionAnomalyKind;
+export const ANOMALY_DUPLICATE_BALLOT = 'duplicate_ballot' satisfies ProjectionAnomalyKind;
+
+/**
+ * Runtime field order for `ProjectionAnomaly`, with the same frozen-set
+ * guarantee as `_ProjectionAnomalyFieldSetIsFrozen` above, expressed as a
+ * value rather than only a type. The spec repo's
+ * `schemas/parity/contract.json` (`projection_anomaly.fields`) pins this
+ * field order as a runtime JSON array, so this SDK needs its own runtime
+ * array to assert against it (see `tests/parity/contract.test.ts`).
+ *
+ * **Public, not hidden — corrected during Phase 2's own verification round.**
+ * An earlier revision of this docblock claimed this constant was
+ * "deliberately NOT added to the public barrel," on the (wrong) assumption
+ * that it would follow `canonicalizeCommitmentPayload`'s precedent in
+ * `commitment-hash.ts`. That precedent doesn't transfer: `commitment-hash.ts`
+ * is barrel-exported via a *named* line in `src/index.ts`
+ * (`export { commitmentHash, isCanonicalCommitmentHash } from
+ * './commitment-hash'`), which can omit a name on purpose. This module is
+ * barrel-exported via `src/projections.ts`'s `export * from
+ * './projections/base'` → `src/index.ts`'s `export * from './projections'`
+ * — a wildcard re-export chain has no way to omit one name, so this constant
+ * reaches `dist/index.d.ts` and the runtime `require('macp-sdk-typescript')`
+ * surface regardless of intent (verified: `node -e "require('./dist/index.js')
+ * .PROJECTION_ANOMALY_FIELD_ORDER"` prints the array). This is harmless —
+ * a small readonly string tuple is no more a surface-area risk than
+ * `STANDARD_MODES` — so the fix is documenting reality, not restructuring
+ * the export chain to force exclusion. Phase 3's public-API snapshot
+ * correctly captures this symbol as part of today's real surface.
+ */
+export const PROJECTION_ANOMALY_FIELD_ORDER = [
+  'kind',
+  'mode',
+  'messageType',
+  'messageId',
+  'sender',
+  'subjectId',
+  'detail',
+] as const;
+
+/**
+ * Compile-time link between `PROJECTION_ANOMALY_FIELD_ORDER` and
+ * `ProjectionAnomaly`, mirroring `_ProjectionAnomalyFieldSetIsFrozen` above
+ * exactly (same `AssertNever`/bidirectional-`Exclude` shape) but anchored to
+ * the runtime tuple instead of the type-only `FrozenProjectionAnomalyField`.
+ * Keeping both guards is deliberate, not redundant: this one additionally
+ * catches `PROJECTION_ANOMALY_FIELD_ORDER` itself drifting from
+ * `ProjectionAnomaly` while `FrozenProjectionAnomalyField` stays in sync (or
+ * vice versa) — two independent lists agreeing with the interface is not the
+ * same guarantee as them agreeing with each other.
+ */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+type _ProjectionAnomalyFieldOrderIsFrozen = AssertNever<
+  | Exclude<keyof ProjectionAnomaly, (typeof PROJECTION_ANOMALY_FIELD_ORDER)[number]>
+  | Exclude<(typeof PROJECTION_ANOMALY_FIELD_ORDER)[number], keyof ProjectionAnomaly>
 >;
 
 /**
@@ -133,11 +202,18 @@ export abstract class BaseProjection {
    * Cardinality anomalies recorded while replaying this projection's
    * accepted transcript (e.g. a duplicate vote or ballot from the same
    * sender). See `ProjectionAnomaly`. Empty unless a subclass calls
-   * `recordAnomaly`. NOTE: as of this SDK's built-in modes, nothing calls
-   * `recordAnomaly` — `DecisionProjection` and `QuorumProjection` do not
-   * extend `BaseProjection` (see the class docblock) and inline their own
-   * two lines instead. This field and `recordAnomaly` exist for ext-mode
-   * `BaseProjection` subclasses outside this repo.
+   * `recordAnomaly`. **Corrected 2026-09-25** (this note previously said
+   * nothing calls `recordAnomaly` because `DecisionProjection`/
+   * `QuorumProjection` didn't extend `BaseProjection` — that was true before
+   * issue #91's refactor, and is stale now): both `DecisionProjection`
+   * (`decision.ts`) and `QuorumProjection` (`quorum.ts`) extend
+   * `BaseProjection` today and DO call the inherited `recordAnomaly` when
+   * they discard a duplicate vote/ballot — they just pass a literal
+   * `'duplicate_vote'`/`'duplicate_ballot'` string for `kind` rather than
+   * this file's `ANOMALY_DUPLICATE_VOTE`/`ANOMALY_DUPLICATE_BALLOT`
+   * constants (referencing those constants instead is optional cleanup, not
+   * required by anything in this repo). This field and `recordAnomaly` are
+   * no longer ext-mode-only — any subclass, built-in or ext-mode, uses them.
    */
   readonly anomalies: ProjectionAnomaly[] = [];
 

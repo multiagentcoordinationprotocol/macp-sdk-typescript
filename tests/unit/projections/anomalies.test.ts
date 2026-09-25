@@ -1,24 +1,33 @@
 /**
  * Phase 3 of plans/rfc-0007-first-vote-stands.md (issue #55): the `anomalies`
  * surface — types, fields, `BaseProjection.anomalies`/`recordAnomaly`, and
- * the same `anomalies` field on all five mode projections. Purely additive:
- * nothing populates a `ProjectionAnomaly` yet outside this test file's own
- * synthetic subclass. Phases 4-5 add real detection (Decision `Vote`,
- * Quorum ballots).
+ * the same `anomalies` field on all five mode projections. At the time this
+ * plan landed, nothing populated a `ProjectionAnomaly` outside this test
+ * file's own synthetic subclass; Phases 4-5 of that plan then added real
+ * detection (Decision `Vote`, Quorum ballots).
  *
- * `BaseProjection.recordAnomaly` has NO caller anywhere else in `src/` for
- * the entire plan: `DecisionProjection` (Phase 4) and `QuorumProjection`
- * (Phase 5) do not extend `BaseProjection` (verified — see `src/projections/
- * base.ts`'s class docblock) and inline their own two lines instead, per the
- * plan's "do not extract a shared helper" call. `recordAnomaly` exists only
- * for ext-mode `BaseProjection` subclasses outside this repo — this file's
- * `SmokeAnomalyProjection` is exactly that kind of consumer.
+ * **Corrected 2026-09-25** (this docblock previously said `recordAnomaly`
+ * has no caller because `DecisionProjection`/`QuorumProjection` didn't
+ * extend `BaseProjection` — true when written, stale after issue #91's
+ * refactor): both now extend `BaseProjection` and DO call the inherited
+ * `recordAnomaly` (`decision.ts:77`, `quorum.ts:81`) when they discard a
+ * duplicate vote/ballot. `SmokeAnomalyProjection` below remains a useful
+ * synthetic ext-mode consumer for exercising the base-class method directly,
+ * independent of either built-in mode's own call site.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { MODE_DECISION } from '../../../src/constants';
 import { buildEnvelope } from '../../../src/envelope';
 import { _resetLoggingForTests, configureLogging, type LogSink } from '../../../src/logging';
 import { ProtoRegistry } from '../../../src/proto-registry';
-import { BaseProjection, type ProjectionAnomaly } from '../../../src/projections/base';
+import {
+  ANOMALY_DUPLICATE_BALLOT,
+  ANOMALY_DUPLICATE_VOTE,
+  BaseProjection,
+  PROJECTION_ANOMALY_FIELD_ORDER,
+  type ProjectionAnomaly,
+  type ProjectionAnomalyKind,
+} from '../../../src/projections/base';
 import { DecisionProjection } from '../../../src/projections/decision';
 import { HandoffProjection } from '../../../src/projections/handoff';
 import { ProposalProjection } from '../../../src/projections/proposal';
@@ -35,10 +44,12 @@ afterEach(() => {
 
 // ── BaseProjection.recordAnomaly, via a third-party ext-mode subclass ──────
 //
-// The five built-in mode projections do NOT extend BaseProjection (they
-// inline their own two lines in Phases 4-5), so `recordAnomaly` can only be
-// exercised through a subclass like this one — the same shape as an
-// out-of-tree ext mode.
+// All five built-in mode projections extend BaseProjection (issue #91), but
+// only DecisionProjection/QuorumProjection actually call the inherited
+// `recordAnomaly` today (decision.ts:77, quorum.ts:81) — the other three
+// never populate `anomalies`. This synthetic subclass exercises
+// `recordAnomaly` directly, independent of either built-in call site, the
+// same shape as an out-of-tree ext mode would use it.
 const EXT_MODE = 'ext.anomaly-smoke.v1';
 const EXPECTED_KIND: ProjectionAnomaly['kind'] = 'duplicate_vote';
 
@@ -236,5 +247,78 @@ describe('ProjectionLike.anomalies stays optional', () => {
     // ever tightened to required.
     const minimal: ProjectionLike = { phase: '', transcript: [] };
     expect(minimal.anomalies).toBeUndefined();
+  });
+});
+
+// plans/sdk-parity-typescript.md Phase 2: named constants for the two
+// ProjectionAnomalyKind values, now cross-SDK pinned by the spec repo's
+// schemas/parity/contract.json (projection_anomaly.kinds) — see Phase 5's
+// tests/parity/contract.test.ts for the live-manifest assertion. This
+// describe block only pins the constants' own runtime values and their
+// `satisfies ProjectionAnomalyKind` compile-time link.
+describe('ANOMALY_DUPLICATE_VOTE / ANOMALY_DUPLICATE_BALLOT', () => {
+  it('has the expected runtime string values', () => {
+    expect(ANOMALY_DUPLICATE_VOTE).toBe('duplicate_vote');
+    expect(ANOMALY_DUPLICATE_BALLOT).toBe('duplicate_ballot');
+  });
+
+  it('each constant is independently a valid ProjectionAnomalyKind (compile-time via satisfies, pinned at runtime too)', () => {
+    const kinds: ProjectionAnomalyKind[] = [ANOMALY_DUPLICATE_VOTE, ANOMALY_DUPLICATE_BALLOT];
+    expect(kinds).toEqual(['duplicate_vote', 'duplicate_ballot']);
+  });
+});
+
+// plans/sdk-parity-typescript.md Phase 2 (added during the fresh-Opus review
+// round): PROJECTION_ANOMALY_FIELD_ORDER pairs a runtime field-order list
+// with a compile-time exhaustiveness guard against ProjectionAnomaly
+// (_ProjectionAnomalyFieldOrderIsFrozen, src/projections/base.ts) — Phase 5
+// asserts this list against the spec repo's live manifest. This describe
+// block pins the list's own contents/order and proves it isn't vacuous
+// relative to real production code.
+describe('PROJECTION_ANOMALY_FIELD_ORDER', () => {
+  it('lists exactly ProjectionAnomaly’s seven fields, in this order', () => {
+    expect(PROJECTION_ANOMALY_FIELD_ORDER).toEqual([
+      'kind',
+      'mode',
+      'messageType',
+      'messageId',
+      'sender',
+      'subjectId',
+      'detail',
+    ]);
+  });
+
+  it('matches the real insertion order DecisionProjection uses when it records a duplicate_vote anomaly', () => {
+    // Non-vacuous: this reads the field order off an anomaly object built by
+    // DecisionProjection's own production code path (decision.ts:77-84), not
+    // an object this test constructs itself — so a future reordering of that
+    // literal without updating PROJECTION_ANOMALY_FIELD_ORDER would fail
+    // this assertion, not just an object this test made up to match.
+    const registry = new ProtoRegistry();
+    const makeVote = (vote: string) =>
+      buildEnvelope({
+        mode: MODE_DECISION,
+        messageType: 'Vote',
+        sessionId: 'field-order-session',
+        sender: 'alice',
+        payload: registry.encodeKnownPayload(MODE_DECISION, 'Vote', { proposalId: 'p1', vote }),
+      });
+
+    const projection = new DecisionProjection();
+    projection.applyEnvelope(
+      buildEnvelope({
+        mode: MODE_DECISION,
+        messageType: 'Proposal',
+        sessionId: 'field-order-session',
+        sender: 'bob',
+        payload: registry.encodeKnownPayload(MODE_DECISION, 'Proposal', { proposalId: 'p1', option: 'a' }),
+      }),
+      registry,
+    );
+    projection.applyEnvelope(makeVote('reject'), registry);
+    projection.applyEnvelope(makeVote('approve'), registry);
+
+    expect(projection.anomalies).toHaveLength(1);
+    expect(Object.keys(projection.anomalies[0])).toEqual([...PROJECTION_ANOMALY_FIELD_ORDER]);
   });
 });

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { createHash } from 'node:crypto';
-import { commitmentHash, canonicalizeCommitmentPayload } from '../src/commitment-hash';
+import { commitmentHash, canonicalizeCommitmentPayload, isCanonicalCommitmentHash } from '../src/commitment-hash';
 import type { CommitmentPayload } from '../src/types';
 
 const HASH_SHAPE = /^sha256:[0-9a-f]{64}$/;
@@ -250,5 +250,51 @@ describe('canonicalizeCommitmentPayload (JCS output)', () => {
       const literalReplacementChar = commitmentHash({ ...basePayload(), reason: '�' });
       expect(loneSurrogate).toBe(literalReplacementChar);
     });
+  });
+});
+
+// plans/sdk-parity-typescript.md Phase 2: non-throwing counterpart to
+// src/validation.ts's throwing `validateCommitmentHash`. These are this
+// phase's own hand-picked unit cases — distinct from the manifest-vector
+// set `tests/parity/contract.test.ts` (Phase 5) runs this same predicate
+// against, by design (see that phase's own note on not duplicating vectors).
+describe('isCanonicalCommitmentHash', () => {
+  it('accepts a well-formed sha256: hash', () => {
+    expect(isCanonicalCommitmentHash(commitmentHash(basePayload()))).toBe(true);
+    expect(isCanonicalCommitmentHash('sha256:' + '0'.repeat(64))).toBe(true);
+  });
+
+  it('rejects a trailing newline (the reason Python uses fullmatch)', () => {
+    expect(isCanonicalCommitmentHash('sha256:' + '0'.repeat(64) + '\n')).toBe(false);
+  });
+
+  it('rejects uppercase hex digits', () => {
+    expect(isCanonicalCommitmentHash('sha256:' + 'A'.repeat(64))).toBe(false);
+  });
+
+  it('rejects a 63-character digest (one short)', () => {
+    expect(isCanonicalCommitmentHash('sha256:' + '0'.repeat(63))).toBe(false);
+  });
+
+  it('rejects a 65-character digest (one too many)', () => {
+    expect(isCanonicalCommitmentHash('sha256:' + '0'.repeat(65))).toBe(false);
+  });
+
+  it('rejects a missing sha256: prefix', () => {
+    expect(isCanonicalCommitmentHash('0'.repeat(64))).toBe(false);
+  });
+
+  it('rejects a wrong prefix (e.g. sha512:)', () => {
+    expect(isCanonicalCommitmentHash('sha512:' + '0'.repeat(64))).toBe(false);
+  });
+
+  it('rejects an empty string', () => {
+    expect(isCanonicalCommitmentHash('')).toBe(false);
+  });
+
+  it('never throws, for any input tried, including non-hash garbage', () => {
+    for (const input of ['', 'not a hash', 'sha256:', '   ', '\0', 'sha256:' + 'g'.repeat(64)]) {
+      expect(() => isCanonicalCommitmentHash(input)).not.toThrow();
+    }
   });
 });

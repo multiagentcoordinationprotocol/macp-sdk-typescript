@@ -1359,3 +1359,254 @@ defensive-validation idea was considered and deliberately left as an
 optional follow-up, not silently assumed into scope. Filed
 `macp-sdk-python#67` for that repo's identical `require_vote_quorum` bug
 (cross-repo, not fixed here).
+
+## PLAN-TYPESCRIPT re-verification (2026-09-25) — repo map for Phases 2-6
+
+Plan: `plans/sdk-parity-typescript.md`. Phase 1 was DONE as of 2026-09-20 (see
+that plan file). This section is the repo map `/implement` should read instead
+of re-scanning the repo for Phases 2-6, written while re-verifying the plan
+against `main` @ `ffb0251` (v0.11.0) five days after the original draft.
+
+- `src/commitment-hash.ts` (253 lines) — exports only `canonicalizeCommitmentPayload`
+  and `commitmentHash` today; Phase 2 adds `isCanonicalCommitmentHash` here.
+- `src/validation.ts:133` — `validateCommitmentHash` (throwing), same
+  `/^sha256:[0-9a-f]{64}$/` regex Phase 2's predicate mirrors non-throwing.
+- `src/projections/base.ts` (290 lines) — `ProjectionAnomalyKind` union at :11
+  (`'duplicate_vote' | 'duplicate_ballot'`), `ProjectionAnomaly` 7-field
+  interface at :39-53, `_ProjectionAnomalyFieldSetIsFrozen` compile guard at
+  :92-95 (a one-way door, do not touch). Phase 2 adds
+  `ANOMALY_DUPLICATE_VOTE`/`ANOMALY_DUPLICATE_BALLOT` here. `DecisionProjection`/
+  `QuorumProjection` (base.ts:37, :139) currently inline the literal strings
+  rather than calling a shared helper with these constants — updating those
+  call sites is optional cleanup, not required by Phase 2's acceptance criteria.
+- `src/index.ts` (33 lines) — mixed narrowed-named-export + `export *` barrel;
+  `commitmentHash` only (not `canonicalizeCommitmentPayload`) at :14; 15
+  `export *` modules plus `export * as agent from './agent'` at :32. Phase 3's
+  snapshot test imports `* as sdk` from here.
+- `src/constants.ts` (34 lines, full file) — already exports every one of the
+  16 `error_codes.permanent` strings the spec repo's parity manifest pins, plus
+  `MACP_VERSION`, `STANDARD_MODES`, `MODE_MULTI_ROUND`, and all three
+  `DEFAULT_*_VERSION` constants — Phase 5's parity test reads these directly,
+  no new exports needed here.
+- `src/policy.ts:246` — `buildDecisionPolicy`'s `schemaVersion` default is
+  already `3`, matching the parity manifest's `defaults.policy_builder_schema_version`
+  (confirms commit `a82972a`/#97 is already parity-correct).
+- `src/retry.ts:20-25` — `DEFAULT_RETRY_POLICY` (`maxRetries: 3, backoffBase: 0.1,
+  backoffMax: 2.0, retryableCodes: {RATE_LIMITED, INTERNAL_ERROR}`) — field-for-field
+  match to the manifest's `retry` section; Phase 5's parity test asserts this object
+  directly.
+- `src/proto-registry.ts` — `encodeKnownPayload`/`decodeKnownPayload` for
+  `MODE_MULTI_ROUND`/`Contribute`; `decodeMultiRoundContribute` already does
+  parse-JSON-then-fallback-to-protobuf (fixed by #93/`27ef4ec`). Phase 5's
+  parity test round-trips the manifest's 4 `contribute_payload.vectors`
+  through these two functions.
+- `tests/unit/proto-registry.test.ts:156-194` — existing Contribute encode/decode
+  coverage (canonical protobuf, legacy JSON, non-string coercion, leading
+  whitespace/#93 regression, empty payload). Phase 5 does not duplicate this;
+  it only asserts the specific manifest-pinned vectors.
+- `tests/unit/public-api*` — does not exist yet (Phase 3 creates
+  `tests/unit/public-api.test.ts` + `tests/unit/public-api-snapshot.json`).
+- `tsconfig.json:10,17` — `rootDir: "src"`, `include: ["src/**/*.ts"]` only;
+  `examples/` (12 files, listed in the plan's Phase 4) is outside every gate
+  today but currently type-checks clean under a throwaway probe tsconfig.
+  Phase 4 adds `tsconfig.examples.json` + a `check:examples` script chained
+  into `"check"` (`package.json`'s current `"check"` is `tsc -p tsconfig.json
+  --noEmit`).
+- `.github/workflows/ci.yml:40` — runs `npm run check` already; confirmed no
+  CI edit needed for Phase 4 as long as `check:examples` chains into `check`.
+- `Makefile` — `verify-fixtures`/`sync-fixtures` (multi-file, bidirectional
+  drift/EXTRA loops against `$(SPEC_CONFORMANCE_DIR)`) is the template Phase
+  5's new `verify-parity`/`sync-parity` targets mirror, single-file version
+  (`SPEC_PARITY_DIR := ../multiagentcoordinationprotocol/schemas/parity`).
+  `check: lint format build test` does NOT include `verify-fixtures` today —
+  `verify-parity` should stay standalone too, not folded into `check`.
+- `.github/workflows/conformance-fixtures.yml` — already checks out the spec
+  repo to `_spec` for the `verify-fixtures` job; Phase 5 adds one step to this
+  SAME job (`make verify-parity SPEC_PARITY_DIR="$GITHUB_WORKSPACE/_spec/schemas/parity"`)
+  rather than a new job, to reuse the existing checkout.
+- `tests/vectors/cmt-hash/SOURCE.md` — the template Phase 5's new
+  `tests/parity/SOURCE.md` should follow (provenance, why it lives where it
+  does, how the copy is kept honest, "do not hand-edit").
+- Spec repo `schemas/parity/contract.json` (8832 bytes, `contract_version:
+  "1.0.0"`) — read in full this session via `gh api`; sections `protocol`,
+  `modes`, `defaults`, `error_codes`, `retry`, `projection_anomaly`,
+  `commitment_hash`, `contribute_payload` all name `macp-sdk-typescript` in
+  `applies_to`; `contribute_acceptance` is `macp-runtime`-only, out of scope.
+  Filed/merged via spec issue #134 (closed). Companion `schemas/parity/README.md`
+  documents versioning rules (PATCH/MINOR/MAJOR) and five "Open items" this
+  plan deliberately does not resolve.
+- Spec repo issue #135 (open) — the naming-reconciliation decision issue;
+  already filed, nothing for this plan to do but wait.
+- `docs/index.md` (5052 bytes, full ToC read) — Phase 3/6 both touch this:
+  Phase 6 needs to add `determinism.md`/`security.md` links; neither exists
+  today under any name (checked `docs/`, `docs/guides/`, and both bare names).
+- Sibling `/Users/ajitkoti/code/multiagentcoordinationprotocol/macp-sdk-python/docs/{determinism,security}.md`
+  (also reachable at `/Users/Shared/multiagentcoordinationprotocol/macp-sdk-python`,
+  same tree) — 69 and 78 lines respectively, both read this session, Phase 6's
+  adaptation source. `security.md` cross-links Python's own `auth.md`; the TS
+  equivalent to retarget that link to is `docs/guides/authentication.md`.
+
+### Fresh-Opus review round (2026-09-25) — corrections applied to the plan
+
+Verdict: REVISE, 10 findings (4 load-bearing), all applied to
+`plans/sdk-parity-typescript.md` directly. Corrections that also affect this
+repo map (supersedes the bullets above where they conflict):
+
+- Anomaly-literal inline sites are `src/projections/decision.ts:78` and
+  `src/projections/quorum.ts:82` — **not** `base.ts:37`/`:139` as first
+  written above (`:37` is a docblock line, `:139` is unrelated).
+- `src/index.ts` is 32 lines (not 33) with **18** `export *` modules (not 15,
+  recounted from the live file).
+- Phase 2 now also delivers `PROJECTION_ANOMALY_FIELD_ORDER` (new, added by
+  the review round) — a runtime tuple in `src/projections/base.ts`, with its
+  own compile-time guard `_ProjectionAnomalyFieldOrderIsFrozen` mirroring the
+  file's existing `FrozenProjectionAnomalyField`/`_ProjectionAnomalyFieldSetIsFrozen`
+  idiom. **Correction found during Phase 2's own verification round (2026-09-25):**
+  this bullet originally said "exported from that module only (not the public
+  barrel)" — that was wrong. `src/projections/base.ts` reaches `src/index.ts`
+  via a wildcard `export *` chain (`src/projections.ts` → `src/index.ts`),
+  which cannot selectively omit one name the way `commitment-hash.ts`'s named
+  export line can; `PROJECTION_ANOMALY_FIELD_ORDER` reaches the runtime public
+  barrel regardless of intent (verified: `node -e "require('./dist/index.js')
+  .PROJECTION_ANOMALY_FIELD_ORDER"` prints the array). Harmless — comparable
+  to `STANDARD_MODES`'s existing barrel exposure — so the fix was correcting
+  this doc and the source docblock, not restructuring the export chain. See
+  `src/projections/base.ts`'s `PROJECTION_ANOMALY_FIELD_ORDER` docblock and
+  `plans/sdk-parity-typescript.md` Phase 2/Phase 3 for the full corrected text.
+  Phase 5's `projection_anomaly.fields` assertion uses this constant instead
+  of a hardcoded-in-the-test list.
+- Phase 4's `tsconfig.examples.json` needs `"compilerOptions": { "rootDir":
+  "." }` — extending `tsconfig.json` alone inherits `rootDir: "src"` and
+  fails with 12× `TS6059` on every example file. Reverified working with
+  `rootDir: "."` + `include: ["src/**/*.ts", "examples/**/*.ts"]`.
+- Phase 5's `commitment_hash.reject` array has 11 entries, not 10.
+- Phase 5's `verify-parity` Makefile target needs an explicit
+  `[ ! -f "$(SPEC_PARITY_DIR)/contract.json" ]` guard (mirroring
+  `verify-fixtures`'s two-guard shape), plus a `.prettierignore` entry for
+  `tests/parity/contract.json` (mirroring the existing `tests/vectors/cmt-hash/`
+  entry) and cases added to `tests/unit/fixture-drift-gate.test.ts` rather
+  than a manual hand-edit proof.
+- Phase 6 pages go at `docs/guides/determinism.md`/`docs/guides/security.md`,
+  not `docs/` top level — `docs/` holds nothing but `index.md`, and its ToC
+  only ever points into `guides/`/`api/`. `npm run format:check` does not
+  cover `docs/` (`.prettierignore` excludes it) and must not be cited as an
+  acceptance check for this phase.
+- Phase 1's DONE status line ("all six sites") is now stale prose describing
+  pre-#91 code; corrected in the plan with a dated addendum rather than
+  rewritten, since it's a historical record of what Phase 1 actually did.
+
+### `/implement` run (2026-09-25) — PR strategy and commit posture
+
+**PR strategy: ONE PR for Phases 2-6.** All five are small, additive,
+non-breaking, and cumulative on the same release train (no phase changes
+public behavior; Phase 5 depends on Phase 2's new exports; the rest are
+independent but low-value to review in isolation). Matches this repo's own
+established convention for a set of small interdependent phases (RFC-0013
+Phases 1-3, issue #55 Phases 1-7 both shipped as one PR each — see the
+history above). Branch: `feat/sdk-parity-phases-2-6`, cut from `main` @
+`ffb0251`.
+
+**Commit posture — binding ground rule from the plan itself:** "Never commit
+or push without explicit user instruction." Interpreted literally (per
+CLAUDE.md's own wording, which the plan's Ground Rules section quotes): no
+`git commit` runs during this implementation pass, phase-by-phase or
+otherwise, until the user is asked. Each phase below is still fully executed,
+gated, and verified (fresh Opus per phase) with its `Status: DONE` recorded
+in the plan and its tracked-file updates made here — only the actual `git
+commit` invocation is deferred to a single explicit go/no-go after all
+phases (and finalization) complete, at which point the user will also be
+asked how they want the commits shaped (one commit for the whole PR, or one
+per phase mirroring history convention).
+
+### Phase 2 — DONE (2026-09-25)
+
+**Verdict:** PASS, after 2 verification rounds. **Verifier tier:** fresh Opus
+subagent both rounds (default tier — nothing in Phase 2 crossed the
+Fable-critical bar: no public one-way door landed, since the barrel exposure
+below turned out to be pre-existing wildcard behavior, not a new contract
+choice).
+
+**Round 1 verdict:** GAPS — 1 substantive, 3 minor.
+- Substantive: `PROJECTION_ANOMALY_FIELD_ORDER` was designed/documented as
+  "exported but deliberately NOT added to the public barrel," modeled on
+  `canonicalizeCommitmentPayload`'s named-export exclusion in
+  `commitment-hash.ts`. False: `src/projections/base.ts` reaches
+  `src/index.ts` via a **wildcard** `export *` chain
+  (`src/projections.ts` → `src/index.ts`), which cannot selectively omit one
+  name the way a named export line can — the constant reaches the runtime
+  barrel regardless of intent (`node -e
+  "require('./dist/index.js').PROJECTION_ANOMALY_FIELD_ORDER"` prints the
+  array).
+- Minor (×3): stale pre-issue-#91 claims that `DecisionProjection`/
+  `QuorumProjection` "don't extend `BaseProjection`" / "never call
+  `recordAnomaly`," surviving in `src/projections/base.ts`'s field
+  docblocks, `tests/unit/projections/anomalies.test.ts`'s header + an inline
+  comment, `CLAUDE.md`, and `docs/guides/testing.md`.
+
+**Gap closure (this round):** fixed the `PROJECTION_ANOMALY_FIELD_ORDER`
+docblock in `src/projections/base.ts` to state the barrel exposure honestly
+(harmless, comparable to `STANDARD_MODES`; fix is documentation, not
+restructuring the export chain) — same correction applied to
+`plans/sdk-parity-typescript.md`'s Phase 2 approach text, Phase 5's
+`projection_anomaly.fields` row, and Phase 3's "Depends on"/acceptance
+criteria (now "all four" symbols, not two). Fixed all 3 minor gaps at their
+5 actual locations (`base.ts` ×2 docblocks, `anomalies.test.ts` ×2 spots,
+`CLAUDE.md`, `docs/guides/testing.md` — `docs/api/projections.md` checked
+and confirmed already clean). Full local gate re-run green before
+re-verify.
+
+**Round 2 (re-verify against the round-1 gap list, not a cold review):**
+PASS on all 4 gaps, each independently re-confirmed by the fresh verifier
+(re-ran the `node -e` barrel check itself, re-ran a `tsc` probe, grepped for
+stale phrase variants, confirmed the export-mechanism diff was
+documentation-only). Verifier also flagged 2 residual restatements of the
+same false claim that the round-1 fix pass had missed: `PROGRESS.md`'s own
+repo-map bullet (this file, then-lines ~1460-1462) and this plan's own Final
+report checklist line ("Phase 2's two new exports and their
+`dist/index.d.ts` presence"). Both fixed in this same pass (see the
+corrected bullet above this section, and the plan's Final report checklist).
+Non-blocking, pre-existing findings outside Phase 2's file scope (not
+fixed, flagged for future awareness only): the same stale
+`recordAnomaly`/`BaseProjection` claim class also appears in
+`tests/unit/projections/rollback-invariant.test.ts:218`,
+`tests/unit/projections/message-id-dedup.test.ts:72`, and two gitignored
+plan files (`plans/sdk-parity.md:336`, `plans/rfc-0007-first-vote-stands.md:255,589`)
+— none of these are Phase 2 deliverable files, so touching them here would
+be scope creep; leaving them for whichever phase/task next touches those
+files.
+
+**Files touched this phase:** `src/commitment-hash.ts`,
+`src/index.ts`, `src/projections/base.ts`, `tests/commitment-hash.test.ts`,
+`tests/unit/projections/anomalies.test.ts`, `CLAUDE.md` (local, gitignored),
+`docs/guides/testing.md`, plus tracked-file updates to
+`plans/sdk-parity-typescript.md` (local, gitignored) and this file.
+
+**Gate (final, both rounds green):** `npm run check` / `lint` /
+`format:check` / `test:coverage` (1038 passed, 20 skipped, 0 failed) /
+`build` / `make verify-fixtures` — all exit 0. Coverage 95.79% stmts /
+88.67% branches / 94.14% funcs / 96.73% lines, vs. floors 92/84/91/94 in
+`vitest.config.ts` — all above floor, no recalibration needed this phase
+(deferred to Finalization per this run's own working decision, see below).
+
+**ASSUMPTIONS.md:** no entry needed for the barrel-exposure divergence —
+it was a factual correction (the code already behaved this way; nothing was
+*chosen* that could be wrong), not an ambiguous judgment call requiring a
+logged assumption.
+
+**Coverage recalibration — working decision, now recorded:** floors stay at
+94/84/91/92 through Phases 2-6; recalibration (if any) happens once, at
+Finalization (§4), against the cumulative diff — not after every phase.
+Reasoning: recalibrating per-phase against a plan with 5 more phases still
+to land would mean touching `vitest.config.ts` up to 5 times for numbers
+that will keep moving until the feature is whole; one recalibration at the
+end, against final cumulative coverage, is the actual signal worth acting
+on. Not logged to `ASSUMPTIONS.md` (this is a `PROGRESS.md`-appropriate
+implementation-sequencing call per the Autonomy ladder's "consequential but
+decidable" tier, not an ambiguity with a wrong-guess blast radius).
+
+**What's next:** Phase 3 (public runtime-surface snapshot guard) — depends
+on Phase 2, now must capture all four of Phase 2's barrel symbols
+(`isCanonicalCommitmentHash`, `ANOMALY_DUPLICATE_VOTE`,
+`ANOMALY_DUPLICATE_BALLOT`, `PROJECTION_ANOMALY_FIELD_ORDER`) in its
+snapshot, not two.
+
