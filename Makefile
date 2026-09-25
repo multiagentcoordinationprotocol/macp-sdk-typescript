@@ -1,6 +1,7 @@
-.PHONY: build test lint format check sync-fixtures sync-fixtures-local verify-fixtures dev-link-protos
+.PHONY: build test lint format check sync-fixtures sync-fixtures-local verify-fixtures sync-parity verify-parity dev-link-protos
 
 SPEC_CONFORMANCE_DIR := ../multiagentcoordinationprotocol/schemas/conformance
+SPEC_PARITY_DIR := ../multiagentcoordinationprotocol/schemas/parity
 
 build:
 	npm run build
@@ -87,6 +88,38 @@ verify-fixtures:
 		exit 1; \
 	fi; \
 	echo "All conformance fixtures and cmt-hash vectors match the canonical source."
+
+## Sync the vendored cross-SDK parity contract from canonical source
+sync-parity:
+	@if [ ! -d "$(SPEC_PARITY_DIR)" ]; then \
+		echo "Error: Spec repo not found at $(SPEC_PARITY_DIR)"; \
+		exit 1; \
+	fi
+	@if [ ! -f "$(SPEC_PARITY_DIR)/contract.json" ]; then \
+		echo "Error: canonical parity contract not found at $(SPEC_PARITY_DIR)/contract.json"; \
+		exit 1; \
+	fi
+	@cp "$(SPEC_PARITY_DIR)/contract.json" tests/parity/contract.json
+	@echo "  Copied contract.json"
+	@echo "Done. Run 'git diff tests/parity/contract.json' to review changes."
+
+## Fail if the vendored parity contract has drifted from the canonical source.
+## Run in CI on every PR so a hand-edited manifest can never merge.
+verify-parity:
+	@if [ ! -d "$(SPEC_PARITY_DIR)" ]; then \
+		echo "Error: Spec repo not found at $(SPEC_PARITY_DIR)"; \
+		exit 1; \
+	fi
+	@if [ ! -f "$(SPEC_PARITY_DIR)/contract.json" ]; then \
+		echo "Error: canonical parity contract not found at $(SPEC_PARITY_DIR)/contract.json"; \
+		exit 1; \
+	fi
+	@if ! diff -q "$(SPEC_PARITY_DIR)/contract.json" tests/parity/contract.json >/dev/null 2>&1; then \
+		echo "  DRIFT: tests/parity/contract.json differs from canonical"; \
+		echo "Parity contract drifted from canonical. Run 'make sync-parity' and commit."; \
+		exit 1; \
+	fi; \
+	echo "tests/parity/contract.json matches the canonical source."
 
 ## Link local proto package for development (test proto changes before publishing)
 dev-link-protos:

@@ -30,10 +30,12 @@ tests/
 │   ├── conformance-guard.test.ts  # duplicateAcceptedBallots() over synthetic input
 │   ├── envelope.test.ts        # Envelope builder functions
 │   ├── errors.test.ts          # Error class hierarchy
-│   ├── fixture-drift-gate.test.ts  # Drives the real `make verify-fixtures`/`sync-fixtures` recipes
+│   ├── fixture-drift-gate.test.ts  # Drives the real `make verify-fixtures`/`sync-fixtures`/`verify-parity`/`sync-parity` recipes
 │   ├── logging.test.ts         # Structured logger + configureLogging()
 │   ├── policy.test.ts          # Policy builders
 │   ├── proto-registry.test.ts  # Protobuf encode/decode roundtrips
+│   ├── public-api.test.ts      # Public runtime-surface snapshot guard vs. public-api-snapshot.json
+│   ├── public-api-snapshot.json  # Committed snapshot (not a test file)
 │   ├── retry.test.ts           # Retry policy + backoff
 │   ├── validation.test.ts      # Runtime-adjacent payload validation
 │   └── watchers.test.ts        # Registry/roots/signal/policy/session-lifecycle watchers
@@ -45,6 +47,10 @@ tests/
 ├── vectors/
 │   ├── cmt-hash.test.ts        # Spec-vector runner replaying RFC-MACP-0013's canonical vectors
 │   └── cmt-hash/               # Vendored vectors + SOURCE.md (provenance, gated by verify-fixtures)
+├── parity/
+│   ├── contract.test.ts        # Cross-SDK parity contract: asserts runtime values against contract.json
+│   ├── contract.json           # Vendored copy (provenance, gated by verify-parity)
+│   └── SOURCE.md               # Provenance note
 ├── commitment-hash.test.ts     # RFC-MACP-0013 commitment hash: determinism, JCS, D3
 └── integration/
     ├── README.md               # Runtime setup + bearer envs
@@ -306,13 +312,14 @@ elsewhere:
 
 `tests/unit/projections/anomalies.test.ts` covers the `anomalies` surface:
 types, the `anomalies` field, the `hasAnomalies` getter, and
-`BaseProjection.recordAnomaly`. `BaseProjection.recordAnomaly` has no
-built-in-mode caller — the five built-in mode projections do NOT extend
-`BaseProjection` and inline their own two lines at their duplicate-detection
-call sites instead (see [Projections API ›
-Anomalies](../api/projections.md#anomalies)) — so the tests exercise
-`recordAnomaly` through a synthetic third-party `BaseProjection` subclass
-instead.
+`BaseProjection.recordAnomaly`. All five built-in mode projections extend
+`BaseProjection` (issue #91), and two of them — `DecisionProjection` and
+`QuorumProjection` — call the inherited `recordAnomaly` directly at their
+duplicate-detection call sites (see [Projections API ›
+Anomalies](../api/projections.md#anomalies)); the other three never record
+an anomaly today. The tests additionally exercise `recordAnomaly` through a
+synthetic third-party `BaseProjection` subclass, independent of either
+built-in mode's own call site.
 
 Two things worth copying when Phases 4-5 add real detection (Decision `Vote`,
 Quorum ballots), or when testing a custom ext-mode's own anomaly detection:
@@ -441,6 +448,36 @@ make verify-fixtures                                    # uses the default sibli
 make verify-fixtures SPEC_CONFORMANCE_DIR=/path/to/schemas/conformance
 make sync-fixtures SPEC_CONFORMANCE_DIR=/path/to/schemas/conformance
 ```
+
+### Parity Contract Gate
+
+A second, single-file zero-drift gate covers the cross-SDK parity contract:
+`schemas/parity/contract.json` in the spec repo, a small non-normative
+manifest pinning values that already agree — by convention, not by a shared
+source of truth — across `macp-runtime`, `macp-sdk-python`, and this SDK
+(protocol version, standard/extension mode ids, defaults, error codes, retry
+policy, the `ProjectionAnomaly` field set/order, the commitment-hash
+accept/reject behavior, and the `Contribute` payload byte vectors). See
+[`tests/parity/SOURCE.md`](../../tests/parity/SOURCE.md) for provenance and
+[`tests/parity/contract.test.ts`](../../tests/parity/contract.test.ts) for
+the assertions against this SDK's actual runtime values.
+
+`make verify-parity`/`make sync-parity` mirror `verify-fixtures`/`sync-fixtures`,
+scoped to the one vendored file (`tests/parity/contract.json`) instead of a
+fixture directory:
+
+```bash
+make verify-parity                                # uses the default sibling-checkout path
+make verify-parity SPEC_PARITY_DIR=/path/to/schemas/parity
+make sync-parity SPEC_PARITY_DIR=/path/to/schemas/parity
+```
+
+CI runs both gates in the same job (`.github/workflows/conformance-fixtures.yml`),
+reusing one spec-repo checkout for both. `contract.json` is explicitly
+non-normative — see its own `$comment` field and the spec repo's
+`schemas/parity/README.md` — so neither this guide nor any other doc in this
+repo should cite `contract.json` itself as a source of truth; cite the named
+RFC/registry/proto file instead.
 
 ## Proto Registry Tests
 

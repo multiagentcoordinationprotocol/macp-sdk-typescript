@@ -1,9 +1,14 @@
-name: Conformance fixtures
+name: Conformance fixtures & parity contract
 
 # Enforces zero drift between this SDK's vendored conformance fixtures and the
 # canonical set in the spec repo (multiagentcoordinationprotocol). Runs on every
 # PR/push so a hand-edited fixture can never merge. See
 # tests/conformance/ and `make sync-fixtures` / `make verify-fixtures`.
+#
+# Also enforces zero drift between the vendored cross-SDK parity contract
+# (tests/parity/contract.json) and its canonical source
+# (schemas/parity/contract.json), reusing the same spec-repo checkout. See
+# tests/parity/SOURCE.md and `make sync-parity` / `make verify-parity`.
 #
 # If the spec repo is private, configure a read-scoped PAT as the
 # CONFORMANCE_SPEC_TOKEN secret; otherwise the default GITHUB_TOKEN is used.
@@ -37,6 +42,9 @@ jobs:
 
       - name: Verify fixtures match canonical (no drift)
         run: make verify-fixtures SPEC_CONFORMANCE_DIR="$GITHUB_WORKSPACE/_spec/schemas/conformance"
+
+      - name: Verify parity contract (no drift)
+        run: make verify-parity SPEC_PARITY_DIR="$GITHUB_WORKSPACE/_spec/schemas/parity"
 
       - name: Lint canonical fixtures for internal consistency
         run: python3 "$GITHUB_WORKSPACE/_spec/schemas/conformance/lint_fixtures.py"

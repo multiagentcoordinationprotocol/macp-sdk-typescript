@@ -1743,3 +1743,131 @@ directory, `Makefile` `sync-parity`/`verify-parity` targets, a CI step, and
 extending `tests/unit/fixture-drift-gate.test.ts`. See Phase 5's own plan
 section for the full per-manifest-section mapping table.
 
+### Phase 5 — DONE (2026-09-25)
+
+**Verdict:** PASS, first round. **Verifier tier:** fresh Opus subagent
+(default tier — this phase reads a spec-repo manifest and asserts local
+runtime values against it; it does not create a new public contract of this
+SDK's own, so no Fable-critical bar was crossed).
+
+**Implementation, matching the plan's per-manifest-section table exactly:**
+- `tests/parity/contract.json` — vendored from the spec-repo sibling
+  checkout (`../multiagentcoordinationprotocol/schemas/parity/contract.json`,
+  commit `4f15b96cac6e39d62925a5baa1ef80a42c2f818d`), confirmed byte-identical
+  (`diff -q` clean, sha256 match) and re-confirmed by the verifier
+  independently via a fresh sha256 comparison.
+- `tests/parity/SOURCE.md` — provenance note, modeled on
+  `tests/vectors/cmt-hash/SOURCE.md`'s structure; verifier independently
+  confirmed the cited commit hash matches `git log -1` in the sibling repo
+  and that `schemas/parity/` is genuinely a sibling of `schemas/conformance/`
+  in the spec repo (not a subdirectory), which is the actual reason this
+  needs its own directory rather than folding into `tests/conformance/`.
+- `tests/parity/contract.test.ts` — 19 tests, one per approach-table row,
+  covering all 8 manifest sections whose `applies_to` names
+  `macp-sdk-typescript` (`protocol`, `modes` ×2, `defaults` ×2,
+  `error_codes` ×2, `retry` ×2, `projection_anomaly` ×2, `commitment_hash`
+  ×3, `contribute_payload` ×4). `contribute_acceptance`
+  (`applies_to: [macp-runtime]` only) deliberately not asserted. Every
+  assertion reads the live manifest content (`import contract from
+  './contract.json'`) rather than hand-copying values, except the two the
+  plan explicitly permits to be hardcoded (`error_codes.deprecated` and
+  `commitment_hash.pattern`'s literal — neither has a `src/` counterpart to
+  read live). A `contract_version === '1.0.0'` tripwire test means any
+  future MINOR/MAJOR manifest bump forces a human to re-review this whole
+  file rather than silently passing against sections that no longer apply.
+- `Makefile` — `SPEC_PARITY_DIR`, `sync-parity`, `verify-parity`, full
+  two-guard shape (directory-missing, then file-missing, each a distinct
+  named error) mirroring `verify-fixtures`'s guard style, both added to
+  `.PHONY`, kept standalone (not folded into `check`).
+- `.prettierignore` — `tests/parity/contract.json` added (verifier confirmed
+  it actually bites: `prettier --file-info` reports `ignored: true`).
+- `.github/workflows/conformance-fixtures.yml` — one new step ("Verify
+  parity contract (no drift)") added to the existing `verify-fixtures` job,
+  reusing the pre-existing `_spec` checkout — no new job, no second
+  checkout. Display name cosmetically renamed to "Conformance fixtures &
+  parity contract" (left to implementer discretion by the plan).
+- `tests/unit/fixture-drift-gate.test.ts` — extended with 7 new cases (the
+  plan's acceptance criterion 2 estimated "6", actual count needed to cover
+  both `sync-parity` guards individually plus the clean/drift/verify-side
+  guards turned out to be 7 — a plan-estimate correction, not a gap) driving
+  the real `make sync-parity`/`verify-parity` recipes via `spawnSync`
+  against synthetic trees, including the specific edge case the plan's own
+  acceptance criterion called out: canonical directory present but
+  `contract.json` missing inside it, which a directory-only guard (like the
+  pre-existing `verify-fixtures` before this phase) would miss.
+- `docs/guides/testing.md` — new "Parity Contract Gate" subsection
+  mirroring "Fixture Drift Gate"'s structure, plus a `tests/parity/`
+  directory-tree entry and a corrected one-line description for
+  `fixture-drift-gate.test.ts` (now drives 4 make targets, not 2).
+  `CLAUDE.md` (local, gitignored) — Build Commands + test-list entries.
+
+**Verification — fresh-Opus verifier reproduced everything independently
+rather than trusting the summary:** re-ran `diff -q` and a sha256 comparison
+on the vendored file; ran `make verify-parity` from a clean state; read
+every new fixture-drift-gate case and confirmed each drives the real
+Makefile recipe via `spawnSync`, not a reimplementation; went row-by-row
+through the approach table cross-checking `contract.test.ts` against the
+spec repo's own `schemas/parity/README.md` (confirmed exactly 8 sections
+name `macp-sdk-typescript`, all 8 asserted); validated the CI workflow YAML
+parses and confirmed via `git diff` that exactly one step was added, no new
+job/checkout; ran the full local gate independently; and ran 4 targeted
+adversarial probes: (1) introduced literal drift into the vendored
+`contract.json` and confirmed `verify-parity` fails with `DRIFT:`, then
+`sync-parity` restores it and `verify-parity` re-passes; (2) confirmed both
+Makefile guards fire with distinct messages, not a bare `diff`/`cp` error;
+(3) temporarily changed `DEFAULT_RETRY_POLICY.maxRetries` in `src/retry.ts`
+from `3` to `4` via a targeted `Edit` (not `git checkout --`, learning from
+the Phase 3 incident) and confirmed `contract.test.ts` fails, then reverted
+cleanly and confirmed `git status --short` was byte-identical to the
+pre-probe snapshot; (4) confirmed no scope creep or accidental file loss
+elsewhere in the working tree.
+
+**Gap closure (this round):** verdict was PASS with 6 non-blocking nits;
+the verifier's own count also caught a task-brief error (7 new
+fixture-drift-gate cases, not 6 as originally estimated — a plan-estimate
+correction, not an implementation gap). Fixed the 3 nits worth fixing: a
+comment claiming "one of the manifest's own vectors" while hardcoding a
+literal (now reads `vectors[0].value` instead), an accept-vector test
+missing a `toHaveLength(1)` non-vacuity guard (added, matching the
+pre-existing `reject`'s `toHaveLength(11)`) and a `contribute_payload`
+vectors test missing `toHaveLength(4)` (added), and one overstated test
+title (renamed to describe what the test actually checks). Left 3 nits
+unfixed per the verifier's own explicit judgment that none were worth
+fixing as a merge condition (a cosmetic wording difference between
+`verify-fixtures`'s and `verify-parity`'s drift-line text; a
+defense-in-depth-only `.prettierignore` entry, since the repo's own
+`format`/`format:check` globs never matched `tests/parity/contract.json` in
+the first place; this `PROGRESS.md` entry itself, written now).
+
+**Files touched this phase:** `tests/parity/contract.json` (new, vendored),
+`tests/parity/SOURCE.md` (new), `tests/parity/contract.test.ts` (new),
+`.prettierignore`, `Makefile`, `.github/workflows/conformance-fixtures.yml`,
+`tests/unit/fixture-drift-gate.test.ts`, `docs/guides/testing.md`,
+`CLAUDE.md` (local, gitignored).
+
+**Gate (final, green):** `npm run check` / `lint` / `format:check` /
+`test:coverage` (1065 passed, 20 skipped, 0 failed — +26 vs. Phase 4's
+1039: 19 from `contract.test.ts` + 7 from `fixture-drift-gate.test.ts`) /
+`build` / `make verify-fixtures` (unaffected, still green) / `make
+verify-parity` (new, green) — all exit 0. Coverage unchanged at
+95.79/88.67/94.14/96.73 vs. floors 92/84/91/94 (this phase adds tests for
+already-covered `src/` code paths plus a Makefile-driving test that imports
+nothing from `src/`, so no coverage movement expected or seen).
+
+**ASSUMPTIONS.md:** no entry needed. The one candidate — "6 vs. 7 new
+fixture-drift-gate cases" — was a plan-estimate imprecision caught and
+corrected during implementation/verification, not an ambiguous design
+choice with a wrong-guess blast radius.
+
+**Cross-repo:** read-only, as planned — this phase reads
+`schemas/parity/contract.json` from the spec repo; it does not write to it
+or to `macp-sdk-python`. No new issue filed (5a/5b were already satisfied
+before this phase started, per the plan's own "Already satisfied, no
+action" section).
+
+**What's next:** Phase 6 (docs: port the two contract-relevant Python pages
+— explicitly marked cuttable in the plan). All 5 non-cuttable phases (1-5)
+are now DONE. Before starting Phase 6, the user has not yet been asked
+whether to include or skip it, per the plan's own framing — will ask once
+Phase 6 is reached, rather than assuming either way.
+
