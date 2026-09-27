@@ -2401,6 +2401,11 @@ all above the 94/84/91/92 floors); `npm run check`, `npm run lint`,
 `npm run format:check`, `npm run build` all clean; `make verify-fixtures`
 green.
 
-What's next: hand off to `/ship` for PR #2 of 6 (Phase 2, closes #106) —
-new branch not yet created (work was on `main` through the verify/fix loop).
-Then continue with Phase 1 (#105).
+pushed fix/issue-106-participant-lifecycle 0e0fc4e
+PR #113 opened: https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/pull/113
+merged #113: squash-merged into `main` as `e1a7de4`. CI green (build-and-test
+Node 22/24, integration, verify-fixtures). Issue #106 confirmed CLOSED.
+Remote branch deleted; local `main` fast-forwarded.
+
+What's next: continue the phase loop with Phase 1 (#105), then Phase 4A,
+Phase 4B, then Phase 3 (PR #3 through #6 of 6).
