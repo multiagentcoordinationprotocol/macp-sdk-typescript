@@ -2555,3 +2555,9 @@ confirm #108 closed, cleanup), then Phase 3 (#107, final PR of 6).
 
 pushed fix/issue-108-4b-auth-defaults-validation 0627678
 PR #116 opened: https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/pull/116
+CI green (build-and-test Node 22/24, integration, verify-fixtures).
+merged #116: squash-merged into `main` as `4c633e0`. Issue #108 confirmed
+CLOSED. Remote and local feature branches deleted; local `main`
+fast-forwarded.
+
+What's next: continue with Phase 3 (#107, final PR of 6).
