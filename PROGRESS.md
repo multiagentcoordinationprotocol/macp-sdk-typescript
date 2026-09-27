@@ -2552,3 +2552,6 @@ drift, not fixed (confirmed via `git status` on `tests/parity/contract.json`
 
 What's next: ship Phase 4B (branch, commit `Closes #108`, PR, CI, merge,
 confirm #108 closed, cleanup), then Phase 3 (#107, final PR of 6).
+
+pushed fix/issue-108-4b-auth-defaults-validation 0627678
+PR #116 opened: https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/pull/116
