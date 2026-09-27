@@ -59,8 +59,10 @@ export interface ParticipantConfig {
   /**
    * Bind a cancel-callback HTTP endpoint (RFC-0001 §7.2 Option A) when
    * this participant's event loop starts. The server is closed
-   * automatically when {@link Participant.stop} is called. Parity with
-   * python-sdk's bootstrap `cancel_callback` field.
+   * automatically on any exit from {@link Participant.run} — an explicit
+   * {@link Participant.stop}, a terminal outcome, or the transport running
+   * out of messages. Parity with python-sdk's bootstrap `cancel_callback`
+   * field.
    */
   cancelCallback?: { host: string; port: number; path: string };
 }
@@ -84,7 +86,23 @@ export class Participant {
   private readonly modeVersion?: string;
   private readonly configurationVersion?: string;
   private readonly policyVersion?: string;
+  /** Whether the event loop is currently inside {@link run}. */
   private running = false;
+  /**
+   * Latching: set once a terminal result is dispatched (a terminal phase,
+   * or the {@code SessionCancel} fallback in {@link processMessage}). A
+   * terminal `Participant` is single-use — {@link run} refuses to
+   * re-enter, because the projection is resolved and the runtime will
+   * accept nothing further for this session.
+   */
+  private terminal = false;
+  /**
+   * The cooperative cancel flag {@link stop} sets and {@link run} clears
+   * on entry — the loop's break predicate. Distinct from {@link terminal}:
+   * a `stop()`-exited, non-terminal `Participant` is a resumable pause
+   * (see {@link isStopped}), not single-use.
+   */
+  private stopRequested = false;
   private lastPhase: string;
   private cancelCallbackServer?: CancelCallbackServer;
   private readonly cancelCallbackConfig?: { host: string; port: number; path: string };
@@ -251,13 +269,19 @@ export class Participant {
     return this;
   }
 
-  /** Whether {@link stop} has been called (or the loop has exited). */
+  /**
+   * `true` after a terminal outcome (single-use from here on), or while a
+   * `stop()` request is pending/has taken effect on a `Participant` whose
+   * loop has not (yet) been resumed by a later {@link run}. A `stop()`
+   * exit is resumable — see {@link run} and {@link terminal}'s own doc.
+   */
   get isStopped(): boolean {
-    return !this.running;
+    return this.terminal || this.stopRequested;
   }
 
   async run(): Promise<void> {
-    if (this.running) return;
+    if (this.running || this.terminal) return;
+    this.stopRequested = false;
     this.running = true;
 
     if (this.cancelCallbackConfig && !this.cancelCallbackServer) {
@@ -277,12 +301,13 @@ export class Participant {
 
     try {
       for await (const message of this.transport.start()) {
-        if (!this.running) break;
+        if (this.stopRequested) break;
         const reachedTerminal = await this.processMessage(message);
         if (reachedTerminal) break;
       }
     } finally {
       this.running = false;
+      await this.teardown();
     }
   }
 
@@ -329,6 +354,7 @@ export class Participant {
   /** Returns true if a terminal state was reached. */
   private async processMessage(message: IncomingMessage): Promise<boolean> {
     const ctx = this.buildHandlerContext();
+    const alreadyTerminal = this.terminal;
 
     if (this.session && message.raw) {
       const applyMethod = (this.session as { projection: { applyEnvelope: (...args: unknown[]) => void } }).projection
@@ -344,27 +370,67 @@ export class Participant {
 
     await this.dispatcher.dispatch(message, ctx);
 
+    let firedTerminal = false;
     const currentPhase = this.projection.phase;
     if (currentPhase !== this.lastPhase) {
       this.lastPhase = currentPhase;
       await this.dispatcher.dispatchPhaseChange(currentPhase, ctx);
 
       if (TERMINAL_PHASES.has(currentPhase)) {
+        this.terminal = true;
+        firedTerminal = true;
         const terminalResult: TerminalResult = {
           state: currentPhase,
           commitment: (this.projection as { commitment?: Record<string, unknown> }).commitment,
         };
         await this.dispatcher.dispatchTerminal(terminalResult);
-        return true;
       }
     }
 
-    return false;
+    // Fallback for envelopes no projection maps to a phase (issue #106.1):
+    // no built-in projection maps `SessionCancel` to a terminal phase, so the
+    // phase-driven path above never fires for it. Against the current
+    // macp-runtime, `run()`'s streamed path never even observes this branch —
+    // `cancel_session` stores `SessionCancel` as `EntryKind::Internal`
+    // (runtime.rs `make_internal_entry`/`cancel_session`), and
+    // `get_incoming_after` (macp-storage `log_store.rs`) filters strictly to
+    // `EntryKind::Incoming`, so `StreamSession`/`GrpcTransportAdapter` never
+    // delivers it; cancellation surfaces via the separate
+    // `session_lifecycle_bus`/`WatchSessions` mechanism instead. This
+    // fallback's real, currently-reachable value is `processEvent()` callers
+    // driving their own foreign message loop (where a `SessionCancel` can be
+    // handed in directly) and cross-SDK parity with `macp-sdk-python`'s
+    // identical fallback — not the streamed `run()` path today. Gated on
+    // `!alreadyTerminal` (captured before this call's own phase-driven
+    // branch could have just set it) so a `SessionCancel` arriving on an
+    // already-terminal session — one whose own terminal dispatch already
+    // ran, this call or an earlier one — cannot double-dispatch
+    // `onTerminal`.
+    if (!firedTerminal && !alreadyTerminal && message.messageType === 'SessionCancel') {
+      this.terminal = true;
+      this.lastPhase = 'Cancelled';
+      await this.dispatcher.dispatchTerminal({ state: 'Cancelled' });
+      return true;
+    }
+
+    return firedTerminal;
   }
 
-  async stop(): Promise<void> {
-    this.running = false;
-    await this.transport.stop();
+  /**
+   * Idempotent teardown of everything {@link run} started: the transport
+   * subscription and the cancel-callback HTTP listener, if any. Called
+   * from both {@link stop} and every exit from {@link run}'s loop (issue
+   * #106.2) — a normal terminal exit or a transport running out of
+   * messages used to leak both. A rejecting `transport.stop()` is caught
+   * rather than propagated, so a transport fault on teardown cannot mask
+   * a clean session outcome as a thrown error from {@link run}.
+   */
+  private async teardown(): Promise<void> {
+    try {
+      await this.transport.stop();
+    } catch (err) {
+      logger.debug('transport stop failed', err);
+    }
     if (this.cancelCallbackServer) {
       const srv = this.cancelCallbackServer;
       this.cancelCallbackServer = undefined;
@@ -377,8 +443,23 @@ export class Participant {
   }
 
   /**
+   * Request that {@link run}'s loop stop. This SDK's {@link TransportAdapter}
+   * has no `cancel()` — `stop()` on the transport is the only thing that can
+   * wake a loop suspended awaiting the next envelope, so teardown (including
+   * the transport) runs here unconditionally, not just the flag. Safe to
+   * call whether or not `run()` is currently active; does not itself flip
+   * {@link running} — only `run()`'s own loop exit does that, since it is
+   * the only place that actually knows the loop has left.
+   */
+  async stop(): Promise<void> {
+    this.stopRequested = true;
+    await this.teardown();
+  }
+
+  /**
    * Attach a running cancel-callback HTTP server to this participant.
-   * The server is closed automatically when {@link stop} is called.
+   * The server is closed automatically on any exit from {@link run} — see
+   * {@link teardown}.
    * Parity with python-sdk's `Participant.attach_cancel_callback_server`.
    */
   attachCancelCallbackServer(server: CancelCallbackServer): void {

@@ -2331,3 +2331,76 @@ tests, pre-existing, not run here or in CI).
 
 What's next: hand off to `/ship` for PR #1 of 6 (Phase 5, closes #109), then
 continue the phase loop with Phase 2 (#106).
+
+pushed fix/issue-109-docs-and-public-surface b08794c
+PR #112 opened: https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/pull/112
+merged #112: squash-merged into `main` as `99c2f4a`. CI green (build-and-test
+Node 22/24, integration, verify-fixtures). Issue #109 confirmed CLOSED.
+Remote branch deleted; local `main` fast-forwarded.
+
+### Phase 2 (#106) — DONE, 2026-09-27
+
+Second phase in merge order (5 → **2** → 1 → 4A → 4B → 3).
+
+Verdict: **GAPS round 1** (fresh Opus verifier) → **PASS round 2**. The
+verifier confirmed all of items 2a-2f were correctly implemented (cited
+`file:line` for each) and independently re-derived and confirmed two
+judgment calls as correct: (i) diverging from the plan's own imprecise
+Tests-section prose for the rollback-pop-guard test (2d) in favor of the
+Approach section's actual, Python-matching behavior; (ii) the three-field
+`isStopped` design itself, via its own re-derivation of the #66 restart
+regression's mechanics.
+
+Round-1 gaps, all closed in round 2:
+1. **Factual defect in shipped text, not code**: the comment in
+   `participant.ts` (~line 391), the `CHANGELOG.md` entry, and the new
+   `docs/guides/agent-framework.md` bullet all claimed "`SessionCancel` is a
+   control-plane message with no mode, so `applyEnvelope`'s mode guard
+   discards it." **Confirmed false** by reading `macp-runtime` directly
+   (`src/runtime.rs`'s `cancel_session`/`make_internal_entry`,
+   `crates/macp-storage/src/log_store.rs`'s `get_incoming_after`): the mode
+   *is* stamped correctly; `SessionCancel` is stored as `EntryKind::Internal`
+   and `get_incoming_after` filters strictly to `EntryKind::Incoming`, so it
+   is never delivered via `StreamSession`/`GrpcTransportAdapter` at all
+   against the current runtime — cancellation surfaces via the separate
+   `session_lifecycle_bus`/`WatchSessions` mechanism instead. All three
+   locations corrected to state the real mechanism and reframe the
+   fallback's practical value as `processEvent()` callers and cross-SDK
+   parity with `macp-sdk-python`'s identical fallback.
+2. **Missing tests** for four interactions: `attachCancelCallbackServer`-vs-
+   terminal-`run()` interplay was already covered by an existing test; added
+   four more — cancelCallback-config restart (`stop()` then `run()` again,
+   pinning that teardown clears the server reference and the next `run()`
+   rebinds the same host:port with a fresh listener instance), a direct
+   `isStopped` assertion immediately after a bare `stop()` with no prior
+   `run()`, and a test invoking the *actual* `onCancel` closure `run()`
+   constructs (via `startCancelCallbackServer.mock.calls[0][0].onCancel`)
+   mid-stream, rather than only exercising a spied `stop()` method.
+3. Stale comment at `participant.test.ts` (in the #66 regression test body,
+   an inline comment on an assertion): "observed `!this.running`" → "observed
+   its `stopRequested` flag" (code changed, comment hadn't).
+4. Misleadingly-named test ("run() starts the server from config and stop()
+   closes it") renamed to state what it actually now proves — `run()`'s own
+   teardown closes the server first; the trailing `stop()` finds nothing left
+   to close.
+5. Plan's Phase 2 `Status` flipped `TODO` → `DONE` with a divergence note
+   (the SessionCancel-mechanism correction above).
+6. Open question 1 (`run()` re-enterability) logged to `ASSUMPTIONS.md` as
+   `CONFIRMED` (not left `UNCONFIRMED`) with a matching `DECISIONS.md` entry
+   — resolved same-session by the implementing diff itself, not deferred to
+   a later `/reconcile` pass.
+
+Files touched: `src/agent/participant.ts`, `src/agent/transports.ts`
+(comment-only), `src/projections/base.ts`, `tests/unit/agent/participant.test.ts`,
+`tests/unit/projections/rollback-invariant.test.ts`, `docs/guides/agent-framework.md`,
+`CHANGELOG.md`, `ASSUMPTIONS.md`, `DECISIONS.md`, `plans/issue-105-109-fixes.md`.
+
+Local gate (post-fix, full re-run): `npm test` 1090 passed/20 skipped;
+`npm run test:coverage` 95.9/88.97/94.41/96.83 (stmts/branches/funcs/lines,
+all above the 94/84/91/92 floors); `npm run check`, `npm run lint`,
+`npm run format:check`, `npm run build` all clean; `make verify-fixtures`
+green.
+
+What's next: hand off to `/ship` for PR #2 of 6 (Phase 2, closes #106) —
+new branch not yet created (work was on `main` through the verify/fix loop).
+Then continue with Phase 1 (#105).

@@ -4,6 +4,14 @@ Durable record of `/reconcile` outcomes — one entry per `ASSUMPTIONS.md` entry
 `/ship` and any later reconciliation pass read this file instead of replaying the
 conversation that produced it.
 
+## 2026-09-27 — `Participant.run()` re-enterability after `stop()` vs. a terminal outcome
+
+- **Assumption:** `ASSUMPTIONS.md` — "`Participant.run()` re-enterability after `stop()` vs. a terminal outcome" (Phase 2 of `plans/issue-105-109-fixes.md`, issue #106.3). Logged and resolved same-session — no separate `/reconcile` pass needed, since the implementing diff itself proves the answer rather than leaving it open.
+- **Recommending agent:** Opus (consequential but decidable — a still-evolving internal lifecycle contract, not yet a public one-way door; the existing #66 test already commits this repo to *some* form of resumability).
+- **Recommendation:** CONFIRM the three-field (`running`/`terminal`/`stopRequested`) design over Python's single latch. `tests/unit/agent/participant.test.ts`'s issue #66 regression test restarts the same `Participant` instance after a mid-stream `stop()` and asserts redelivery via a real `GrpcTransportAdapter`'s resume cursor — a single latch (Python's `_stopped`, `macp-sdk-python/src/macp_sdk/agent/participant.py:395,450-451,579`) would make that restart a no-op and void an existing, intentional, already-shipped test. Terminal outcomes stay single-use (the runtime has resolved the session; there is nothing left to resume into), which is the actual bug #106.3 reported — `isStopped` read `true` right after construction, and nothing distinguished "paused" from "done."
+- **My verdict:** Confirm as-is. Verified independently by the Phase 2 fresh-Opus verification gate, which re-derived the #66 mechanics itself (not merely trusting this recommendation) and confirmed the three-field design is the only one of the two that keeps the #66 contract alive.
+- **Resulting status:** `CONFIRMED (2026-09-27)`. This is a deliberate divergence from `macp-sdk-python`; Python's single-latch behavior here is arguably the bug, worth filing there as a follow-up (not filed yet — no cross-repo write authorized this session).
+
 ## 2026-08-30 — commitmentHash / canonicalizeCommitmentPayload exported as public API
 
 - **Assumption:** `ASSUMPTIONS.md` — "commitmentHash / canonicalizeCommitmentPayload exported as public API in Phase 1" (originally logged during Phase 1 of the RFC-MACP-0013 plan; resolved once already at the PR #45 ship gate, which narrowed the barrel export).

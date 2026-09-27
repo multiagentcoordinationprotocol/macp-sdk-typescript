@@ -291,4 +291,58 @@ describe('BaseProjection rollback (sixth entry point)', () => {
     expect(() => projection.applyEnvelope(envelope, registry)).toThrow('fails after mutating');
     expect(projection.transcript).toHaveLength(0);
   });
+
+  // Issue #106.4: the pop guard is an identity check against the LAST
+  // transcript entry (mirroring macp-sdk-python's base_projection.py:262-263
+  // exactly, including its own comment on this exact trade-off) — not a
+  // find-and-remove of this call's envelope wherever it ended up. If a
+  // subclass's applyMode pushes something onto the shared `transcript`
+  // itself before throwing, the guard sees a last entry that isn't this
+  // call's own envelope and safely skips the pop entirely, rather than
+  // guessing which entry to remove. Left un-rolled-back in that pathological
+  // case, this call's own envelope stays in `transcript` — but the
+  // alternative (an unconditional pop) would remove the SUBCLASS's entry
+  // instead, silently corrupting unrelated data, which is strictly worse.
+  it('a subclass pushing to transcript itself before throwing does not corrupt that push — the guard skips the pop rather than removing the wrong entry', () => {
+    const sentinelEnvelope = buildEnvelope({
+      mode: MODE_DECISION,
+      messageType: 'Sentinel',
+      sessionId: 'test-session',
+      sender: 'someone-else',
+      messageId: 'sentinel-1',
+      payload: Buffer.alloc(0),
+    });
+
+    class SentinelPushProjection extends BaseProjection {
+      protected readonly mode = MODE_DECISION;
+      sentinelPushed = false;
+
+      protected applyMode(): void {
+        this.transcript.push(sentinelEnvelope);
+        this.sentinelPushed = true;
+        throw new Error('fails after pushing a sentinel');
+      }
+    }
+    const projection = new SentinelPushProjection();
+    const envelope = makeValidEnvelope(MODE_DECISION, 'Proposal', { proposalId: 'p1', option: 'a' }, 'm1');
+
+    expect(() => projection.applyEnvelope(envelope, registry)).toThrow('fails after pushing a sentinel');
+
+    // The guard's actual, intentional trade-off: the sentinel (the real
+    // last entry) is not corrupted by an unconditional pop, at the cost of
+    // this call's own envelope staying in transcript too — both entries
+    // survive. On the OLD unguarded `this.transcript.pop()`, the sentinel
+    // would have been removed instead — the wrong entry.
+    expect(projection.sentinelPushed).toBe(true);
+    expect(projection.transcript).toHaveLength(2);
+    expect(projection.transcript[0]).toBe(envelope);
+    expect(projection.transcript[1]!.messageType).toBe('Sentinel');
+
+    // The dedup-set rollback is unconditional and independent of the pop
+    // guard above (`seenIdAdded` gates it, keyed to this envelope's own
+    // id) — it must still run even when the pop is skipped, or a retry of
+    // this exact message_id would be silently swallowed as a redelivery
+    // instead of throwing the same failure again.
+    expect(() => projection.applyEnvelope(envelope, registry)).toThrow('fails after pushing a sentinel');
+  });
 });

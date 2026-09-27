@@ -110,6 +110,50 @@ project uses [Semantic Versioning](https://semver.org/).
   purpose, and `configureLogging` already covers every legitimate caller
   need.
 
+### Fixed
+
+- **`Participant` lifecycle: `SessionCancel` now reaches `onTerminal`, and
+  teardown runs on every exit from `run()`, not just an explicit `stop()`**
+  (issue #106). Three independent bugs in `src/agent/participant.ts`:
+  - A runtime-issued `SessionCancel` never fired `onTerminal` at all — no
+    built-in projection maps it to a terminal phase, so the phase-driven
+    dispatch path had nothing to trigger on. `Participant` now recognizes
+    `SessionCancel` directly as a fallback when the phase path doesn't fire,
+    dispatching `{ state: 'Cancelled' }`. Against the current `macp-runtime`,
+    this fallback's practical reach is `processEvent()` callers and
+    cross-SDK parity with `macp-sdk-python`'s identical fallback — the
+    streamed `run()` path never observes a `SessionCancel` at all today,
+    since `cancel_session` stores it as `EntryKind::Internal` and
+    `get_incoming_after` filters strictly to `EntryKind::Incoming`;
+    cancellation surfaces via `session_lifecycle_bus`/`WatchSessions`
+    instead.
+  - `run()`'s `finally` only cleared an internal flag; the transport
+    subscription and the cancel-callback HTTP listener were torn down
+    exclusively inside `stop()`. A normal terminal exit, or a transport
+    simply running out of messages, leaked both — a long-lived agent
+    process running many sessions sequentially leaked one gRPC stream
+    subscription and one listening TCP socket per completed session.
+    Teardown now runs on every exit from `run()`.
+  - `isStopped` computed `!running`, so it read `true` immediately after
+    construction, before `run()` had ever been called. Fixed by tracking
+    three independent states (`running` / `terminal` / `stopRequested`)
+    instead of one flag — deliberately **not** a single latch copied from
+    `macp-sdk-python`, because that would make a `Participant` single-use
+    after any `stop()`, breaking this SDK's own documented and tested
+    restart contract (issue #66): `stop()` mid-stream, then a second
+    `run()` on the same instance, must resume rather than refuse. Only a
+    genuinely *terminal* outcome is single-use; a `stop()`-only exit is a
+    resumable pause.
+- **`BaseProjection`'s rollback pop is now guarded by reference identity**
+  (issue #106, item 4): it no longer unconditionally pops the last
+  `transcript` entry on a failed decode. `BaseProjection` is documented
+  subclassable API; a third-party subclass whose `applyMode` pushes its own
+  entry onto `transcript` before throwing would previously have had that
+  entry silently removed instead of the envelope actually under
+  application — data corruption strictly worse than the bug the rollback
+  itself fixes. Mirrors `macp-sdk-python`'s identical guard and its own
+  documented trade-off in this exact scenario.
+
 ### Documentation
 
 - **Pagination memory caveat** (issue #109): `docs/api/client.md`'s

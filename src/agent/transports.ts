@@ -157,8 +157,8 @@ export class GrpcTransportAdapter implements TransportAdapter {
           // suspends here until the consumer's `for await` either calls
           // `.next()` again (it took this envelope and kept iterating — the
           // code below runs) or closes the iterator via `break`/`return`/throw
-          // (e.g. `Participant.run()` observing `!this.running` and breaking
-          // out of its loop without processing this envelope). In the latter
+          // (e.g. `Participant.run()` observing its `stopRequested` flag and
+          // breaking out of its loop without processing this envelope). In the latter
           // case `.return()` on this generator resumes at this `yield` as if a
           // `return` had been written here, so nothing below it runs: the
           // cursor is never advanced past an envelope the consumer never
