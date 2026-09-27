@@ -2453,3 +2453,40 @@ Remote branch deleted; local `main` fast-forwarded.
 
 What's next: continue with Phase 4A (#108 part 1), then Phase 4B, then
 Phase 3 (PR #4 through #6 of 6).
+
+### Phase 4A (#108 part 1) — DONE, 2026-09-27
+
+Fourth PR in merge order (5 → 2 → 1 → **4A** → 4B → 3). Ships as `Refs #108`
+— 4B closes the issue.
+
+Verdict: **GAPS round 1** (fresh Opus verifier) — both items docs/bookkeeping
+only, closed same-round, no re-verify spawned (matching the Phase 5
+precedent: a docs-only fix doesn't reopen an already-independently-confirmed
+code verdict). The verifier mutation-tested all three sub-items itself
+(reverted `validateSessionId` to a fall-through shape, dropped
+`Number.isFinite` from `validateConfidence`, reverted `decision.ts`'s three
+call sites to discard the validators' return values — each mutation broke
+exactly the tests written for it, confirmed non-vacuous), independently
+verified the optional-`severity` path end-to-end via a real `ProtoRegistry`
+encode/decode, spot-checked that zero in-repo UUID fixtures newly fail the
+stricter regex, and confirmed zero 4B leakage (`decision.ts`'s `start()`
+still has no `auth` parameter).
+
+Gaps closed: (1) the plan's `[4A]`-labelled docs deliverable (session-id
+wording) — `docs/guides/agent-framework.md:47,123` and
+`docs/guides/policy.md:72` all said "UUID v4/v7 or base64url" with no
+"lowercase" and no no-fall-through caveat; reworded to state both. (2) this
+plan file and this checkpoint hadn't been written yet.
+
+Files touched: `src/validation.ts`, `src/decision.ts`,
+`tests/unit/validation.test.ts`, `tests/unit/sessions/decision.test.ts`,
+`CHANGELOG.md`, `docs/guides/agent-framework.md`, `docs/guides/policy.md`.
+
+Local gate: `npm test` 1115 passed/20 skipped; `npm run test:coverage`
+95.91/89.00/94.41/96.84 (stmts/branches/funcs/lines, all above the
+94/84/91/92 floors); `npm run check`, `npm run check:examples`,
+`npm run lint`, `npm run format:check`, `npm run build` all clean;
+`make verify-fixtures` green.
+
+What's next: hand off to `/ship` for PR #4 of 6 (Phase 4A, `Refs #108`), then
+continue with Phase 4B (#108 part 2, `Closes #108`), then Phase 3 (#107).

@@ -16,6 +16,7 @@ import {
   validateCommitmentHash,
 } from '../../src/validation';
 import { MacpSessionError } from '../../src/errors';
+import { newSessionId } from '../../src/envelope';
 
 describe('validation', () => {
   describe('validateSessionId', () => {
@@ -50,6 +51,63 @@ describe('validation', () => {
 
     it('rejects empty string', () => {
       expect(() => validateSessionId('')).toThrow(MacpSessionError);
+    });
+
+    // Issue #108.1: the runtime's rule is no-fall-through — a UUID-shaped
+    // string is validated strictly as a lowercase v4/v7 UUID, never
+    // reinterpreted as base64url. All four of these are accepted by the
+    // pre-fix code (verified in the plan) because they satisfy the old
+    // combined-regex OR: they are 36-char, hyphenated, hex-only strings,
+    // which the base64url branch's charset also happens to accept.
+    it.each([
+      ['an uppercase UUID', '550E8400-E29B-41D4-A716-446655440000'],
+      ['a lowercase v1 UUID', '550e8400-e29b-11d4-a716-446655440000'],
+      ['the nil UUID', '00000000-0000-0000-0000-000000000000'],
+      ['a UUID with variant nibble c', '550e8400-e29b-41d4-c716-446655440000'],
+    ])('issue #108.1: rejects %s (UUID-shaped but not v4/v7) — fails on old code', (_label, sid) => {
+      expect(() => validateSessionId(sid)).toThrow(MacpSessionError);
+    });
+
+    it('accepts a lowercase v7 UUID', () => {
+      // Version nibble 7, variant nibble in [89ab].
+      expect(() => validateSessionId('017f22e2-79b0-7cc3-98c4-dc0c0c07398f')).not.toThrow();
+    });
+
+    it('issue #108.1 no-fall-through pin: an uppercase UUID is rejected even though it satisfies the base64url charset', () => {
+      // This is the test that fails if someone reinstates the old `||`
+      // (try-UUID-then-fall-through-to-base64url) structure: the string
+      // below is 36 chars of [A-Za-z0-9_-], so the base64url regex alone
+      // would accept it. The no-fall-through rule must reject it anyway,
+      // because it is UUID-shaped and not a valid v4/v7 UUID.
+      const uppercaseUuid = '550E8400-E29B-41D4-A716-446655440000';
+      expect(uppercaseUuid).toMatch(/^[A-Za-z0-9_-]{22,}$/);
+      expect(() => validateSessionId(uppercaseUuid)).toThrow(MacpSessionError);
+    });
+
+    it("the UUID-shaped rejection message differs from the not-an-id-shape message, and neither claims a check the code doesn't perform", () => {
+      let uuidShapedMessage = '';
+      try {
+        validateSessionId('550E8400-E29B-41D4-A716-446655440000');
+      } catch (err) {
+        uuidShapedMessage = (err as Error).message;
+      }
+      let notIdShapedMessage = '';
+      try {
+        validateSessionId('not-a-uuid-at-all-xx');
+      } catch (err) {
+        notIdShapedMessage = (err as Error).message;
+      }
+      expect(uuidShapedMessage).not.toBe('');
+      expect(notIdShapedMessage).not.toBe('');
+      expect(uuidShapedMessage).not.toBe(notIdShapedMessage);
+      expect(uuidShapedMessage).toContain('UUID-shaped');
+      expect(uuidShapedMessage).toContain('no fall-through to base64url');
+    });
+
+    it('newSessionId() output passes validateSessionId (100 consecutive draws)', () => {
+      for (let i = 0; i < 100; i++) {
+        expect(() => validateSessionId(newSessionId())).not.toThrow();
+      }
     });
   });
 
@@ -90,6 +148,20 @@ describe('validation', () => {
     it('rejects values outside range', () => {
       expect(() => validateConfidence(-0.1)).toThrow(MacpSessionError);
       expect(() => validateConfidence(1.1)).toThrow(MacpSessionError);
+    });
+
+    // Issue #108.2: `NaN < 0` and `NaN > 1.0` are both `false`, so a bare
+    // range check silently accepted NaN — verified by execution on the
+    // pre-fix code. This is the only behavior change; fails on old code.
+    it('issue #108.2: rejects NaN — fails on old code', () => {
+      expect(() => validateConfidence(NaN)).toThrow(MacpSessionError);
+    });
+
+    it('regression pin (already green pre-fix, not a repro): rejects +/-Infinity and accepts the exact boundaries', () => {
+      expect(() => validateConfidence(Infinity)).toThrow(MacpSessionError);
+      expect(() => validateConfidence(-Infinity)).toThrow(MacpSessionError);
+      expect(() => validateConfidence(0)).not.toThrow();
+      expect(() => validateConfidence(1)).not.toThrow();
     });
   });
 

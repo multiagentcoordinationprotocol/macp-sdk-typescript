@@ -109,9 +109,32 @@ project uses [Semantic Versioning](https://semver.org/).
   submodule fallback) — accepted, since it is test-only by name and by
   purpose, and `configureLogging` already covers every legitimate caller
   need.
+- **`validateSessionId` now enforces the runtime's actual no-fall-through
+  rule** (issue #108, part 1 of 2 — 4A). A UUID-**shaped** string (36 chars,
+  hyphens at 8-13-18-23, hex-only) is now validated strictly as a lowercase
+  v4/v7 UUID and never reinterpreted as base64url. An uppercase UUID, a
+  lowercase v1 UUID, the nil UUID, or a UUID with a bad variant nibble now
+  throws `MacpSessionError` client-side — all were already rejected by the
+  runtime, so nothing that previously *worked* stops working, but a caller
+  relying on the old, looser client-side check now gets the rejection
+  earlier. Ports `macp-sdk-python`'s two-regex no-fall-through structure.
+- **`DecisionSession.evaluate`/`raiseObjection`/`vote` now put the
+  normalized (uppercased/lowercased) value on the wire, not the caller's
+  original case** (issue #108, part 1 of 2 — 4A).
+  `validateVote`/`validateRecommendation`/`validateSeverity` each return a
+  normalized string; the three call sites in `decision.ts` previously
+  discarded it. A consumer that string-compares an un-normalized value
+  (e.g. `'approve'` instead of `'APPROVE'`) sees a different value on the
+  wire; every in-repo projection already normalizes case itself, so no
+  projection assertion is affected by this change.
 
 ### Fixed
 
+- **`validateConfidence` now rejects `NaN`** (issue #108, part 1 of 2 — 4A).
+  `NaN < 0` and `NaN > 1.0` are both `false`, so a bare range check silently
+  accepted `NaN` — verified by execution before this fix. `±Infinity` was
+  already rejected (incidentally); this also rejects it explicitly via
+  `Number.isFinite`, matching this file's own `ttlMs`/`maxSuspendMs` idiom.
 - **`commitmentHash`/`canonicalizeCommitmentPayload`: `supersedes: null` now
   hashes as absent, matching `macp-sdk-python`** (issue #105). `supersedes`
   is a proto3 message-typed field with only present/absent wire states;
