@@ -128,7 +128,15 @@ export function buildCommitmentPayload(input: {
     if (typeof input.supersedes !== 'object' || input.supersedes === null) {
       // `String()`, not `JSON.stringify()`: the latter throws on a bigint,
       // which would replace this deliberate `MacpSessionError` with an
-      // unrelated `TypeError` for that one input shape.
+      // unrelated `TypeError` for that one input shape. Deliberately
+      // stricter here than `commitmentHash`'s D3 "never throw" contract
+      // (issue #105): this is a constructor validating a caller's own
+      // explicit intent, not a hasher that must tolerate any
+      // already-materialized `CommitmentPayload` from any source (including
+      // one decoded elsewhere with `defaults: true`, where a `null` is a
+      // legitimate "absent" reaching the hasher, not a mistake reaching the
+      // builder) — so a `null` here throws instead of being silently
+      // treated as absent.
       throw new MacpSessionError(`supersedes must be a CommitmentRef object, got: ${String(input.supersedes)}`);
     }
     validateCommitmentHash(input.supersedes.commitmentHash);

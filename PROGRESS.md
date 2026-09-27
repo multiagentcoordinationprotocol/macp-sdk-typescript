@@ -2409,3 +2409,41 @@ Remote branch deleted; local `main` fast-forwarded.
 
 What's next: continue the phase loop with Phase 1 (#105), then Phase 4A,
 Phase 4B, then Phase 3 (PR #3 through #6 of 6).
+
+### Phase 1 (#105) — DONE, 2026-09-27
+
+Third phase in merge order (5 → 2 → **1** → 4A → 4B → 3).
+
+Verdict: **PASS round 1** (fresh Opus verifier). The verifier mutation-tested
+the tests themselves (reverted the predicate to `!== undefined` and to a
+truthiness check, confirmed the expected tests broke each time and restored
+the code), independently re-derived the digest for every edge-case input
+(`0`, `''`, `false`, `5`, `'x'`, `true`, `[]`, `undefined`, absent key,
+populated ref, empty ref — only `null` changes hash), and confirmed all 7
+acceptance criteria and the plan's full Tests list are met, including the
+two real-decode-path tests (`ProtoRegistry.decodeKnownPayload`'s hardcoded
+`defaults: false` never produces `null`; an independently-loaded
+`protobuf.Root` decoding the same wire bytes with `defaults: true` does, and
+hashes identically to absent).
+
+4 non-blocking nits, 3 applied same-round: (a) the `it.each` guard now also
+asserts `commitmentHash(...)` matches the hash shape, not just the JCS
+substring; (c) fixed the test title's `%p` (not a real vitest format
+specifier — all 7 cases reported under one indistinguishable name) to `%j`;
+(d) added a one-sentence cross-reference in both `commitment-hash.ts`'s and
+`envelope.ts`'s docblocks noting that `commitmentHash` (D3, tolerant) and
+`buildCommitmentPayload` (validates caller intent, throws on `null`)
+deliberately diverge on `supersedes: null` and are not meant to converge.
+(b) left as-is — cosmetic wording only, confirmed to hold regardless.
+
+Files touched: `src/commitment-hash.ts`, `src/envelope.ts` (docblock-only),
+`tests/commitment-hash.test.ts`, `CHANGELOG.md`.
+
+Local gate (full re-run after the nit fixes): `npm test` 1102 passed/20
+skipped; `npm run check`, `npm run lint`, `npm run format:check`,
+`npm run build` all clean; `make verify-fixtures` green;
+`tests/vectors/cmt-hash.test.ts` green and unmodified, per the plan's
+requirement.
+
+What's next: hand off to `/ship` for PR #3 of 6 (Phase 1, closes #105), then
+continue with Phase 4A (#108 part 1).

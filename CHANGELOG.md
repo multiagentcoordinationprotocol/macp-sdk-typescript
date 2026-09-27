@@ -112,6 +112,24 @@ project uses [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **`commitmentHash`/`canonicalizeCommitmentPayload`: `supersedes: null` now
+  hashes as absent, matching `macp-sdk-python`** (issue #105). `supersedes`
+  is a proto3 message-typed field with only present/absent wire states;
+  `null` is the idiomatic in-language representation of "absent" (e.g. under
+  a `defaults: true` protobufjs/proto-loader decode, or a payload
+  round-tripped through JSON). Previously `supersedes: null` took the
+  *present* branch and hashed identically to an explicit
+  `{ sessionId: '', commitmentHash: '' }`, producing a different digest than
+  `macp-sdk-python` computes for the same logical commitment. The predicate
+  changed from `p.supersedes !== undefined` to `p.supersedes != null`
+  (deliberately loose — catches `null` and `undefined` only, so `0`, `''`,
+  `false`, and other falsy-but-not-nullish values still take the present
+  branch, unaffected). Not a protocol MINOR bump: the hashing `LABEL` and
+  frozen field set are unchanged — this corrects a projection bug, not the
+  algorithm. Any digest a caller already computed by feeding `null` was
+  already wrong (Python never reproduced it), so there is no
+  correct-value regression, but the fix is a security/audit-relevant
+  behavior change on this SDK's own output.
 - **`Participant` lifecycle: `SessionCancel` now reaches `onTerminal`, and
   teardown runs on every exit from `run()`, not just an explicit `stop()`**
   (issue #106). Three independent bugs in `src/agent/participant.ts`:
