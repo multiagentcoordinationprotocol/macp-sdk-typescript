@@ -1,5 +1,45 @@
 # Assumptions
 
+## `Participant.run()` re-enterability after `stop()` vs. a terminal outcome
+
+- **Plan:** `plans/issue-105-109-fixes.md` (Phase 2, Open question 1)
+- **Assumed:** the issue (#106) reported `isStopped` as simply inverted, with no
+  stated position on whether a stopped-then-resumed `Participant` should be
+  usable again. The plan's first draft assumed single-use, full-stop semantics
+  (Python's single latching `_stopped`, `macp-sdk-python/src/macp_sdk/agent/participant.py:395,450-451,579`)
+  before this repo's own code was checked.
+- **Chose:** partial re-enterability — a terminal outcome is single-use (the
+  projection is resolved and the runtime accepts nothing further for that
+  session), but a non-terminal `stop()` is a resumable pause. Implemented as
+  three independent fields (`running` / `terminal` / `stopRequested`) rather
+  than Python's one latch.
+- **Why the single-latch default was falsified, not just disliked:**
+  `tests/unit/agent/participant.test.ts` (the issue #66 regression, `describe('run() — stop() mid-stream does not lose the in-flight envelope (#66)')`)
+  restarts the *same* `Participant` instance after a mid-stream `stop()` and
+  asserts redelivery of the message that was in flight — driving a real
+  `GrpcTransportAdapter` whose resume cursor is the actual subject under test.
+  A fresh `Participant` (which single-use semantics would force) resets that
+  cursor and voids the test. Single-use-after-any-`stop()` would have broken
+  an existing, intentional, already-shipped contract.
+- **Alternatives:** Python's single-latch design (rejected — falsified by the
+  #66 test above); re-enterable after *any* exit including terminal (rejected
+  — the runtime has already resolved the session; resuming would just replay
+  into a dead session with no envelopes left to receive).
+- **Blast radius if wrong:** Low and reversible — the three-field design is
+  strictly more permissive than a single latch for the non-terminal case only;
+  tightening back to single-use later (if the #66 contract itself were ever
+  revisited) would be a one-file change with an existing regression test to
+  update deliberately, not silently break.
+- **Resolution:** implemented in Phase 2 (`src/agent/participant.ts`'s
+  `running`/`terminal`/`stopRequested` fields and `isStopped` getter), with a
+  new restart test (`makeRestartableMockTransport`) proving a second `run()`
+  after a non-terminal `stop()` resumes and delivers the remaining messages,
+  and a sibling test proving a second `run()` after a terminal exit does not
+  re-enter the transport at all. Independently confirmed correct by the Phase
+  2 fresh-Opus verifier via its own re-derivation of the #66 mechanics.
+  Resolved same-session (no `/reconcile` pass needed) — see `DECISIONS.md`.
+- **Status:** CONFIRMED (2026-09-27) — see `DECISIONS.md`
+
 ## commitmentHash / canonicalizeCommitmentPayload exported as public API in Phase 1
 
 - **Plan:** `../multiagentcoordinationprotocol/plans/cross-repo/macp-sdk-typescript-rfc-macp-0013.md` (Phase 1)

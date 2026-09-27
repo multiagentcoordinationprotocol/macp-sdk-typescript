@@ -167,8 +167,8 @@ type _ProjectionAnomalyFieldOrderIsFrozen = AssertNever<
  * Abstract base for in-process mode-state tracking — parity with python-sdk's
  * `macp_sdk.base_projection.BaseProjection`. Maintains a shared transcript,
  * phase string, and commitment payload; subclasses override `applyMode`
- * to handle mode-specific envelopes. `SessionStart` and `Commitment` are
- * handled here so custom modes get the common lifecycle for free.
+ * to handle mode-specific envelopes. `Commitment` is handled here so custom
+ * modes get the common lifecycle for free.
  */
 export abstract class BaseProjection {
   /**
@@ -339,7 +339,18 @@ export abstract class BaseProjection {
 
       this.applyMode(envelope, protoRegistry);
     } catch (err) {
-      this.transcript.pop();
+      // Identity (`===`), not deep equality: guards against popping an
+      // unrelated entry if a subclass's `applyMode` pushed something onto
+      // `transcript` itself before throwing (issue #106.4) — two distinct
+      // envelopes can be structurally equal, but only the one this call
+      // itself pushed should ever be popped here. No current subclass does
+      // this (nothing pushes before the fallible decode above), so this
+      // guard is latent, but `BaseProjection` is documented subclassable
+      // API and the failure mode it prevents is worse than the bug the
+      // rollback itself fixes. The dedup-set delete below needs no such
+      // guard — `seenIdAdded` already keys it to this envelope's own id —
+      // and must still run even when the pop is skipped.
+      if (this.transcript.at(-1) === envelope) this.transcript.pop();
       if (seenIdAdded) this.seenMessageIds.delete(envelope.messageId);
       throw err;
     }

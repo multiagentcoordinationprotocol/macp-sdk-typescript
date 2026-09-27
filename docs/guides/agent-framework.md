@@ -62,7 +62,15 @@ package does not expose a `macp-sdk-typescript/agent` subpath.)
 
 - `.on(messageType, handler)` — React to a specific message type (or `'*'` for all)
 - `.onPhaseChange(phase, handler)` — React when the projection phase changes (e.g., `'Voting'`, `'Committed'`)
-- `.onTerminal(handler)` — Called when the session reaches a terminal state
+- `.onTerminal(handler)` — Called when the session reaches a terminal state,
+  including a `SessionCancel` — no built-in projection maps `SessionCancel` to
+  a terminal phase, so `Participant` recognizes it directly and dispatches
+  `{ state: 'Cancelled' }` even when no phase-driven path fires. Against the
+  current `macp-runtime`, this fallback matters for `processEvent()` callers
+  and cross-SDK parity with `macp-sdk-python`: the streamed `run()` loop never
+  observes a `SessionCancel` from the runtime today (it's stored internally
+  and surfaced instead via the session-lifecycle watch mechanism, not the
+  envelope stream).
 
 ### Handler Context
 
