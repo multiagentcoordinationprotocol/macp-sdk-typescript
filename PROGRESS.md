@@ -2488,5 +2488,12 @@ Local gate: `npm test` 1115 passed/20 skipped; `npm run test:coverage`
 `npm run lint`, `npm run format:check`, `npm run build` all clean;
 `make verify-fixtures` green.
 
-What's next: hand off to `/ship` for PR #4 of 6 (Phase 4A, `Refs #108`), then
-continue with Phase 4B (#108 part 2, `Closes #108`), then Phase 3 (#107).
+pushed fix/issue-108-4a-validation-narrowing 8199b63
+PR #115 opened: https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/pull/115
+merged #115: squash-merged into `main` as `df1c6a2`. CI green (build-and-test
+Node 22/24, integration, verify-fixtures). Issue #108 confirmed still OPEN
+(as intended — `Refs #108`, 4B closes it). Remote branch deleted; local
+`main` fast-forwarded.
+
+What's next: continue with Phase 4B (#108 part 2, `Closes #108`), then
+Phase 3 (#107) (PR #5 and #6 of 6).
