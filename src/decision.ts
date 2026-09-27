@@ -127,40 +127,51 @@ export class DecisionSession {
 
   async evaluate(input: DecisionEvaluationPayload & { sender?: string; auth?: AuthConfig }): Promise<Ack> {
     validateRequiredField('proposalId', input.proposalId);
-    validateRecommendation(input.recommendation);
+    // Use the validators' returned normalized values (issue #108.3) — they
+    // return a normalized string precisely so callers put the wire-canonical
+    // form on the envelope, not whatever case the caller happened to pass.
+    const recommendation = validateRecommendation(input.recommendation);
     validateConfidence(input.confidence);
     const envelope = buildEnvelope({
       mode: MODE_DECISION,
       messageType: 'Evaluation',
       sessionId: this.sessionId,
       sender: this.senderFor(input.sender, input.auth),
-      payload: this.client.protoRegistry.encodeKnownPayload(MODE_DECISION, 'Evaluation', toProtoPayload(input)),
+      payload: this.client.protoRegistry.encodeKnownPayload(
+        MODE_DECISION,
+        'Evaluation',
+        toProtoPayload({ ...input, recommendation }),
+      ),
     });
     return this.sendAndTrack(envelope, input.auth);
   }
 
   async raiseObjection(input: DecisionObjectionPayload & { sender?: string; auth?: AuthConfig }): Promise<Ack> {
     validateRequiredField('proposalId', input.proposalId);
-    if (input.severity) validateSeverity(input.severity);
+    const severity = input.severity ? validateSeverity(input.severity) : input.severity;
     const envelope = buildEnvelope({
       mode: MODE_DECISION,
       messageType: 'Objection',
       sessionId: this.sessionId,
       sender: this.senderFor(input.sender, input.auth),
-      payload: this.client.protoRegistry.encodeKnownPayload(MODE_DECISION, 'Objection', toProtoPayload(input)),
+      payload: this.client.protoRegistry.encodeKnownPayload(
+        MODE_DECISION,
+        'Objection',
+        toProtoPayload({ ...input, severity }),
+      ),
     });
     return this.sendAndTrack(envelope, input.auth);
   }
 
   async vote(input: DecisionVotePayload & { sender?: string; auth?: AuthConfig }): Promise<Ack> {
     validateRequiredField('proposalId', input.proposalId);
-    validateVote(input.vote);
+    const vote = validateVote(input.vote);
     const envelope = buildEnvelope({
       mode: MODE_DECISION,
       messageType: 'Vote',
       sessionId: this.sessionId,
       sender: this.senderFor(input.sender, input.auth),
-      payload: this.client.protoRegistry.encodeKnownPayload(MODE_DECISION, 'Vote', toProtoPayload(input)),
+      payload: this.client.protoRegistry.encodeKnownPayload(MODE_DECISION, 'Vote', toProtoPayload({ ...input, vote })),
     });
     return this.sendAndTrack(envelope, input.auth);
   }

@@ -3,6 +3,8 @@ import { Auth } from '../../../src/auth';
 import { MacpClient } from '../../../src/client';
 import { DecisionSession } from '../../../src/decision';
 import { MacpAckError } from '../../../src/errors';
+import { MODE_DECISION } from '../../../src/constants';
+import type { Envelope } from '../../../src/types';
 
 function makeClient(): MacpClient {
   return new MacpClient({
@@ -80,6 +82,52 @@ describe('DecisionSession — projection roundtrip', () => {
     await session.propose({ proposalId: 'p1', option: 'go' });
     await session.vote({ proposalId: 'p1', vote: 'approve' });
     expect(session.projection.voteTotals()).toEqual({ p1: 1 });
+  });
+
+  // Issue #108.3: validateVote/validateRecommendation/validateSeverity each
+  // *return* a normalized string, which decision.ts previously discarded —
+  // so a lowercase/mixed-case caller input reached the wire un-normalized.
+  // These decode the actual encoded envelope payload (not the input object,
+  // and not a projection getter — several of those normalize internally
+  // regardless, per the plan) to prove the wire value itself is normalized.
+  // Fails on old code.
+  it("issue #108.3: evaluate({ recommendation: 'review' }) puts REVIEW on the encoded payload", async () => {
+    const client = makeClient();
+    const session = new DecisionSession(client);
+    const sendSpy = vi.spyOn(client, 'send').mockResolvedValue({ ok: true });
+
+    await session.propose({ proposalId: 'p1', option: 'go' });
+    await session.evaluate({ proposalId: 'p1', recommendation: 'review', confidence: 0.5 });
+
+    const envelope = sendSpy.mock.calls[1]![0] as Envelope;
+    const decoded = client.protoRegistry.decodeKnownPayload(MODE_DECISION, 'Evaluation', envelope.payload);
+    expect(decoded).toMatchObject({ recommendation: 'REVIEW' });
+  });
+
+  it("issue #108.3: raiseObjection({ severity: 'HIGH' }) puts high on the encoded payload", async () => {
+    const client = makeClient();
+    const session = new DecisionSession(client);
+    const sendSpy = vi.spyOn(client, 'send').mockResolvedValue({ ok: true });
+
+    await session.propose({ proposalId: 'p1', option: 'go' });
+    await session.raiseObjection({ proposalId: 'p1', reason: 'unsafe', severity: 'HIGH' });
+
+    const envelope = sendSpy.mock.calls[1]![0] as Envelope;
+    const decoded = client.protoRegistry.decodeKnownPayload(MODE_DECISION, 'Objection', envelope.payload);
+    expect(decoded).toMatchObject({ severity: 'high' });
+  });
+
+  it("issue #108.3: vote({ vote: 'approve' }) puts APPROVE on the encoded payload", async () => {
+    const client = makeClient();
+    const session = new DecisionSession(client);
+    const sendSpy = vi.spyOn(client, 'send').mockResolvedValue({ ok: true });
+
+    await session.propose({ proposalId: 'p1', option: 'go' });
+    await session.vote({ proposalId: 'p1', vote: 'approve' });
+
+    const envelope = sendSpy.mock.calls[1]![0] as Envelope;
+    const decoded = client.protoRegistry.decodeKnownPayload(MODE_DECISION, 'Vote', envelope.payload);
+    expect(decoded).toMatchObject({ vote: 'APPROVE' });
   });
 
   it('commit() flips projection.isCommitted on ack.ok=true', async () => {

@@ -69,7 +69,7 @@ Pass the `policyVersion` when starting a session:
 import { DecisionSession, newSessionId } from 'macp-sdk-typescript';
 
 const session = new DecisionSession(client, {
-  sessionId: newSessionId(), // session ids must be UUID v4/v7 or base64url (22+ chars)
+  sessionId: newSessionId(), // session ids must be a lowercase UUID v4/v7 or base64url (22+ chars) — no fall-through
   policyVersion: 'policy.fraud.majority-veto',
 });
 
