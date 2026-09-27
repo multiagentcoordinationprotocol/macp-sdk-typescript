@@ -2445,5 +2445,11 @@ skipped; `npm run check`, `npm run lint`, `npm run format:check`,
 `tests/vectors/cmt-hash.test.ts` green and unmodified, per the plan's
 requirement.
 
-What's next: hand off to `/ship` for PR #3 of 6 (Phase 1, closes #105), then
-continue with Phase 4A (#108 part 1).
+pushed fix/issue-105-supersedes-null-hash 66c2222
+PR #114 opened: https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/pull/114
+merged #114: squash-merged into `main` as `6e15b9f`. CI green (build-and-test
+Node 22/24, integration, verify-fixtures). Issue #105 confirmed CLOSED.
+Remote branch deleted; local `main` fast-forwarded.
+
+What's next: continue with Phase 4A (#108 part 1), then Phase 4B, then
+Phase 3 (PR #4 through #6 of 6).
