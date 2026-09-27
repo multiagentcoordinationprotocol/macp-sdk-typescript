@@ -2,7 +2,39 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Auth } from '../../../src/auth';
 import { MacpClient } from '../../../src/client';
 import { TaskSession } from '../../../src/task';
-import { MacpAckError } from '../../../src/errors';
+import { MacpAckError, MacpIdentityMismatchError } from '../../../src/errors';
+import { MODE_TASK } from '../../../src/constants';
+import type { Envelope } from '../../../src/types';
+
+// Issue #108.5/4e: each of these four task actions defaults `assignee` to the
+// resolved sender when omitted or empty (`task.ts:126,140,166,180`). One table
+// drives both the omitted- and empty-string cases below.
+const TASK_ACTIONS: Array<{
+  name: string;
+  messageType: string;
+  invoke: (session: TaskSession, assignee: string | undefined) => Promise<unknown>;
+}> = [
+  {
+    name: 'acceptTask',
+    messageType: 'TaskAccept',
+    invoke: (session, assignee) => session.acceptTask({ taskId: 't1', assignee }),
+  },
+  {
+    name: 'rejectTask',
+    messageType: 'TaskReject',
+    invoke: (session, assignee) => session.rejectTask({ taskId: 't1', assignee, reason: 'no' }),
+  },
+  {
+    name: 'completeTask',
+    messageType: 'TaskComplete',
+    invoke: (session, assignee) => session.completeTask({ taskId: 't1', assignee, summary: 'done' }),
+  },
+  {
+    name: 'failTask',
+    messageType: 'TaskFail',
+    invoke: (session, assignee) => session.failTask({ taskId: 't1', assignee, reason: 'boom', retryable: true }),
+  },
+];
 
 function makeClient(): MacpClient {
   return new MacpClient({
@@ -123,6 +155,101 @@ describe('TaskSession — projection roundtrip', () => {
     expect(ack.ok).toBe(false);
     expect(session.projection.tasks.has('t1')).toBe(false);
     expect(session.projection.transcript).toHaveLength(0);
+  });
+
+  // Fails on old code: assignee was a required field passed straight through,
+  // so omitting/emptying it either failed validation or reached the wire blank.
+  it.each(TASK_ACTIONS)(
+    'issue #108.5: $name defaults assignee to the resolved sender when omitted',
+    async ({ messageType, invoke }) => {
+      const client = makeClient();
+      const session = new TaskSession(client);
+      const sendSpy = vi.spyOn(client, 'send').mockResolvedValue({ ok: true });
+
+      await invoke(session, undefined);
+
+      const envelope = sendSpy.mock.calls[0]![0] as Envelope;
+      const decoded = client.protoRegistry.decodeKnownPayload(MODE_TASK, messageType, envelope.payload);
+      expect(decoded).toMatchObject({ assignee: 'alice' });
+    },
+  );
+
+  it.each(TASK_ACTIONS)(
+    'issue #108.5: $name defaults assignee to the resolved sender when explicitly empty',
+    async ({ messageType, invoke }) => {
+      const client = makeClient();
+      const session = new TaskSession(client);
+      const sendSpy = vi.spyOn(client, 'send').mockResolvedValue({ ok: true });
+
+      await invoke(session, '');
+
+      const envelope = sendSpy.mock.calls[0]![0] as Envelope;
+      const decoded = client.protoRegistry.decodeKnownPayload(MODE_TASK, messageType, envelope.payload);
+      expect(decoded).toMatchObject({ assignee: 'alice' });
+    },
+  );
+
+  // Negative case for issue #108.5: an explicitly-supplied non-empty assignee
+  // must be preserved, not overwritten by the resolved sender. Fails on a
+  // mutation that unconditionally sets assignee = sender.
+  it.each(TASK_ACTIONS)(
+    'issue #108.5: $name preserves an explicitly-supplied assignee',
+    async ({ messageType, invoke }) => {
+      const client = makeClient();
+      const session = new TaskSession(client);
+      const sendSpy = vi.spyOn(client, 'send').mockResolvedValue({ ok: true });
+
+      await invoke(session, 'bob');
+
+      const envelope = sendSpy.mock.calls[0]![0] as Envelope;
+      const decoded = client.protoRegistry.decodeKnownPayload(MODE_TASK, messageType, envelope.payload);
+      expect(decoded).toMatchObject({ assignee: 'bob' });
+    },
+  );
+
+  // Issue #108.4/4d: start()'s input type gained an `auth` field. Fails on old
+  // code: previously start() ignored a per-call `auth` entirely, so a
+  // conflicting per-call `auth.expectedSender` could never surface here.
+  it('issue #108.4: start() with a per-call auth.expectedSender conflicting with sender throws MacpIdentityMismatchError', async () => {
+    // Client-level auth is deliberately permissive (no expectedSender) so this
+    // test only passes if start() actually threads input.auth into senderFor()
+    // — makeClient()'s expectedSender:'alice' would make this vacuous, since
+    // sender:'mallory' would conflict with the client credential regardless.
+    const client = new MacpClient({
+      address: '127.0.0.1:50051',
+      secure: false,
+      allowInsecure: true,
+      auth: Auth.devAgent('alice'),
+    });
+    const session = new TaskSession(client);
+    vi.spyOn(client, 'send').mockResolvedValue({ ok: true });
+
+    await expect(
+      session.start({
+        intent: 'delegate',
+        participants: ['alice', 'bob'],
+        ttlMs: 10_000,
+        sender: 'mallory',
+        auth: Auth.bearer('tok', { expectedSender: 'alice' }),
+      }),
+    ).rejects.toBeInstanceOf(MacpIdentityMismatchError);
+  });
+
+  it('issue #108.4: start() forwards a per-call auth to client.send', async () => {
+    const client = makeClient();
+    const session = new TaskSession(client);
+    const sendSpy = vi.spyOn(client, 'send').mockResolvedValue({ ok: true });
+    const perCallAuth = Auth.bearer('carol-token', { expectedSender: 'carol' });
+
+    await session.start({
+      intent: 'delegate',
+      participants: ['alice', 'bob'],
+      ttlMs: 10_000,
+      sender: 'carol',
+      auth: perCallAuth,
+    });
+
+    expect(sendSpy.mock.calls[0]![1]).toMatchObject({ auth: perCallAuth });
   });
 });
 

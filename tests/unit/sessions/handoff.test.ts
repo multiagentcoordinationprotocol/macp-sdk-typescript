@@ -2,7 +2,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Auth } from '../../../src/auth';
 import { MacpClient } from '../../../src/client';
 import { HandoffSession } from '../../../src/handoff';
-import { MacpAckError } from '../../../src/errors';
+import { MacpAckError, MacpIdentityMismatchError } from '../../../src/errors';
+import { MODE_HANDOFF } from '../../../src/constants';
+import type { Envelope } from '../../../src/types';
 
 function makeClient(): MacpClient {
   return new MacpClient({
@@ -124,6 +126,142 @@ describe('HandoffSession — projection roundtrip', () => {
     expect(ack.ok).toBe(false);
     expect(session.projection.handoffs.has('h1')).toBe(false);
     expect(session.projection.transcript).toHaveLength(0);
+  });
+
+  // Issue #108.6/4f: addContext previously required contentType with no
+  // default. Fails on old code (contentType was required, not optional).
+  it("issue #108.6: addContext() without contentType defaults to 'application/octet-stream' on the encoded payload", async () => {
+    const client = makeClient();
+    const session = new HandoffSession(client);
+    const sendSpy = vi.spyOn(client, 'send').mockResolvedValue({ ok: true });
+
+    await session.addContext({ handoffId: 'h1' });
+
+    const envelope = sendSpy.mock.calls[0]![0] as Envelope;
+    const decoded = client.protoRegistry.decodeKnownPayload(MODE_HANDOFF, 'HandoffContext', envelope.payload);
+    expect(decoded).toMatchObject({ contentType: 'application/octet-stream' });
+  });
+
+  // Deliberately `||`, not `??` (see the comment at addContext's call site) —
+  // an explicit empty string must also fall back to the default.
+  it("issue #108.6: addContext() with an explicit empty contentType still defaults to 'application/octet-stream'", async () => {
+    const client = makeClient();
+    const session = new HandoffSession(client);
+    const sendSpy = vi.spyOn(client, 'send').mockResolvedValue({ ok: true });
+
+    await session.addContext({ handoffId: 'h1', contentType: '' });
+
+    const envelope = sendSpy.mock.calls[0]![0] as Envelope;
+    const decoded = client.protoRegistry.decodeKnownPayload(MODE_HANDOFF, 'HandoffContext', envelope.payload);
+    expect(decoded).toMatchObject({ contentType: 'application/octet-stream' });
+  });
+
+  // Issue #108.5/4e: acceptHandoff builds its own `rest` copy rather than
+  // routing through toProtoPayload(input) (the only action here that
+  // doesn't) — decoding the actual wire payload is what proves the fallback
+  // was applied to `rest`, not silently dropped by being applied to `input`
+  // instead. Fails on old code: acceptedBy was passed straight through.
+  it.each([undefined, ''])(
+    'issue #108.5: acceptHandoff() defaults acceptedBy to the resolved sender (input=%j)',
+    async (acceptedBy) => {
+      const client = makeClient();
+      const session = new HandoffSession(client);
+      const sendSpy = vi.spyOn(client, 'send').mockResolvedValue({ ok: true });
+
+      await session.acceptHandoff({ handoffId: 'h1', acceptedBy });
+
+      const envelope = sendSpy.mock.calls[0]![0] as Envelope;
+      const decoded = client.protoRegistry.decodeKnownPayload(MODE_HANDOFF, 'HandoffAccept', envelope.payload);
+      expect(decoded).toMatchObject({ acceptedBy: 'alice' });
+    },
+  );
+
+  it.each([undefined, ''])(
+    'issue #108.5: decline() defaults declinedBy to the resolved sender (input=%j)',
+    async (declinedBy) => {
+      const client = makeClient();
+      const session = new HandoffSession(client);
+      const sendSpy = vi.spyOn(client, 'send').mockResolvedValue({ ok: true });
+
+      await session.decline({ handoffId: 'h1', declinedBy, reason: 'busy' });
+
+      const envelope = sendSpy.mock.calls[0]![0] as Envelope;
+      const decoded = client.protoRegistry.decodeKnownPayload(MODE_HANDOFF, 'HandoffDecline', envelope.payload);
+      expect(decoded).toMatchObject({ declinedBy: 'alice' });
+    },
+  );
+
+  // Negative case for issue #108.5: an explicitly-supplied non-empty
+  // acceptedBy/declinedBy must be preserved, not overwritten by the resolved
+  // sender (client auth resolves the sender to 'alice' here). Fails on a
+  // mutation that unconditionally sets acceptedBy/declinedBy = sender.
+  it('issue #108.5: acceptHandoff() preserves an explicitly-supplied acceptedBy', async () => {
+    const client = makeClient();
+    const session = new HandoffSession(client);
+    const sendSpy = vi.spyOn(client, 'send').mockResolvedValue({ ok: true });
+
+    await session.acceptHandoff({ handoffId: 'h1', acceptedBy: 'carol' });
+
+    const envelope = sendSpy.mock.calls[0]![0] as Envelope;
+    const decoded = client.protoRegistry.decodeKnownPayload(MODE_HANDOFF, 'HandoffAccept', envelope.payload);
+    expect(decoded).toMatchObject({ acceptedBy: 'carol' });
+  });
+
+  it('issue #108.5: decline() preserves an explicitly-supplied declinedBy', async () => {
+    const client = makeClient();
+    const session = new HandoffSession(client);
+    const sendSpy = vi.spyOn(client, 'send').mockResolvedValue({ ok: true });
+
+    await session.decline({ handoffId: 'h1', declinedBy: 'carol', reason: 'busy' });
+
+    const envelope = sendSpy.mock.calls[0]![0] as Envelope;
+    const decoded = client.protoRegistry.decodeKnownPayload(MODE_HANDOFF, 'HandoffDecline', envelope.payload);
+    expect(decoded).toMatchObject({ declinedBy: 'carol' });
+  });
+
+  // Issue #108.4/4d: start()'s input type gained an `auth` field. Fails on old
+  // code: previously start() ignored a per-call `auth` entirely, so a
+  // conflicting per-call `auth.expectedSender` could never surface here.
+  it('issue #108.4: start() with a per-call auth.expectedSender conflicting with sender throws MacpIdentityMismatchError', async () => {
+    // Client-level auth is deliberately permissive (no expectedSender) so this
+    // test only passes if start() actually threads input.auth into senderFor()
+    // — makeClient()'s expectedSender:'alice' would make this vacuous, since
+    // sender:'mallory' would conflict with the client credential regardless.
+    const client = new MacpClient({
+      address: '127.0.0.1:50051',
+      secure: false,
+      allowInsecure: true,
+      auth: Auth.devAgent('alice'),
+    });
+    const session = new HandoffSession(client);
+    vi.spyOn(client, 'send').mockResolvedValue({ ok: true });
+
+    await expect(
+      session.start({
+        intent: 'escalate',
+        participants: ['alice', 'bob'],
+        ttlMs: 10_000,
+        sender: 'mallory',
+        auth: Auth.bearer('tok', { expectedSender: 'alice' }),
+      }),
+    ).rejects.toBeInstanceOf(MacpIdentityMismatchError);
+  });
+
+  it('issue #108.4: start() forwards a per-call auth to client.send', async () => {
+    const client = makeClient();
+    const session = new HandoffSession(client);
+    const sendSpy = vi.spyOn(client, 'send').mockResolvedValue({ ok: true });
+    const perCallAuth = Auth.bearer('carol-token', { expectedSender: 'carol' });
+
+    await session.start({
+      intent: 'escalate',
+      participants: ['alice', 'bob'],
+      ttlMs: 10_000,
+      sender: 'carol',
+      auth: perCallAuth,
+    });
+
+    expect(sendSpy.mock.calls[0]![1]).toMatchObject({ auth: perCallAuth });
   });
 });
 

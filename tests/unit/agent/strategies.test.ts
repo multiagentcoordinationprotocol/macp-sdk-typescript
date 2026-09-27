@@ -15,6 +15,7 @@ import {
 import { DecisionProjection } from '../../../src/projections/decision';
 import type { HandlerContext, IncomingMessage, SessionInfo } from '../../../src/agent/types';
 import { MODE_DECISION } from '../../../src/constants';
+import { MacpSessionError } from '../../../src/errors';
 
 function makeMessage(messageType: string, payload: Record<string, unknown> = {}): IncomingMessage {
   return {
@@ -69,12 +70,48 @@ describe('strategies', () => {
       await handler(msg, ctx);
 
       expect(strategy.evaluate).toHaveBeenCalledWith(msg.payload, ctx.session);
+      // Issue #108.7: dispatched with the validator's normalized value, not
+      // the strategy's original case.
       expect(ctx.actions.evaluate).toHaveBeenCalledWith({
         proposalId: 'p1',
-        recommendation: 'approve',
+        recommendation: 'APPROVE',
         confidence: 0.95,
         reason: 'Looks good',
       });
+    });
+
+    // Issue #108.7: fails on old code — today the strategy's raw output is
+    // passed straight to ctx.actions.evaluate with no validation.
+    it('issue #108.7: rejects an out-of-enum recommendation with MacpSessionError, and never calls ctx.actions.evaluate', async () => {
+      const strategy: EvaluationStrategy = {
+        evaluate: vi.fn().mockResolvedValue({
+          recommendation: 'MAYBE',
+          confidence: 0.9,
+          reason: 'unsure',
+        }),
+      };
+      const handler = evaluationHandler(strategy);
+      const msg = makeMessage('Proposal', { proposalId: 'p1', option: 'deploy-v2' });
+      const ctx = makeContext();
+
+      await expect(handler(msg, ctx)).rejects.toThrow(MacpSessionError);
+      expect(ctx.actions.evaluate).not.toHaveBeenCalled();
+    });
+
+    it.each([NaN, 1.5, -0.1])('issue #108.7: rejects an out-of-range/NaN confidence (%s)', async (confidence) => {
+      const strategy: EvaluationStrategy = {
+        evaluate: vi.fn().mockResolvedValue({
+          recommendation: 'approve',
+          confidence,
+          reason: 'x',
+        }),
+      };
+      const handler = evaluationHandler(strategy);
+      const msg = makeMessage('Proposal', { proposalId: 'p1', option: 'deploy-v2' });
+      const ctx = makeContext();
+
+      await expect(handler(msg, ctx)).rejects.toThrow(MacpSessionError);
+      expect(ctx.actions.evaluate).not.toHaveBeenCalled();
     });
 
     it('ignores non-Proposal messages', async () => {
@@ -192,11 +229,27 @@ describe('strategies', () => {
 
       expect(strategy.shouldVote).toHaveBeenCalled();
       expect(strategy.decideVote).toHaveBeenCalled();
+      // Issue #108.7: dispatched with the validator's normalized value, not
+      // the strategy's original case.
       expect(ctx.actions.vote).toHaveBeenCalledWith({
         proposalId: 'p1',
-        vote: 'approve',
+        vote: 'APPROVE',
         reason: 'Tests pass',
       });
+    });
+
+    it('issue #108.7: rejects an out-of-enum vote with MacpSessionError, and never calls ctx.actions.vote', async () => {
+      const strategy: VotingStrategy = {
+        shouldVote: vi.fn().mockReturnValue(true),
+        decideVote: vi.fn().mockResolvedValue({ vote: 'maybe', reason: 'unsure' }),
+      };
+
+      const handler = votingHandler(strategy);
+      const msg = makeMessage('Evaluation', { proposalId: 'p1', recommendation: 'approve', confidence: 0.9 });
+      const ctx = makeContext();
+
+      await expect(handler(msg, ctx)).rejects.toThrow(MacpSessionError);
+      expect(ctx.actions.vote).not.toHaveBeenCalled();
     });
 
     it('does not vote when shouldVote returns false', async () => {

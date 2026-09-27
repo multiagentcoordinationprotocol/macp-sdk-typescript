@@ -86,6 +86,10 @@ await session.rejectTask({
 });
 ```
 
+`assignee` is optional on `acceptTask`/`rejectTask`/`completeTask`/`failTask` —
+when omitted (or an explicit empty string), it defaults to the resolved
+sender, matching `macp-sdk-python`.
+
 ### Progress Updates
 
 ```typescript

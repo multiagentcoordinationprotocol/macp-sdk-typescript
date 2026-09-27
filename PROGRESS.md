@@ -2497,3 +2497,61 @@ Node 22/24, integration, verify-fixtures). Issue #108 confirmed still OPEN
 
 What's next: continue with Phase 4B (#108 part 2, `Closes #108`), then
 Phase 3 (#107) (PR #5 and #6 of 6).
+
+### Phase 4B (#108 part 2) — DONE, 2026-09-27
+
+Fifth PR in merge order (5 → 2 → 1 → 4A → **4B** → 3). Ships as
+`Closes #108` — closes the issue.
+
+Delivers: `auth?: AuthConfig` threaded through all five mode sessions'
+`start()` (4d); `BaseSession.start()` upgraded from partial validation
+(participant count + `maxSuspendMs` only) to the full `validateSessionStart`
+(4d); identity auto-fill (`assignee`/`acceptedBy`/`declinedBy` default to
+the resolved sender when omitted or empty) on Task's four actions and
+Handoff's `acceptHandoff`/`decline` (4e); `HandoffSession.addContext`
+defaults `contentType` to `'application/octet-stream'` (4f);
+`evaluationHandler`/`votingHandler` in `src/agent/strategies.ts` validate a
+strategy's raw output via `validateRecommendation`/`validateConfidence`/
+`validateVote` before dispatching (4g); `validateAuth` throws
+`MacpSdkError` instead of a bare `Error` on a missing/empty `bearerToken`
+(4h).
+
+Verdict: **GAPS round 1** (fresh-Opus verifier), then **PASS round 2**
+(fresh-Opus re-verify) — see the plan file's 4B divergence note for the
+full itemized gap list and closure detail. In short: round 1 found the
+criterion-7 (4d) auth-conflict test vacuous in all five session test files
+(the shared test fixture's own client-level `expectedSender` already
+conflicted with the test's `sender`, independent of whether the new
+per-call `auth` was threaded), the "auth reaches `client.send`" half of
+that criterion untested, the negative "explicit value not overwritten"
+case for identity auto-fill covering only 1 of 6 call sites, and a factual
+error plus an omission in `CHANGELOG.md`. All four closed; round 2
+independently mutation-tested every closure (not a re-read) — including
+running the round-1 vacuous-test symptom (full 4d revert → suite green)
+against the fixed tests and confirming it no longer reproduces on any of
+the five files — and returned PASS, plus one new non-blocking observation
+(an uncovered `contentType` empty-string branch on `addContext`) closed
+with one more test before shipping.
+
+Files touched: `src/base-session.ts`, `src/decision.ts`, `src/proposal.ts`,
+`src/task.ts`, `src/handoff.ts`, `src/quorum.ts`, `src/types.ts`,
+`src/agent/strategies.ts`, `src/auth.ts`, `tests/unit/sessions/*.test.ts`
+(all 5), `tests/unit/base-session.test.ts`, `tests/unit/auth.test.ts`,
+`tests/unit/agent/strategies.test.ts`, `CHANGELOG.md`,
+`docs/api/sessions.md`, `docs/modes/task.md`, `docs/modes/handoff.md`,
+`docs/api/types.md`, `docs/guides/error-handling.md`,
+`docs/api/strategies.md`.
+
+Local gate: `npm test` 1157 passed/20 skipped; `npm run test:coverage`
+95.94/89.54/94.41/96.87 (stmts/branches/funcs/lines, all above the
+92/84/91/94 floors); `npm run check`, `npm run check:examples`,
+`npm run lint`, `npm run format:check`, `npm run build` all clean;
+`make verify-fixtures` green; `make verify-parity` pre-existing/unrelated
+drift, not fixed (confirmed via `git status` on `tests/parity/contract.json`
+— untouched by this phase).
+
+What's next: ship Phase 4B (branch, commit `Closes #108`, PR, CI, merge,
+confirm #108 closed, cleanup), then Phase 3 (#107, final PR of 6).
+
+pushed fix/issue-108-4b-auth-defaults-validation 0627678
+PR #116 opened: https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/pull/116

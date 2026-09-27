@@ -74,6 +74,7 @@ export class ProposalSession {
     roots?: { uri: string; name?: string }[];
     maxSuspendMs?: number;
     sender?: string;
+    auth?: AuthConfig;
   }): Promise<Ack> {
     validateSessionStart({
       intent: input.intent,
@@ -99,10 +100,10 @@ export class ProposalSession {
       mode: MODE_PROPOSAL,
       messageType: 'SessionStart',
       sessionId: this.sessionId,
-      sender: this.senderFor(input.sender),
+      sender: this.senderFor(input.sender, input.auth),
       payload: this.client.protoRegistry.encodeKnownPayload(MODE_PROPOSAL, 'SessionStart', toProtoPayload(payload)),
     });
-    return this.sendAndTrack(envelope, this.auth);
+    return this.sendAndTrack(envelope, input.auth ?? this.auth);
   }
 
   async propose(input: ProposalModeProposalPayload & { sender?: string; auth?: AuthConfig }): Promise<Ack> {

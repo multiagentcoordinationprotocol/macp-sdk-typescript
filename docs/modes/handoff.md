@@ -67,7 +67,7 @@ Provide information the recipient needs:
 ```typescript
 await session.addContext({
   handoffId: 'h1',
-  contentType: 'application/json',
+  contentType: 'application/json',  // optional; defaults to 'application/octet-stream' when omitted
   context: Buffer.from(JSON.stringify({
     repository: 'acme/web-app',
     documentation: 'https://wiki.acme.com/frontend',
@@ -98,6 +98,9 @@ await session.decline({
   auth: Auth.devAgent('bob'),
 });
 ```
+
+`acceptedBy`/`declinedBy` are optional — when omitted (or an explicit empty
+string), each defaults to the resolved sender, matching `macp-sdk-python`.
 
 ## HandoffProjection
 

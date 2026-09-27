@@ -37,6 +37,13 @@ Returns a handler that reacts to `Proposal` messages by calling
 participant.on('Proposal', evaluationHandler(myEvaluator));
 ```
 
+Before forwarding, the handler validates the strategy's own output —
+`recommendation` via `validateRecommendation` (must be one of the canonical
+enum values, normalized to uppercase) and `confidence` via
+`validateConfidence` (must be a finite number in `[0, 1]`) — throwing
+`MacpSessionError` on a bad value, so a buggy strategy fails at the handler
+that produced the value rather than later from the session.
+
 ### `functionEvaluator(fn)`
 
 Wraps a plain async function as an `EvaluationStrategy` — no class needed.
@@ -77,6 +84,10 @@ only votes when it returns `true`.
 ```typescript
 participant.on('Evaluation', votingHandler(myVoter));
 ```
+
+Before forwarding, the handler validates the strategy's `vote` via
+`validateVote` (must be one of the canonical enum values, normalized to
+uppercase), throwing `MacpSessionError` on a bad value.
 
 ### `functionVoter(shouldVote, decideVote)`
 

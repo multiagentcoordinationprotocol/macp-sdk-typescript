@@ -1,5 +1,6 @@
 import type { DecisionProjection } from '../projections/decision';
 import { inferOutcomePositive } from '../envelope';
+import { validateConfidence, validateRecommendation, validateVote } from '../validation';
 import type { HandlerContext, IncomingMessage, MessageHandler, SessionInfo } from './types';
 
 // ── Evaluation strategy ─────────────────────────────────────────────
@@ -19,10 +20,17 @@ export function evaluationHandler(strategy: EvaluationStrategy): MessageHandler 
     if (event.messageType !== 'Proposal') return;
 
     const result = await strategy.evaluate(event.payload, ctx.session);
+    // Issue #108.7/4g: validate the strategy's own output — reusing this
+    // repo's own validators (they throw MacpSessionError, the documented
+    // error contract) rather than porting Python's inline ValueError checks
+    // — and dispatch the normalized value, so a bad strategy fails loudly at
+    // the handler naming the strategy, not later from the session.
+    const recommendation = validateRecommendation(result.recommendation);
+    validateConfidence(result.confidence);
     if (ctx.actions.evaluate) {
       await ctx.actions.evaluate({
         proposalId: event.proposalId ?? (event.payload.proposalId as string) ?? (event.payload.proposal_id as string),
-        recommendation: result.recommendation,
+        recommendation,
         confidence: result.confidence,
         reason: result.reason,
       });
@@ -56,12 +64,13 @@ export function votingHandler(strategy: VotingStrategy): MessageHandler {
     if (!strategy.shouldVote(projection)) return;
 
     const result = await strategy.decideVote(projection);
+    const vote = validateVote(result.vote);
     if (ctx.actions.vote) {
       const proposalId =
         event.proposalId ?? (event.payload.proposalId as string) ?? (event.payload.proposal_id as string);
       await ctx.actions.vote({
         proposalId,
-        vote: result.vote,
+        vote,
         reason: result.reason,
       });
     }

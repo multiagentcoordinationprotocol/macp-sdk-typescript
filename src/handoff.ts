@@ -68,6 +68,7 @@ export class HandoffSession {
     roots?: { uri: string; name?: string }[];
     maxSuspendMs?: number;
     sender?: string;
+    auth?: AuthConfig;
   }): Promise<Ack> {
     validateSessionStart({
       intent: input.intent,
@@ -93,10 +94,10 @@ export class HandoffSession {
       mode: MODE_HANDOFF,
       messageType: 'SessionStart',
       sessionId: this.sessionId,
-      sender: this.senderFor(input.sender),
+      sender: this.senderFor(input.sender, input.auth),
       payload: this.client.protoRegistry.encodeKnownPayload(MODE_HANDOFF, 'SessionStart', toProtoPayload(payload)),
     });
-    return this.sendAndTrack(envelope, this.auth);
+    return this.sendAndTrack(envelope, input.auth ?? this.auth);
   }
 
   async offer(input: HandoffOfferPayload & { sender?: string; auth?: AuthConfig }): Promise<Ack> {
@@ -115,29 +116,44 @@ export class HandoffSession {
 
   async addContext(input: HandoffContextPayload & { sender?: string; auth?: AuthConfig }): Promise<Ack> {
     validateRequiredField('handoffId', input.handoffId);
+    // Issue #108.6/4f: default contentType, matching Python (`handoff.py:210`).
+    // Deliberately `||`, not the `??` `offer()` above uses for `scope`: an
+    // explicit empty string must also fall back to the default here.
+    const contextInput = { ...input, contentType: input.contentType || 'application/octet-stream' };
     const envelope = buildEnvelope({
       mode: MODE_HANDOFF,
       messageType: 'HandoffContext',
       sessionId: this.sessionId,
       sender: this.senderFor(input.sender, input.auth),
-      payload: this.client.protoRegistry.encodeKnownPayload(MODE_HANDOFF, 'HandoffContext', toProtoPayload(input)),
+      payload: this.client.protoRegistry.encodeKnownPayload(
+        MODE_HANDOFF,
+        'HandoffContext',
+        toProtoPayload(contextInput),
+      ),
     });
     return this.sendAndTrack(envelope, input.auth);
   }
 
   async acceptHandoff(input: HandoffAcceptPayload & { sender?: string; auth?: AuthConfig }): Promise<Ack> {
     validateRequiredField('handoffId', input.handoffId);
+    const sender = this.senderFor(input.sender, input.auth);
     // `implicit` is a runtime-emitted-only flag (RFC-MACP-0010 §5.1); the
     // runtime rejects client-submitted accepts with implicit=true. Strip it so
     // a caller can never produce a rejected envelope, regardless of what they
     // pass — belt and braces with the JSDoc "read-only" contract on the type.
     const rest: Record<string, unknown> = { ...input };
     delete rest.implicit;
+    // Issue #108.5/4e: default acceptedBy to the resolved sender. Applied to
+    // `rest` (the object actually encoded below), NOT to `input` — unlike
+    // every other action here, this method doesn't route through
+    // `toProtoPayload(input)`, so a fallback written against `input` would be
+    // silently dropped.
+    rest.acceptedBy = input.acceptedBy || sender;
     const envelope = buildEnvelope({
       mode: MODE_HANDOFF,
       messageType: 'HandoffAccept',
       sessionId: this.sessionId,
-      sender: this.senderFor(input.sender, input.auth),
+      sender,
       payload: this.client.protoRegistry.encodeKnownPayload(MODE_HANDOFF, 'HandoffAccept', rest),
     });
     return this.sendAndTrack(envelope, input.auth);
@@ -145,12 +161,18 @@ export class HandoffSession {
 
   async decline(input: HandoffDeclinePayload & { sender?: string; auth?: AuthConfig }): Promise<Ack> {
     validateRequiredField('handoffId', input.handoffId);
+    const sender = this.senderFor(input.sender, input.auth);
+    const declinedBy = input.declinedBy || sender;
     const envelope = buildEnvelope({
       mode: MODE_HANDOFF,
       messageType: 'HandoffDecline',
       sessionId: this.sessionId,
-      sender: this.senderFor(input.sender, input.auth),
-      payload: this.client.protoRegistry.encodeKnownPayload(MODE_HANDOFF, 'HandoffDecline', toProtoPayload(input)),
+      sender,
+      payload: this.client.protoRegistry.encodeKnownPayload(
+        MODE_HANDOFF,
+        'HandoffDecline',
+        toProtoPayload({ ...input, declinedBy }),
+      ),
     });
     return this.sendAndTrack(envelope, input.auth);
   }

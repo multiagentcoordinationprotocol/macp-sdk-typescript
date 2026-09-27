@@ -98,6 +98,20 @@ project uses [Semantic Versioning](https://semver.org/).
   legitimate retry with a corrected payload was silently absorbed as a
   redelivery and the envelope's effect was lost forever.
 
+### Added
+
+- **All five mode sessions' `start()` now accept a per-call
+  `auth?: AuthConfig`** (issue #108, part 2 of 2 — 4B), matching every other
+  action method on these classes. Previously `start()` alone ignored a
+  per-call `auth` on `DecisionSession`/`ProposalSession`/`TaskSession`/
+  `HandoffSession`/`QuorumSession`, resolving the sender only against the
+  session/client-level credential — so a caller passing a conflicting
+  per-call `auth.expectedSender` never got the identity-mismatch guard
+  (RFC-MACP-0004 §4) that every other method already enforced.
+  `BaseSession.start()` already accepted and threaded a per-call `auth`
+  before this change; see the `BaseSession.start()` validation entry below
+  for what actually changed there in 4B.
+
 ### Changed
 
 - **BREAKING (test-only surface): `_resetLoggingForTests` is no longer part
@@ -127,6 +141,21 @@ project uses [Semantic Versioning](https://semver.org/).
   (e.g. `'approve'` instead of `'APPROVE'`) sees a different value on the
   wire; every in-repo projection already normalizes case itself, so no
   projection assertion is affected by this change.
+- **An empty/missing `bearerToken` now throws `MacpSdkError`, not a bare
+  `Error`** (issue #108, part 2 of 2 — 4B). `validateAuth` (and therefore
+  `metadataFromAuth`, reached from every authenticated RPC) previously threw
+  a plain `Error('bearerToken is required')`, which is not `instanceof
+  MacpSdkError` — escaping the documented `catch (e) { if (e instanceof
+  MacpSdkError) ... }` pattern from both SDKs' error-handling docs. Message
+  text unchanged.
+- **`BaseSession.start()` now runs the same full `validateSessionStart`
+  check as the five built-in mode sessions, not a partial check** (issue
+  #108, part 2 of 2 — 4B). Previously this documented ext-mode extension
+  point validated only participant count and `maxSuspendMs`, so an empty
+  `intent`, an empty/duplicate `participants` array, or an out-of-range
+  `ttlMs` reached the wire unvalidated from a custom mode built on
+  `BaseSession` — the weakest-validated mode in the SDK. All five now
+  reject client-side, matching every built-in mode session.
 
 ### Fixed
 
@@ -194,6 +223,29 @@ project uses [Semantic Versioning](https://semver.org/).
   application — data corruption strictly worse than the bug the rollback
   itself fixes. Mirrors `macp-sdk-python`'s identical guard and its own
   documented trade-off in this exact scenario.
+- **Identity fields on `Task`/`Handoff` actions now default to the resolved
+  sender when omitted or empty, matching `macp-sdk-python`** (issue #108,
+  part 2 of 2 — 4B): `TaskSession.acceptTask`/`rejectTask`/`completeTask`/
+  `failTask`'s `assignee`, and `HandoffSession.acceptHandoff`'s `acceptedBy`/
+  `decline`'s `declinedBy`, are now optional and fall back to the caller's
+  authenticated identity (`input.field || resolvedSender` — `||`, not `??`,
+  since an explicit empty string is also meant to fall back). Previously
+  these were required fields passed straight through with no default, unlike
+  the Python SDK (`task.py:299,323,391,430`, `handoff.py:247,271`).
+- **`HandoffSession.addContext`'s `contentType` now defaults to
+  `'application/octet-stream'` when omitted**, matching `macp-sdk-python`
+  (`handoff.py:210`) (issue #108, part 2 of 2 — 4B). Previously `contentType`
+  was a required field with no default.
+- **`evaluationHandler`/`votingHandler` now validate a strategy's output
+  before dispatching it** (issue #108, part 2 of 2 — 4B). Both previously
+  passed a custom `EvaluationStrategy`/`VotingStrategy`'s raw
+  `recommendation`/`confidence`/`vote` straight to `ctx.actions.*` with no
+  validation, so a buggy strategy (an out-of-enum recommendation, a `NaN`
+  confidence, an out-of-enum vote) failed later and less legibly, from
+  inside the session rather than at the handler that produced the bad
+  value. Both handlers now reuse this SDK's own `validateRecommendation`/
+  `validateConfidence`/`validateVote` (throwing the documented
+  `MacpSessionError`) and dispatch the validators' normalized return value.
 
 ### Documentation
 

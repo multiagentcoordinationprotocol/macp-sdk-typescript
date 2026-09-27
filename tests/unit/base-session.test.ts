@@ -104,6 +104,27 @@ describe('BaseSession / BaseProjection extension point', () => {
     expect(sendSpy).not.toHaveBeenCalled();
   });
 
+  // Issue #108.4/4d: start() now calls the full validateSessionStart, bringing
+  // this extension point up to parity with the five built-in mode sessions
+  // (which already validated all of this). Fails on old code: previously
+  // start() only checked participant count + maxSuspendMs, so an empty
+  // intent, empty/duplicate participants, or an out-of-range ttlMs reached
+  // the wire unvalidated.
+  it.each([
+    ['empty intent', { intent: '', participants: ['alice'], ttlMs: 30_000 }],
+    ['empty participants', { intent: 'test', participants: [], ttlMs: 30_000 }],
+    ['duplicate participants', { intent: 'test', participants: ['alice', 'alice'], ttlMs: 30_000 }],
+    ['ttlMs of 0', { intent: 'test', participants: ['alice'], ttlMs: 0 }],
+    ['negative ttlMs', { intent: 'test', participants: ['alice'], ttlMs: -1 }],
+  ] as const)('start() rejects %s before hitting the wire', async (_label, input) => {
+    const client = makeClient();
+    const sendSpy = vi.spyOn(client, 'send').mockResolvedValue({ ok: true });
+    const session = new SmokeSession(client);
+
+    await expect(session.start(input)).rejects.toThrow();
+    expect(sendSpy).not.toHaveBeenCalled();
+  });
+
   it('commit() success feeds the projection: phase Committed, commitment decoded', async () => {
     const client = makeClient();
     vi.spyOn(client, 'send').mockResolvedValue({ ok: true });

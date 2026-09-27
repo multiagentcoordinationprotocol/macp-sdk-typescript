@@ -72,6 +72,27 @@ reconnect; `UNAUTHENTICATED` for an auth failure → do not reconnect;
 `FAILED_PRECONDITION` for a passive-subscribe resume below a compacted
 base). It is absent for locally-raised transport errors.
 
+## MacpSdkError
+
+The base class every other SDK error extends — catch it to handle any
+client-side SDK fault generically. One direct raiser worth knowing: a
+missing or empty `bearerToken` (e.g. `Auth.bearer('')`, or an
+`AuthConfig` built without one) throws `MacpSdkError` directly, from
+`validateAuth`/`metadataFromAuth` — reached from every authenticated RPC,
+not just `AuthConfig` construction.
+
+```typescript
+import { MacpSdkError } from 'macp-sdk-typescript';
+
+try {
+  await client.send(envelope, { auth: { bearerToken: '' } });
+} catch (err) {
+  if (err instanceof MacpSdkError) {
+    console.log('SDK configuration fault:', err.message);
+  }
+}
+```
+
 ## Runtime Error Codes
 
 The MACP runtime uses structured error codes in the Ack. The ones you will hit

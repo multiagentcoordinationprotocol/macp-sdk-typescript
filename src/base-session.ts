@@ -10,7 +10,7 @@ import {
 } from './envelope';
 import { logger } from './logging';
 import type { BaseProjection } from './projections/base';
-import { validateMaxSuspendMs, validateParticipantCount, validateSessionId } from './validation';
+import { validateSessionId, validateSessionStart } from './validation';
 import type { Ack, Envelope, Root, SessionMetadata } from './types';
 
 export interface BaseSessionOptions {
@@ -88,8 +88,19 @@ export abstract class BaseSession<P extends BaseProjection> {
     sender?: string;
     auth?: AuthConfig;
   }): Promise<Ack> {
-    validateParticipantCount(input.participants.length);
-    if (input.maxSuspendMs !== undefined) validateMaxSuspendMs(input.maxSuspendMs);
+    // Bring this extension point's validation up to parity with the five
+    // built-in mode sessions (issue #108.4/4d): previously only participant
+    // count + maxSuspendMs were checked, so an ext-mode built on this
+    // documented extension point was the weakest-validated mode — an empty
+    // intent or an out-of-range ttlMs reached the wire unvalidated.
+    validateSessionStart({
+      intent: input.intent,
+      participants: input.participants,
+      ttlMs: input.ttlMs,
+      maxSuspendMs: input.maxSuspendMs,
+      modeVersion: this.modeVersion,
+      configurationVersion: this.configurationVersion,
+    });
     const payload = buildSessionStartPayload({
       intent: input.intent,
       participants: input.participants,
