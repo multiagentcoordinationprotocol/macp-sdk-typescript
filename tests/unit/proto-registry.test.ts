@@ -189,6 +189,136 @@ describe('ProtoRegistry', () => {
       expect(decoded).toEqual({});
     });
 
+    describe('canonicality tie-break (issue #104)', () => {
+      // Before the fix, decodeMultiRoundContribute tried JSON.parse first and
+      // trusted any successful parse unconditionally. The canonical proto tag
+      // byte for field 1 (0x0A) is itself insignificant JSON whitespace, so a
+      // canonical ContributePayload at specific value byte-lengths silently
+      // misread as a JSON number/string/object — most collapsing to total
+      // data loss (`String(undefined ?? '') === ''`). isCanonicalProto closes
+      // this by only trusting a JSON parse when the same bytes are NOT also
+      // the exact canonical proto encoding.
+
+      it('decodes the exact collision bytes from issue #104 instead of losing the value', () => {
+        // Canonical wire bytes for ContributePayload{ value: "9".repeat(45) }:
+        // tag 0x0a, length 0x2d (=45), then 45 '9' bytes (0x39). Length 45
+        // makes the length byte '-' (0x2d), a JSON-significant sign, so
+        // JSON.parse used to succeed on a bare JSON number and silently
+        // return { value: '' }.
+        const wire = Buffer.from('0a2d' + '39'.repeat(45), 'hex');
+        const decoded = registry.decodeKnownPayload(MODE_MULTI_ROUND, 'Contribute', wire);
+        expect(decoded).toEqual({ value: '9'.repeat(45) });
+      });
+
+      it('round-trips canonical Contribute values at every collision-prone length, 1-127, across seven value shapes', () => {
+        // Mirrors macp-sdk-python's test_canonical_proto_round_trips_at_every_collision_length.
+        // The two collision mechanisms: (1) the single-byte length varint is
+        // itself a JSON-significant opener (digit, '-', '"', '{'), so the
+        // value's own bytes continue that literal; (2) the length varint is
+        // itself JSON whitespace (0x09/0x0A/0x0D/0x20), handing the opening
+        // character to the value's own first byte. Every length >= 128 is
+        // immune: at 128-16383 the two-byte varint is never valid UTF-8 (a
+        // lead-byte/continuation mismatch), and at >= 16384 the three-byte
+        // varint sometimes is, but only ever decodes to a non-ASCII char that
+        // can never open a JSON value. So 1-127 is the complete risk range.
+        // Verified non-empty (corrupting)
+        // before this fix — across these seven shapes specifically — at
+        // lengths 9, 10, 13, 32, 34 (quoteShaped), 45, 48 (decimalShaped),
+        // 49-57, and 123; empty (zero corruption) after.
+        const shapeBuilders: Record<string, (len: number) => string | undefined> = {
+          digitsNonzero: (len) => '9'.repeat(len),
+          digitsZero: (len) => '0'.repeat(len),
+          leadingNonzeroDigit: (len) => '1' + '2'.repeat(Math.max(len - 1, 0)),
+          jsonObjectShaped: (len) => (len >= 8 ? '{"a":"' + 'x'.repeat(len - 8) + '"}' : undefined),
+          jsonValueKeyShaped: (len) => (len >= 11 ? '"value":"' + 'x'.repeat(len - 11) + '"}' : undefined),
+          // quote-shaped (issue #104's own reproducer table): the length
+          // varint at 34 is itself '"' (0x22), so a 34-byte value ending in
+          // a literal quote continues the JSON string literal.
+          quoteShaped: (len) => (len >= 1 ? 'x'.repeat(len - 1) + '"' : undefined),
+          // decimal-shaped (issue #104's own reproducer table): the length
+          // varint at 48 is itself '0' (0x30), so a 48-byte value starting
+          // with '.' continues that digit as a JSON decimal-number literal.
+          decimalShaped: (len) => (len >= 1 ? '.' + '1'.repeat(len - 1) : undefined),
+        };
+
+        const failures: string[] = [];
+        for (let len = 1; len <= 127; len++) {
+          for (const [shapeName, build] of Object.entries(shapeBuilders)) {
+            const value = build(len);
+            if (value === undefined || value.length !== len) continue;
+            const wire = registry.encodeKnownPayload(MODE_MULTI_ROUND, 'Contribute', { value });
+            const decoded = registry.decodeKnownPayload(MODE_MULTI_ROUND, 'Contribute', wire);
+            if (!decoded || decoded.value !== value) {
+              failures.push(`${shapeName} len=${len}: got ${JSON.stringify(decoded)}`);
+            }
+          }
+        }
+        expect(failures).toEqual([]);
+      });
+
+      it('does not change decoding of non-canonical, non-dict JSON values', () => {
+        // These never collided (they aren't canonical proto bytes for any
+        // ContributePayload), so isCanonicalProto must return false and the
+        // existing coercion-to-string behavior must be unchanged.
+        expect(registry.decodeKnownPayload(MODE_MULTI_ROUND, 'Contribute', Buffer.from('0'))).toEqual({
+          value: '',
+        });
+        expect(registry.decodeKnownPayload(MODE_MULTI_ROUND, 'Contribute', Buffer.from('[]'))).toEqual({
+          value: '',
+        });
+        expect(registry.decodeKnownPayload(MODE_MULTI_ROUND, 'Contribute', Buffer.from('true'))).toEqual({
+          value: '',
+        });
+        expect(registry.decodeKnownPayload(MODE_MULTI_ROUND, 'Contribute', Buffer.from('"x"'))).toEqual({
+          value: '',
+        });
+      });
+
+      it.each([
+        { prefix: '\t', length: 29 },
+        { prefix: ' ', length: 108 },
+        { prefix: '   ', length: 108 },
+      ])(
+        'treats whitespace-prefixed legacy JSON as JSON, not proto (prefix=$prefix length=$length)',
+        ({ prefix, length }) => {
+          // Regression pin for the false-positive class a naive round-trip
+          // check (without protobufjs discarding unknown fields on decode)
+          // would be vulnerable to: these bytes are NOT canonical proto (the
+          // prefix byte isn't field 1's tag 0x0A), so a round-trip through
+          // ContributePayload must fail and the JSON reading must win.
+          const value = 'z'.repeat(length);
+          const legacy = Buffer.from(prefix + JSON.stringify({ value }), 'utf8');
+          const decoded = registry.decodeKnownPayload(MODE_MULTI_ROUND, 'Contribute', legacy);
+          expect(decoded).toEqual({ value });
+        },
+      );
+
+      it.each([
+        { extra: '', length: 112 },
+        { extra: '\r', length: 1 },
+        { extra: ' ', length: 20 },
+      ])(
+        'documents the one residual: a literal-newline-prefixed legacy JSON that exactly matches a proto field-1 string misreads as proto (extra=$extra length=$length)',
+        ({ extra, length }) => {
+          // Genuinely irreducible, not a gap this tie-break merely fails to
+          // close (macp-sdk-python has the symmetric case with its own
+          // pinned lengths — offset by one byte here because JSON.stringify,
+          // unlike Python's json.dumps, omits the space after ':'). A
+          // payload whose first byte is literal 0x0A and whose remainder is
+          // a complete, well-formed proto field-1 string has no unknown
+          // field left to expose a round-trip mismatch on: it IS, byte for
+          // byte, both a legal JSON reading and the canonical proto encoding
+          // of some string. No known encoder (including this SDK's own)
+          // emits a leading newline before legacy JSON, so this is priced
+          // and accepted, not fixed.
+          const value = 'z'.repeat(length);
+          const legacy = Buffer.from('\n' + extra + JSON.stringify({ value }), 'utf8');
+          const decoded = registry.decodeKnownPayload(MODE_MULTI_ROUND, 'Contribute', legacy);
+          expect(decoded).not.toEqual({ value });
+        },
+      );
+    });
+
     it('returns undefined for empty unknown payload', () => {
       const decoded = registry.decodeKnownPayload('unknown', 'Unknown', Buffer.alloc(0));
       expect(decoded).toBeUndefined();
