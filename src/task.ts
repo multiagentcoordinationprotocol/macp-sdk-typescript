@@ -70,6 +70,7 @@ export class TaskSession {
     roots?: { uri: string; name?: string }[];
     maxSuspendMs?: number;
     sender?: string;
+    auth?: AuthConfig;
   }): Promise<Ack> {
     validateSessionStart({
       intent: input.intent,
@@ -95,10 +96,10 @@ export class TaskSession {
       mode: MODE_TASK,
       messageType: 'SessionStart',
       sessionId: this.sessionId,
-      sender: this.senderFor(input.sender),
+      sender: this.senderFor(input.sender, input.auth),
       payload: this.client.protoRegistry.encodeKnownPayload(MODE_TASK, 'SessionStart', toProtoPayload(payload)),
     });
-    return this.sendAndTrack(envelope, this.auth);
+    return this.sendAndTrack(envelope, input.auth ?? this.auth);
   }
 
   async requestTask(input: TaskRequestPayload & { sender?: string; auth?: AuthConfig }): Promise<Ack> {
@@ -117,24 +118,40 @@ export class TaskSession {
 
   async acceptTask(input: TaskAcceptPayload & { sender?: string; auth?: AuthConfig }): Promise<Ack> {
     validateRequiredField('taskId', input.taskId);
+    const sender = this.senderFor(input.sender, input.auth);
+    // Issue #108.5/4e: default assignee to the resolved sender, matching
+    // Python (`task.py:299,323,391,430`). `||` not `??` — an explicit empty
+    // string is never a meaningful assignee, and the reported gap includes
+    // that case, which `??` would let through unchanged.
+    const assignee = input.assignee || sender;
     const envelope = buildEnvelope({
       mode: MODE_TASK,
       messageType: 'TaskAccept',
       sessionId: this.sessionId,
-      sender: this.senderFor(input.sender, input.auth),
-      payload: this.client.protoRegistry.encodeKnownPayload(MODE_TASK, 'TaskAccept', toProtoPayload(input)),
+      sender,
+      payload: this.client.protoRegistry.encodeKnownPayload(
+        MODE_TASK,
+        'TaskAccept',
+        toProtoPayload({ ...input, assignee }),
+      ),
     });
     return this.sendAndTrack(envelope, input.auth);
   }
 
   async rejectTask(input: TaskRejectPayload & { sender?: string; auth?: AuthConfig }): Promise<Ack> {
     validateRequiredField('taskId', input.taskId);
+    const sender = this.senderFor(input.sender, input.auth);
+    const assignee = input.assignee || sender;
     const envelope = buildEnvelope({
       mode: MODE_TASK,
       messageType: 'TaskReject',
       sessionId: this.sessionId,
-      sender: this.senderFor(input.sender, input.auth),
-      payload: this.client.protoRegistry.encodeKnownPayload(MODE_TASK, 'TaskReject', toProtoPayload(input)),
+      sender,
+      payload: this.client.protoRegistry.encodeKnownPayload(
+        MODE_TASK,
+        'TaskReject',
+        toProtoPayload({ ...input, assignee }),
+      ),
     });
     return this.sendAndTrack(envelope, input.auth);
   }
@@ -153,24 +170,36 @@ export class TaskSession {
 
   async completeTask(input: TaskCompletePayload & { sender?: string; auth?: AuthConfig }): Promise<Ack> {
     validateRequiredField('taskId', input.taskId);
+    const sender = this.senderFor(input.sender, input.auth);
+    const assignee = input.assignee || sender;
     const envelope = buildEnvelope({
       mode: MODE_TASK,
       messageType: 'TaskComplete',
       sessionId: this.sessionId,
-      sender: this.senderFor(input.sender, input.auth),
-      payload: this.client.protoRegistry.encodeKnownPayload(MODE_TASK, 'TaskComplete', toProtoPayload(input)),
+      sender,
+      payload: this.client.protoRegistry.encodeKnownPayload(
+        MODE_TASK,
+        'TaskComplete',
+        toProtoPayload({ ...input, assignee }),
+      ),
     });
     return this.sendAndTrack(envelope, input.auth);
   }
 
   async failTask(input: TaskFailPayload & { sender?: string; auth?: AuthConfig }): Promise<Ack> {
     validateRequiredField('taskId', input.taskId);
+    const sender = this.senderFor(input.sender, input.auth);
+    const assignee = input.assignee || sender;
     const envelope = buildEnvelope({
       mode: MODE_TASK,
       messageType: 'TaskFail',
       sessionId: this.sessionId,
-      sender: this.senderFor(input.sender, input.auth),
-      payload: this.client.protoRegistry.encodeKnownPayload(MODE_TASK, 'TaskFail', toProtoPayload(input)),
+      sender,
+      payload: this.client.protoRegistry.encodeKnownPayload(
+        MODE_TASK,
+        'TaskFail',
+        toProtoPayload({ ...input, assignee }),
+      ),
     });
     return this.sendAndTrack(envelope, input.auth);
   }

@@ -244,18 +244,18 @@ interface ProgressPayload {
 ### Task Mode
 
 - `TaskRequestPayload` — `{ taskId, title, instructions, requestedAssignee?, input?, deadlineUnixMs? }`
-- `TaskAcceptPayload` — `{ taskId, assignee, reason? }`
-- `TaskRejectPayload` — `{ taskId, assignee, reason? }`
+- `TaskAcceptPayload` — `{ taskId, assignee?, reason? }` — `assignee` defaults to the resolved sender when omitted or empty (issue #108.5).
+- `TaskRejectPayload` — `{ taskId, assignee?, reason? }` — same default as `TaskAcceptPayload`.
 - `TaskUpdatePayload` — `{ taskId, status, progress, message?, partialOutput? }`
-- `TaskCompletePayload` — `{ taskId, assignee, output?, summary? }`
-- `TaskFailPayload` — `{ taskId, assignee, errorCode?, reason?, retryable? }`
+- `TaskCompletePayload` — `{ taskId, assignee?, output?, summary? }` — same default as `TaskAcceptPayload`.
+- `TaskFailPayload` — `{ taskId, assignee?, errorCode?, reason?, retryable? }` — same default as `TaskAcceptPayload`.
 
 ### Handoff Mode
 
 - `HandoffOfferPayload` — `{ handoffId, targetParticipant, scope?, reason? }`
-- `HandoffContextPayload` — `{ handoffId, contentType, context? }`
-- `HandoffAcceptPayload` — `{ handoffId, acceptedBy, reason?, implicit? }` — `implicit` (proto ≥ 0.1.6) is **decode-only**: `true` on the runtime-emitted synthetic accept ([RFC-MACP-0010 (Handoff Mode)](https://github.com/multiagentcoordinationprotocol/multiagentcoordinationprotocol/blob/main/rfcs/RFC-MACP-0010-handoff-mode.md) §5.1). Clients MUST NOT set it; `acceptHandoff` strips it before sending.
-- `HandoffDeclinePayload` — `{ handoffId, declinedBy, reason? }`
+- `HandoffContextPayload` — `{ handoffId, contentType?, context? }` — `contentType` defaults to `'application/octet-stream'` when omitted (issue #108.6).
+- `HandoffAcceptPayload` — `{ handoffId, acceptedBy?, reason?, implicit? }` — `acceptedBy` defaults to the resolved sender when omitted or empty (issue #108.5). `implicit` (proto ≥ 0.1.6) is **decode-only**: `true` on the runtime-emitted synthetic accept ([RFC-MACP-0010 (Handoff Mode)](https://github.com/multiagentcoordinationprotocol/multiagentcoordinationprotocol/blob/main/rfcs/RFC-MACP-0010-handoff-mode.md) §5.1). Clients MUST NOT set it; `acceptHandoff` strips it before sending.
+- `HandoffDeclinePayload` — `{ handoffId, declinedBy?, reason? }` — `declinedBy` defaults to the resolved sender when omitted or empty (issue #108.5).
 
 ### Quorum Mode
 

@@ -249,13 +249,15 @@ export interface TaskRequestPayload {
 
 export interface TaskAcceptPayload {
   taskId: string;
-  assignee: string;
+  /** Defaults to the resolved sender when omitted or empty (issue #108.5). */
+  assignee?: string;
   reason?: string;
 }
 
 export interface TaskRejectPayload {
   taskId: string;
-  assignee: string;
+  /** Defaults to the resolved sender when omitted or empty (issue #108.5). */
+  assignee?: string;
   reason?: string;
 }
 
@@ -269,14 +271,16 @@ export interface TaskUpdatePayload {
 
 export interface TaskCompletePayload {
   taskId: string;
-  assignee: string;
+  /** Defaults to the resolved sender when omitted or empty (issue #108.5). */
+  assignee?: string;
   output?: Buffer;
   summary?: string;
 }
 
 export interface TaskFailPayload {
   taskId: string;
-  assignee: string;
+  /** Defaults to the resolved sender when omitted or empty (issue #108.5). */
+  assignee?: string;
   errorCode?: string;
   reason?: string;
   retryable?: boolean;
@@ -291,13 +295,15 @@ export interface HandoffOfferPayload {
 
 export interface HandoffContextPayload {
   handoffId: string;
-  contentType: string;
+  /** Defaults to 'application/octet-stream' when omitted (issue #108.6). */
+  contentType?: string;
   context?: Buffer;
 }
 
 export interface HandoffAcceptPayload {
   handoffId: string;
-  acceptedBy: string;
+  /** Defaults to the resolved sender when omitted or empty (issue #108.5). */
+  acceptedBy?: string;
   reason?: string;
   /**
    * Runtime-emitted synthetic accepts ONLY (RFC-MACP-0010 §5.1): `true` on the
@@ -312,7 +318,8 @@ export interface HandoffAcceptPayload {
 
 export interface HandoffDeclinePayload {
   handoffId: string;
-  declinedBy: string;
+  /** Defaults to the resolved sender when omitted or empty (issue #108.5). */
+  declinedBy?: string;
   reason?: string;
 }
 

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { Auth, assertSenderMatchesIdentity, authSender, metadataFromAuth, validateAuth } from '../../src/auth';
-import { MacpIdentityMismatchError } from '../../src/errors';
+import { MacpIdentityMismatchError, MacpSdkError } from '../../src/errors';
 
 describe('Auth', () => {
   describe('Auth.devAgent', () => {
@@ -51,6 +51,13 @@ describe('Auth', () => {
       expect(() => validateAuth({})).toThrow('bearerToken is required');
     });
 
+    // Issue #108.8: fails on old code — today this throws a bare Error,
+    // which is not `instanceof MacpSdkError`, escaping the documented
+    // `catch (e) { if (e instanceof MacpSdkError) ... }` pattern.
+    it('issue #108.8: the thrown error is instanceof MacpSdkError', () => {
+      expect(() => validateAuth({})).toThrow(MacpSdkError);
+    });
+
     it('passes for valid bearer', () => {
       expect(() => validateAuth({ bearerToken: 'tok' })).not.toThrow();
     });
@@ -89,6 +96,10 @@ describe('Auth', () => {
       expect(metadata.get('authorization')).toEqual(['Bearer tok']);
       // expectedSender is an SDK-level guard, not a wire field
       expect(metadata.get('x-macp-expected-sender')).toEqual([]);
+    });
+
+    it('issue #108.8: an empty bearerToken throws instanceof MacpSdkError, reached from every authenticated RPC', () => {
+      expect(() => metadataFromAuth({ bearerToken: '' })).toThrow(MacpSdkError);
     });
   });
 

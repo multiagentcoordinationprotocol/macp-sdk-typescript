@@ -38,8 +38,14 @@ interface SessionOptions {
   extensions?: Record<string, Buffer>;               // optional extension payloads by key
   roots?: { uri: string; name?: string }[];          // optional coordination roots
   sender?: string;                                   // optional sender override
+  auth?: AuthConfig;                                 // optional per-call credential override
 }
 ```
+
+`start()`'s validation is identical across all five built-in mode sessions and
+`BaseSession` — `intent` and `participants` must be non-empty (no duplicate
+participants), `ttlMs` must be in range, and `maxSuspendMs` (if given) must be
+`>= 0`.
 
 ### Common `commit()` Input
 
@@ -128,6 +134,20 @@ try {
 The guard is silent when `expectedSender` is undefined. `Auth.devAgent(...)` and
 the legacy `Auth.bearer(token, 'hint')` form preserve pre-0.2 behaviour — the
 SDK resolves `sender` from the hint but does not reject mismatched overrides.
+
+`start()` participates in this guard too, using its own `auth`/`sender`
+fields — every mode session's `start()` (including `BaseSession.start()`)
+threads a per-call `auth` through the same `senderFor()` helper as every
+other method.
+
+## Identity Auto-Fill
+
+`TaskSession`'s `acceptTask`/`rejectTask`/`completeTask`/`failTask` default
+`assignee` to the resolved sender when omitted or an explicit empty string.
+`HandoffSession.acceptHandoff`'s `acceptedBy` and `decline`'s `declinedBy`
+behave the same way. This matches `macp-sdk-python`, which has always
+defaulted these identity fields to the caller's own identity rather than
+requiring it to be repeated.
 
 ## Projection Integration
 

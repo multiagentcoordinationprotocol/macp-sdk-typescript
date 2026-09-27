@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Auth } from '../../../src/auth';
 import { MacpClient } from '../../../src/client';
 import { QuorumSession } from '../../../src/quorum';
-import { MacpAckError } from '../../../src/errors';
+import { MacpAckError, MacpIdentityMismatchError } from '../../../src/errors';
 
 function makeClient(): MacpClient {
   return new MacpClient({
@@ -111,6 +111,51 @@ describe('QuorumSession — projection roundtrip', () => {
     expect(ack.ok).toBe(false);
     expect(session.projection.requests.has('r1')).toBe(false);
     expect(session.projection.transcript).toHaveLength(0);
+  });
+
+  // Issue #108.4/4d: start()'s input type gained an `auth` field. Fails on old
+  // code: previously start() ignored a per-call `auth` entirely, so a
+  // conflicting per-call `auth.expectedSender` could never surface here.
+  it('issue #108.4: start() with a per-call auth.expectedSender conflicting with sender throws MacpIdentityMismatchError', async () => {
+    // Client-level auth is deliberately permissive (no expectedSender) so this
+    // test only passes if start() actually threads input.auth into senderFor()
+    // — makeClient()'s expectedSender:'alice' would make this vacuous, since
+    // sender:'mallory' would conflict with the client credential regardless.
+    const client = new MacpClient({
+      address: '127.0.0.1:50051',
+      secure: false,
+      allowInsecure: true,
+      auth: Auth.devAgent('alice'),
+    });
+    const session = new QuorumSession(client);
+    vi.spyOn(client, 'send').mockResolvedValue({ ok: true });
+
+    await expect(
+      session.start({
+        intent: 'approve-deploy',
+        participants: ['alice', 'bob'],
+        ttlMs: 10_000,
+        sender: 'mallory',
+        auth: Auth.bearer('tok', { expectedSender: 'alice' }),
+      }),
+    ).rejects.toBeInstanceOf(MacpIdentityMismatchError);
+  });
+
+  it('issue #108.4: start() forwards a per-call auth to client.send', async () => {
+    const client = makeClient();
+    const session = new QuorumSession(client);
+    const sendSpy = vi.spyOn(client, 'send').mockResolvedValue({ ok: true });
+    const perCallAuth = Auth.bearer('carol-token', { expectedSender: 'carol' });
+
+    await session.start({
+      intent: 'approve-deploy',
+      participants: ['alice', 'bob'],
+      ttlMs: 10_000,
+      sender: 'carol',
+      auth: perCallAuth,
+    });
+
+    expect(sendSpy.mock.calls[0]![1]).toMatchObject({ auth: perCallAuth });
   });
 });
 

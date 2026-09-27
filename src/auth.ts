@@ -1,5 +1,5 @@
 import * as grpc from '@grpc/grpc-js';
-import { MacpIdentityMismatchError } from './errors';
+import { MacpIdentityMismatchError, MacpSdkError } from './errors';
 
 export interface AuthConfig {
   bearerToken?: string;
@@ -66,7 +66,12 @@ export const Auth = {
 
 export function validateAuth(auth: AuthConfig): void {
   if (!auth.bearerToken) {
-    throw new Error('bearerToken is required');
+    // MacpSdkError (issue #108.8), not a bare Error: the documented pattern
+    // in both SDKs' docs is `catch (e) { if (e instanceof MacpSdkError) ... }`,
+    // so a plain Error escaped it. MacpSdkError, not MacpSessionError — this
+    // is a client configuration fault, not a session-payload fault. Message
+    // text unchanged so any existing message-matching caller still matches.
+    throw new MacpSdkError('bearerToken is required');
   }
 }
 
