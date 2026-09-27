@@ -106,7 +106,18 @@ unmapped payloads.
 `ext.multi_round.v1` `Contribute` decodes both wire formats: legacy JSON
 (`{"value":"..."}`, replayed verbatim from pre-proto histories) is tried first,
 then canonical protobuf. Both normalize to `{ value: string }`. The two
-encodings are disjoint on their first byte, so neither mis-parses as the other.
+encodings are **not** disjoint on their first byte — the canonical proto tag
+byte for field 1 (`0x0A`) is itself insignificant JSON whitespace, so at
+specific value byte-lengths a genuine canonical payload also parses as valid
+JSON (issue #104). A canonicality tie-break resolves the ambiguity: a
+successful JSON parse is trusted only when the same bytes are *not* also the
+exact canonical proto encoding (decode as proto, re-encode, compare bytes) —
+see `isCanonicalProto` in `src/proto-registry.ts` and
+[Testing § Parity Contract Gate](../guides/testing.md#parity-contract-gate)
+for the cross-SDK context. One narrow, symmetric residual survives by
+construction (a payload starting with a literal newline byte whose remainder
+exactly forms a complete proto field-1 string misreads as proto) — documented
+in that method's own docblock, and unreachable by any encoder this SDK ships.
 
 ## Type Mappings
 

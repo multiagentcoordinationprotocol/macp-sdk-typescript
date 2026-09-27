@@ -145,8 +145,27 @@ export class ProtoRegistry {
    * not generalize — e.g. legacy JSON with leading whitespace has neither byte
    * first, and used to reach `decodeMessage` and throw. Parity with
    * `macp-sdk-python`'s `_decode_json_first_then_proto`, which has always
-   * worked this way. Safe because a canonical proto payload's bytes are
-   * essentially never also syntactically valid JSON.
+   * worked this way.
+   *
+   * **A successful `JSON.parse` is not proof the bytes are legacy JSON**
+   * (issue #104 — this method's prior "essentially never also syntactically
+   * valid JSON" claim was false, not merely imprecise): the canonical proto
+   * tag byte for field 1 (`0x0A`) is itself insignificant JSON whitespace, so
+   * for specific value byte-lengths the length varint — or, when the varint
+   * is itself whitespace, the value's own leading byte — becomes the first
+   * significant character `JSON.parse` sees, and a genuine `ContributePayload`
+   * silently misreads as a JSON number/string/object. Verified directly
+   * (encode-then-decode sweep, value lengths 1-127, seven value shapes): every
+   * one of lengths 9, 10, 13, 32, 34, 45, 48, 49-57, and 123 corrupted before
+   * `isCanonicalProto` below, most to total silent data loss
+   * (`String(undefined ?? '') === ''`), zero corrupt after.
+   *
+   * `isCanonicalProto` resolves the ambiguity by tie-break, not by refusing
+   * to try JSON first: bytes that parse as JSON *and* are the exact canonical
+   * proto encoding are treated as proto. This has a narrow, priced cost on
+   * the reverse direction (legacy JSON misread as proto) that it introduces
+   * rather than merely fails to close — see `isCanonicalProto`'s own
+   * docblock.
    *
    * An empty payload falls through the same path: `JSON.parse('')` throws, so
    * it reaches `decodeMessage` on zero bytes, which yields `{}` (proto3
@@ -159,9 +178,62 @@ export class ProtoRegistry {
   private decodeMultiRoundContribute(payload: Buffer): Record<string, unknown> | undefined {
     try {
       const parsed = JSON.parse(payload.toString('utf8')) as Record<string, unknown>;
-      return { value: typeof parsed.value === 'string' ? parsed.value : String(parsed.value ?? '') };
+      if (!this.isCanonicalProto(MULTI_ROUND_CONTRIBUTE, payload)) {
+        return { value: typeof parsed.value === 'string' ? parsed.value : String(parsed.value ?? '') };
+      }
     } catch {
-      return this.decodeMessage(MULTI_ROUND_CONTRIBUTE, payload);
+      // Not JSON at all — fall through to the protobuf decode below.
+    }
+    return this.decodeMessage(MULTI_ROUND_CONTRIBUTE, payload);
+  }
+
+  /**
+   * True iff `payload` is the exact canonical protobuf encoding of
+   * `typeName` — used to break the JSON/proto ambiguity in
+   * `decodeMultiRoundContribute` (issue #104): bytes that both parse as JSON
+   * *and* round-trip byte-identically through the proto message are treated
+   * as proto, not JSON.
+   *
+   * `macp-sdk-python`'s equivalent (`_is_canonical_proto`) needs an explicit
+   * `DiscardUnknownFields()` step before comparing, because Python's protobuf
+   * runtime preserves unknown fields verbatim through
+   * `ParseFromString`/`SerializeToString` by default — without it, a plain
+   * round-trip check misclassified several whitespace-prefixed legacy-JSON
+   * payloads as canonical proto. **`protobufjs` needs no equivalent step**:
+   * verified directly (a synthetic payload with a declared field-1 string
+   * plus an undeclared field 2) that `Type.decode()` silently drops fields
+   * not in the schema rather than preserving them, so `Type.encode()` can
+   * never reproduce bytes it never captured — a byte-exact round-trip here
+   * is already proof the payload is *exactly* the single-field encoding, no
+   * unknown fields possible. Confirmed this closes the same
+   * whitespace-prefixed false-positive class `DiscardUnknownFields` closes
+   * in Python (tab/space-prefixed legacy JSON at several lengths).
+   *
+   * One narrow, symmetric residual survives regardless — genuinely
+   * irreducible, not a gap this check merely fails to close: a payload whose
+   * first byte is a literal `0x0A` (`\n`) and whose remainder forms a
+   * complete, well-formed proto field-1 string with nothing left over has no
+   * unknown field for either implementation to expose a mismatch on, because
+   * it *is*, byte for byte, both a legal JSON reading and the canonical
+   * proto encoding of some (possibly nonsensical) string. Verified instances
+   * (this SDK's own `JSON.stringify`, which — unlike Python's `json.dumps`
+   * — omits the space after `:`, shifting the colliding lengths by one byte
+   * from `macp-sdk-python`'s pinned cases): `'\n' + JSON.stringify({value:
+   * 'z'.repeat(112)})`, and with one extra whitespace byte inserted after the
+   * `\n`, `'\r'` at value length 1 and `' '` at value length 20. A real
+   * legacy-JSON sender would need to deliberately prefix with a literal
+   * newline byte for this to matter — this SDK's own JSON producers never
+   * emit one — so the trade (fixing the ordinary, naturally-reachable
+   * forward-direction corruption above at the cost of this adversarial,
+   * unreachable-by-any-known-encoder reverse case) is the right one.
+   */
+  private isCanonicalProto(typeName: string, payload: Buffer): boolean {
+    try {
+      const type = this.lookupType(typeName);
+      const decoded = type.decode(payload);
+      return Buffer.from(type.encode(decoded).finish()).equals(payload);
+    } catch {
+      return false;
     }
   }
 

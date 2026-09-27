@@ -2101,4 +2101,113 @@ one commit per phase (Phases 2-6, 5 commits) on branch
 (Phase 5), and the Phase 6 commit closing this file's own history (this
 commit) — each phase's `PROGRESS.md` slice committed as a prefix of this
 file's final content, so every commit's diff is exactly that phase's own
-completion record, never a later phase's.
+completion record, never a later phase's. Merged: `3d6cab4` (PR #103,
+fast-forward, preserving all 5 phase commits).
+
+## Issue #104 — Contribute decoder silent data corruption (2026-09-25)
+
+**Source:** a peer Claude session (working the equivalent bug in the
+`macp-sdk-python` sibling repo, `macp-sdk-python#69`/`#77`) filed
+`macp-sdk-typescript#104` and asked this session to fix it. Per this
+repo's binding "never commit or push without explicit user instruction"
+rule, a peer session's request is not that instruction — the user was
+asked explicitly before any implementation work started, and chose to
+proceed via the same implement-then-verify discipline as the parity plan
+above.
+
+**Bug:** `decodeMultiRoundContribute` (`src/proto-registry.ts`) tried
+`JSON.parse` first and trusted any successful parse unconditionally. The
+canonical proto tag byte for field 1 (`0x0A`) is itself insignificant
+JSON whitespace, so a genuine canonical `ContributePayload` at specific
+value byte-lengths silently misread as a JSON number/string/object —
+most cases collapsing to total silent data loss (`{ value: '' }`).
+Independently reproduced before touching any code (not just trusted the
+issue's report): a 45-digit numeric value decoded to `{ value: '' }` on
+unpatched `main`.
+
+**Fix:** `isCanonicalProto(typeName, payload)`, a canonicality tie-break
+mirroring `macp-sdk-python`'s merged fix (`_is_canonical_proto`) but
+adapted after directly verifying `protobufjs`'s own behavior: unlike
+Python's protobuf runtime, `protobufjs`'s `Type.decode()`/`Type.encode()`
+silently drop fields not declared in the schema rather than preserving
+them, so — confirmed with a synthetic payload carrying an undeclared
+field 2 — no `DiscardUnknownFields()`-equivalent step is needed here; a
+byte-exact round-trip is already proof of no unknown fields. One narrow,
+symmetric residual survives regardless (a literal-`0x0A`-prefixed legacy
+JSON payload whose remainder exactly matches a proto field-1 string),
+genuinely irreducible rather than a gap the fix fails to close — priced
+and accepted, matching Python's own framing of its symmetric case, with
+this SDK's own verified instances (lengths 112/1/20, offset by one byte
+from Python's pinned cases because `JSON.stringify` omits the
+space-after-`:` that `json.dumps` adds).
+
+**Verdict:** PASS after 4 rounds, every round's finding being
+comment/docblock text accuracy, never a logic or behavior defect (the
+fix's substance — closes the corruption, no regression, tests
+load-bearing — was confirmed correct in round 1 and never revisited).
+**Verifier tier:** fresh Opus subagent every round (no public one-way
+door or trust-boundary crossing, but high severity — P0 data corruption
+— warranted the same rigor as the parity plan's phases). Round-by-round:
+R1 flagged a docblock claim (corruption at lengths "34, 48") not
+reachable by the test's five shape builders → closed by adding
+`quoteShaped`/`decimalShaped` builders (verified those two shapes do
+reach 34/48 and do corrupt pre-fix). R2 flagged the resulting stale
+"five value shapes" text (now seven) and an inverted "verified empty"
+wording → both fixed. R3 flagged `'['` vs `'{'` in the JSON-opener list
+(`'['`=91 unreachable, `'{'`=123 is what `jsonValueKeyShaped` exercises)
+and length 45's byte mislabeled "digit" instead of "sign" (`0x2d`='-')
+→ both fixed. R4 (declared final regardless of outcome, per the
+round-cap convergence rule) flagged the "every length >= 128 is immune"
+claim's stated reason being false for lengths >= 16384 (three-byte
+varints can be valid UTF-8 there, just never a JSON opener) → fixed by
+this session directly rather than dispatching a 5th verifier round.
+
+**Round 1 also independently confirmed** (so later rounds didn't need to
+re-derive it): the new sweep test is load-bearing, not tautological — a
+temporary revert of the `isCanonicalProto` gate made it fail with 42
+concrete corruption entries across 15 lengths, then was restored; the
+`protobufjs`-drops-unknown-fields claim, tested directly; the documented
+residual is real (brute-forced 34,085 (prefix, length) combinations,
+found exactly 11 regressions, every one requiring a literal leading
+`0x0A`, matching the characterization); no regression on the existing
+`#93` leading-whitespace test or the pre-existing, out-of-scope `null`
+-input crash (identical before/after).
+
+**Files touched:** `src/proto-registry.ts` (the fix), `tests/unit/
+proto-registry.test.ts` (+9 tests: exact-reproducer pin, a 1-127×7-shape
+round-trip sweep, non-canonical-JSON-unaffected pin, 3 whitespace-prefix
+regression pins, 3 documented-residual pins).
+
+**Gate (final, all 4 implementation-round edits applied):** `check`
+(incl. `check:examples`), `lint`, `format:check` all clean;
+`test:coverage` 42 files, 1074 passed / 20 skipped (up from 1065),
+coverage 95.8% stmts / 88.78% branches / 94.16% funcs / 96.74% lines vs
+floors 92/84/91/94 (stmts/branches/funcs/lines) — a small move up from
+main's 95.79/88.67/94.14/96.73, not unchanged, still well above floor on
+every axis; `build`, `make verify-fixtures`, `make verify-parity` all
+clean.
+
+**`/ship` gate (2026-09-27):** fresh Opus verifier, full checklist —
+correctness (independently re-reproduced the issue #104 collision and
+confirmed the fix closes it, plus an extended sweep beyond the test
+suite's own: lengths 1-600 across 8 shapes, multibyte/NUL-containing/
+16400+-byte values, zero failures), no new throw path introduced, no
+regression on `#93` or the out-of-scope `null` crash, no new uncovered
+lines, doc drift, and tracked-file consistency. **Verdict: GAPS** (2
+items, both closed same round, no re-verify needed — pure doc/prose
+fixes, no code change):
+1. `docs/api/proto-registry.md` had a stale, now-disproven claim ("the
+   two encodings are disjoint on their first byte") — corrected to
+   describe the canonicality tie-break. `docs/guides/architecture.md`'s
+   lighter-touch Contribute mention updated similarly.
+2. This section's own closing paragraph claimed "Not yet committed" in
+   text that ships inside the commit that discharges that claim — this
+   paragraph replaces it.
+
+Proceeding per `/ship`: commit, push `fix/contribute-decoder-json-proto-
+collision`, open a standalone PR (separate from the just-merged parity-
+plan PR — this fix is independent, sourced from a peer session's issue
+report, not part of `plans/sdk-parity-typescript.md`), watch CI, merge
+on green. Checkpoints appended below as each step completes.
+and ask how to proceed (own PR, per the peer's original ask and this
+fix's independence from the just-merged parity-plan PR).

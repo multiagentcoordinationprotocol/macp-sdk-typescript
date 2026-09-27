@@ -166,7 +166,10 @@ It maintains two lookup maps:
 `ext.multi_round.v1` `Contribute` uses the canonical protobuf encoding
 (`ContributePayload`) as of proto 0.1.4 / runtime 0.5.0; decode still accepts
 legacy JSON (`{"value":"..."}`) first for byte-identical replay of pre-proto
-histories. Unmapped extension modes fall back to JSON serialization.
+histories, gated by a canonicality tie-break so a genuine canonical payload
+that also happens to parse as JSON is still read as proto, not JSON (see
+[ProtoRegistry § decodeKnownPayload](../api/proto-registry.md#decodeknownpayloadmode-messagetype-payload)
+for the mechanism). Unmapped extension modes fall back to JSON serialization.
 
 ## Runtime Boundary
 
