@@ -2220,3 +2220,114 @@ verify-fixtures. This repo has no integration-runtime deploy target
 no post-merge deploy to watch. Local `fix/contribute-decoder-json-proto-
 collision` and `origin/fix/contribute-decoder-json-proto-collision`
 deleted; `main` fast-forwarded to `26dddb6`.
+
+## Issue #105-109 fixes — repo map (2026-09-27)
+
+Plan: `plans/issue-105-109-fixes.md` — 5 phases, one per issue, all independent.
+**6 PRs**, not 5: Phase 4 (#108) splits by blast radius into **4A**
+(`src/validation.ts`, `src/decision.ts` — the contract *narrowing*: strict
+session-id, `NaN` confidence, wire-case normalization) then **4B** (the other nine
+files — additive `auth`, identity/`contentType` defaults, strategy validation,
+`MacpSdkError` for an empty token). 4A merges first; they share `src/decision.ts`
+and `tests/unit/sessions/decision.test.ts`, and 4B's `NaN`-confidence assertion
+depends on 4A's `validateConfidence` fix. `Refs #108` on 4A, `Closes #108` on 4B.
+Files below are what the phase-execution loop needs; it should not re-scan the repo.
+
+### Phase 1 — #105 commitment-hash `supersedes: null`
+- `src/commitment-hash.ts` — the fix is line 220 `p.supersedes !== undefined` → `!= null`; keep the `sup?.` optional chaining at :226-228 (still needed for non-null malformed values).
+- `src/types.ts` — `CommitmentPayload` / `CommitmentRef` shapes; the frozen 9-field set the hash projects.
+- `src/proto-registry.ts` — `decodeMessage` at :97-119 uses `defaults: false` (:104). This is why the issue's reachability claim is false: the in-SDK path yields `undefined`, not `null`.
+- `tests/commitment-hash.test.ts` — determinism/JCS/D3/supersedes tests; new regressions go here.
+- `tests/vectors/cmt-hash.test.ts` + `tests/vectors/cmt-hash/*.json` — spec vectors; must stay green and unmodified (JSON can't express the null/absent distinction).
+- `tests/parity/contract.json` + `tests/parity/SOURCE.md` — vendored cross-SDK manifest, gated by `make verify-parity`; relevant only to Open question 6 (the one genuine fork).
+- `/Users/Shared/multiagentcoordinationprotocol/macp-sdk-python/src/macp_sdk/commitment_hash.py` — `HasField("supersedes")` at :260, :277; the conforming reference.
+
+### Phase 2 — #106 Participant lifecycle
+- `src/agent/participant.ts` — `processMessage` :330-363 (phase-driven only; add the `SessionCancel` fallback), `run()` :259-287 (`finally` at :284-286 only sets `running`), `isStopped` :255-257 (`!this.running`), `stop()` :365-377 (sole teardown site), cancel-callback bind :263-272.
+- `src/agent/transports.ts` — `TransportAdapter` interface :7-10 (no `cancel()`; `stop()` IS the wake-up primitive); `GrpcTransportAdapter.stop()` :217-222 and `HttpTransportAdapter.stop()` :314-316 are both idempotent; `stop()` only nulls `this.stream` while `delivered`/`seenMessageIds` persist, which is what makes restart-after-stop implementable. `:160`'s comment cites the old `!this.running` break predicate — comment-only edit in Phase 2.
+- `src/agent/cancel-callback.ts` — `startCancelCallbackServer` / `CancelCallbackServer.close()`.
+- `src/agent/dispatcher.ts` — `dispatchTerminal` / `dispatchPhaseChange`.
+- `src/agent/types.ts` — `TerminalResult`, `ProjectionLike`, `HandlerContext`.
+- `src/projections/base.ts` — unguarded `this.transcript.pop()` at :342; stale class docblock at :171 (claims `SessionStart` is handled; only `Commitment` is, :330-338); mode guard at :294 (why a per-projection `SessionCancel` mapping is the wrong fix).
+- `tests/unit/agent/participant.test.ts` — `makeMockTransport` :33-45, `makeIncomingMessage` :59-77; must-still-pass: `:372-388` (stop-only), `:700` (`isStopped` after terminal), `:737-757` (re-entrant run no-op), `:765-786` (closeSpy once), `:788-807` (double stop), `:865-904` (#66 restart — the single most load-bearing constraint in Phase 2; `describe` opens at `:822`). NOTE `makeMockTransport` is NOT restartable (latches `stopped`, always replays from index 0), so Phase 2's restart test needs a new mock — see the plan.
+- `tests/unit/projections/rollback-invariant.test.ts` — where the wrong-`[-1]` pop regression goes.
+- `docs/guides/agent-framework.md:231` and `docs/api/cancel-callback.md:132-139` (esp. `:138`) — BOTH already document teardown-on-`run()`-exit; the code doesn't do it. The fix makes the code match; verify, don't edit. Separately `docs/guides/agent-framework.md:253`/`:255` document the *adapter's* restart-after-`stop()` — true under either design, NOT a constraint on `Participant.run()` re-entry.
+- `/Users/Shared/multiagentcoordinationprotocol/macp-sdk-python/src/macp_sdk/agent/participant.py` — `_stopped` init :395, `is_stopped` :450-451, `fired_terminal` init :498 / set :519 / `SessionCancel` fallback :522-526, `_process_message` (HTTP path, projection-gated heuristic) :527-560 esp. :552, `run()` guard :579 + `finally: transport.stop()` :603-604, `stop()` :661 + `transport.cancel()` :679-681. (Corrected in plan review round 1 — the first draft of this line was off by ~29 throughout.)
+- `/Users/Shared/multiagentcoordinationprotocol/macp-sdk-python/src/macp_sdk/base_projection.py:263` — the identity-guarded pop to mirror.
+
+### Phase 3 — #107 client error handling
+- `src/client.ts` — does NOT import `logger` today (zero matches), so Phase 3 adds `import { logger } from './logging';`. `MacpStream` ctor `data` handler :121-131 (dead `chunk?.response?.error` at :127; inverted comment at :123); `unary()` :294-312 (unconditional `MacpTransportError` at :302); `grpcStatusName` :102-106; `send()` :342-358; registry mutations :475-536 (`registerExtMode`, `unregisterExtMode`, `promoteMode`, `registerPolicy`, `unregisterPolicy`); proto-loader options :255-269.
+- `src/errors.ts` — `MacpAckError` :41-104, `grpcMetadata` ctor arg :48, `_parseGrpcMetadataReasons` :84-103 — all dead today (zero call sites in `src/` pass the 2nd ctor arg). `MacpSdkError` :3-8 (Phase 4's 4h needs no edit here, import only). NOTE `MacpAckError` has no gRPC-status field, so Phase 3's mapping loses the status name — same as Python.
+- `src/constants.ts:24` `SESSION_ALREADY_EXISTS`, `:34` `POLICY_DENIED` — exist, produced by nothing.
+- `src/retry.ts:47-48` — `retrySend()` retries EVERY `MacpTransportError` with no code filter, so a `FAILED_PRECONDITION` `send()` currently surfaces as `MacpRetryError` (`:65-67`), not `MacpTransportError`; after Phase 3 it surfaces immediately as `MacpAckError` (`:49-53` throws a non-retryable ack code straight through).
+- `src/types.ts:43-51` — `Ack` shape to synthesize; `MacpErrorShape`.
+- `tests/unit/client-stream.test.ts:136-153` — the vacuous hand-built `{response:{error}}` test that must be REWRITTEN (and retitled) against a real decoded frame. `:103-111` and `:123-134` use the same fictional shape for the *envelope* arm; they survive the fix but are not real decodes either.
+- `tests/unit/client-unary.test.ts` + `tests/unit/helpers/grpc-stub.ts` (`stubUnary`) — status-mapping matrix goes here.
+- `node_modules/@multiagentcoordinationprotocol/proto/.../macp/v1/core.proto:342-347` — `StreamSessionResponse` oneof; `:345` comment "stream remains open".
+- Verified decode shapes (error arm): `chunk.response === 'error'` (string), `chunk.response?.error === undefined`, `chunk.error` populated, `chunk.envelope === undefined`. Empty message decodes to `{}` — oneof arms are NOT default-materialized, so `chunk.error` can't be shadowed.
+- `grpc.Metadata.getMap()` returns `-bin` as `Buffer`, plain as `string` — exactly `MacpAckError.grpcMetadata`'s `string | Buffer` union.
+- `docs/guides/policy.md:49-56` (says inspect `MacpTransportError.code` — goes stale), `docs/guides/error-handling.md:16-52` (`MacpAckError` "Ack ok:false" framing) and `:80-89` (code table, no `SESSION_ALREADY_EXISTS`).
+- `/Users/Shared/multiagentcoordinationprotocol/macp-sdk-python/src/macp_sdk/client.py` — inline error :147-174, `_map_registry_mutation_error` :347-362, `send()` status map :442-452, `_parse_grpc_metadata_reasons` :55-60.
+
+### Phase 4 — #108 validation / session parity
+- `src/validation.ts` — `validateSessionId` :6-10, regexes :3-4 (version-agnostic UUID regex + base64url FALL-THROUGH at :7; message/code disagree); `validateVote` :14-20, `validateRecommendation` :24-30, `validateSeverity` :40-46 (all RETURN a normalized value); `validateConfidence` :32-36 (accepts `NaN`); `validateSessionStart` :139-153; `Number.isFinite` precedent at :98, :106.
+- `src/decision.ts` — `start` :75-84 (no `auth`); the three *normalizing* validator calls whose return value is DISCARDED: `validateRecommendation` :130, `validateSeverity` :144, `validateVote` :157 (`validateConfidence` :131 returns void, so it is not one of them). `evaluate` :128-140, `vote` :155-166.
+- `src/proposal.ts:68-77`, `src/task.ts:64-73`, `src/handoff.ts:62-71`, `src/quorum.ts:62-71` — the other four `start()` inputs; each ends `sendAndTrack(envelope, this.auth)` (hardcoded).
+- `src/task.ts:118-176` — `acceptTask`/`rejectTask`/`completeTask`/`failTask` need the `assignee` auto-fill (four methods, NOT `updateTask` — `TaskUpdatePayload`, `types.ts:262-268`, has no `assignee` field).
+- `src/handoff.ts:105` (`offer`, the `?? ''` precedent), `:116-126` (`addContext`, no `contentType` default), `:128-144` (`acceptHandoff` — builds a `rest` copy at `:134-135` and encodes THAT at `:141`, so the `acceptedBy` fallback goes on `rest`, not `input`), `:146+` (`decline`).
+- `src/base-session.ts` — `start` :79-110 accepts `auth` but validates only participant count + `maxSuspendMs` (:91-92); `senderFor` :60-64; `sendAndTrack` :67-77 (the only session logger); "concrete classes pre-date this base class" note :30-33.
+- `src/agent/strategies.ts` — `evaluationHandler` :17-31 and `votingHandler` :51-69 (no validation, no normalization). Two existing assertions BREAK under 4g: `tests/unit/agent/strategies.test.ts:72-77` (`recommendation: 'approve'`) and `:195-199` (`vote: 'approve'`); `majorityVoter` :78-98; `commitmentHandler` :114-131.
+- `src/auth.ts` — `validateAuth` :67-71 (plain `Error`), reached via `metadataFromAuth` :91-96; `authSender` :74-77; `assertSenderMatchesIdentity` :83-89.
+- `src/types.ts` — the seven fields 4B makes optional: `TaskAcceptPayload.assignee` `:250-254`, `TaskRejectPayload.assignee` `:256-260`, `TaskCompletePayload.assignee` `:269-274`, `TaskFailPayload.assignee` `:276-282`, `HandoffContextPayload.contentType` `:294`, `HandoffAcceptPayload.acceptedBy` `:300`, `HandoffDeclinePayload.declinedBy` `:315` — all type-required today.
+- `src/envelope.ts` — `newSessionId()` (must satisfy the new strict regex), `toProtoPayload`.
+- `tests/unit/validation.test.ts`, `tests/unit/sessions/*.test.ts` (5), `tests/unit/sessions/session-id-validation.test.ts`, `tests/unit/base-session.test.ts`, `tests/unit/agent/strategies.test.ts`, `tests/unit/auth.test.ts`.
+- `/Users/Shared/multiagentcoordinationprotocol/macp-sdk-python/src/macp_sdk/validation.py:15-58` — two-regex no-fall-through rule to port.
+- `.../macp_sdk/task.py:299,323,391,430` and `.../handoff.py:210,247,271` — the auto-fill/default references.
+- `.../macp_sdk/agent/strategies.py:41-63` — `evaluation_handler`'s enum/range check (raises bare `ValueError`; TS should use its own `MacpSessionError` validators instead).
+
+### Phase 5 — #109 docs + public surface
+- `docs/api/client.md:130-146` (`listSessions`), `:147-170` (`listSessionsPage`, heading at `:147`), `:197-204` (`listRoots`, no caveat today) — add the runtime-v0.5.0 pagination-is-a-no-op caveat to both; also check its `listRoots` entry.
+- `docs/guides/streaming.md:133-136` — the Roots Watcher blockquote; "serves `ListRoots`" → always-empty wording.
+- `src/client.ts:567-584` (`listSessionsPage`), `:586-613` (`listSessions`) — code is CORRECT; only the doc lacks the caveat.
+- `package.json` `exports` — only `"."` and `"./package.json"`, so removing a name from the barrel makes it UNREACHABLE for external consumers (no `dist/logging` subpath). `src/index.ts:1-6`/`:9-15`'s "importable from the submodule" comments are already false for that reason; out of scope to fix.
+- `src/logging.ts:66-70` — `_resetLoggingForTests`; public names to keep: `logger` :47-52, `configureLogging` :54-64, types `LogLevel` :9, `LogSink` :19.
+- `src/index.ts:21` — `export * from './logging'` → named. Precedents with explanatory comments: `:1-6` (`./auth`), `:9-15` (`./commitment-hash`). Contrast: `src/projections/base.ts:120-137` explains why the two-hop wildcard chain can't exclude a name.
+- `tests/unit/public-api-snapshot.json:63` — `_resetLoggingForTests`; must be removed in the SAME commit as the `index.ts` change.
+- `tests/unit/public-api.test.ts` — the snapshot guard (diffs both directions).
+- `tests/unit/logging.test.ts:2` — gets one ADDED barrel-absence assertion; no import change. All six importers already use a relative `src/logging` path (`logging.test.ts:2`, `projections/anomalies.test.ts:21`, `projections/decision.test.ts:6`, `projections/quorum.test.ts:6`, `projections/message-id-dedup.test.ts:35`, `conformance/conformance.test.ts:5`) — zero import edits needed.
+- `/Users/Shared/multiagentcoordinationprotocol/macp-runtime/src/server.rs:1145-1150` — `list_roots` returns `ListRootsResponse { roots: vec![] }` unconditionally; the citation behind the reworded doc.
+
+### Shared / cross-phase
+- `CLAUDE.md` — repo conventions, test-structure inventory, coverage-gate rule. No structural edit expected in any phase (no test file added or removed).
+- `CHANGELOG.md` — `[Unreleased]` touched by all five phases; expect textual conflicts, resolve by appending, rebase not merge.
+- `vitest.config.ts` — coverage thresholds 94/84/91/92 (lines/branches/functions/statements); every phase must hold them.
+- `eslint.config.mjs` — no `eqeqeq` rule, so Phase 1's `!= null` lints clean; `no-explicit-any` is `warn` and disabled file-wide in `client.ts`.
+- `Makefile` — `verify-fixtures`, `sync-fixtures`, `verify-parity`, `sync-parity`; none of these phases touches a vendored fixture.
+
+### Phase 5 (#109) — DONE, 2026-09-27
+Implementing in merge order **5 → 2 → 1 → 4A → 4B → 3** (lowest blast radius
+first, per the plan's PR strategy), not plan-numeric order.
+
+Verdict: **GAPS round 1** (fresh Opus verifier) — one blocking, two minor.
+Blocking: the plan's own 5a pagination-caveat text was stale (sourced from
+`macp-sdk-python/CLAUDE.md`, true in July 2026, false now) — `macp-runtime`
+≥ 0.7.0 (current: 0.8.3) actually implements real server-side pagination
+(`server.rs:1267-1345`), so the caveat as planned would have shipped a false
+claim. Corrected to the real gap: `listSessions()` itself still accumulates
+every page into one array regardless of `pageSize`; `listSessionsPage()`
+genuinely bounds per-response memory. Minor: a CHANGELOG overstatement
+("client.md no longer says X" when client.md never said X — it was an
+addition, not a reword) — fixed in the same pass. No re-verify round spawned
+for these text-only doc corrections; the code/test acceptance criteria (1-7)
+already had independent PASS confirmation and were unaffected by the doc
+fix. `make verify-parity` drift confirmed pre-existing on `main` (unrelated
+to this phase) via `git stash`; `make verify-fixtures` green.
+
+Files touched: `src/index.ts`, `tests/unit/logging.test.ts`,
+`tests/unit/public-api-snapshot.json`, `docs/api/client.md`,
+`docs/guides/streaming.md`, `CHANGELOG.md`. Local gate: build/test/check/
+lint/format:check all green (1075 passed, 20 skipped — Docker integration
+tests, pre-existing, not run here or in CI).
+
+What's next: hand off to `/ship` for PR #1 of 6 (Phase 5, closes #109), then
+continue the phase loop with Phase 2 (#106).

@@ -131,6 +131,15 @@ return a `nextPageToken`. `listSessions()` transparently walks every page until
 the token is empty, so the returned array is always the complete listing. For
 manual page control use [`listSessionsPage`](#listsessionspageoptions).
 
+> **Memory caveat:** `macp-runtime` ≥ 0.7.0 (the current release is 0.8.3)
+> implements real server-side pagination — `pageSize` is honored and capped
+> per response. But `listSessions()` itself walks every page and
+> accumulates the **entire** result into one in-memory array regardless of
+> `pageSize`, so this method's own memory use is not bounded by that option.
+> For a listing large enough that this matters, call
+> [`listSessionsPage`](#listsessionspageoptions) directly instead and
+> process each page as it arrives.
+
 ```typescript
 const sessions = await client.listSessions({ auth });
 for (const s of sessions) {
@@ -151,6 +160,12 @@ Callers MUST NOT assume the listing is complete unless `nextPageToken` is empty.
 Pass a returned non-empty `nextPageToken` back as `pageToken` to fetch the next
 page; a **stale** token yields `INVALID_ARGUMENT` (inspect via
 `MacpTransportError.code`).
+
+> **Runtime note:** `macp-runtime` ≥ 0.7.0 (the current release is 0.8.3)
+> honors and caps `pageSize` server-side via a real keyset-scan cursor, so
+> unlike [`listSessions`](#listsessionsoptions) this method genuinely bounds
+> per-response memory. Use this directly, not `listSessions()`, when the
+> full listing is too large to hold in memory at once.
 
 ```typescript
 let pageToken = '';
@@ -202,6 +217,9 @@ List coordination roots/boundaries.
 const { roots } = await client.listRoots();
 // roots: Root[] — [{ uri, name }]
 ```
+
+> **Runtime caveat:** the runtime always returns an empty root list —
+> it does not populate roots yet.
 
 ### `registerExtMode(descriptor, options?)`
 

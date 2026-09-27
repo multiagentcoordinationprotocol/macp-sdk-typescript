@@ -98,6 +98,32 @@ project uses [Semantic Versioning](https://semver.org/).
   legitimate retry with a corrected payload was silently absorbed as a
   redelivery and the envelope's effect was lost forever.
 
+### Changed
+
+- **BREAKING (test-only surface): `_resetLoggingForTests` is no longer part
+  of the package's public export surface.** (issue #109) It was reachable
+  only via `src/index.ts`'s `export * from './logging'` wildcard; that line
+  is now a named re-export listing `logger`, `configureLogging`, `LogLevel`,
+  and `LogSink`. Because `package.json`'s `exports` map exposes only `"."`,
+  this makes the helper unreachable from the published package entirely (no
+  submodule fallback) — accepted, since it is test-only by name and by
+  purpose, and `configureLogging` already covers every legitimate caller
+  need.
+
+### Documentation
+
+- **Pagination memory caveat** (issue #109): `docs/api/client.md`'s
+  `listSessions` and `listSessionsPage` entries now state plainly that while
+  `macp-runtime` ≥ 0.7.0 (current: 0.8.3) implements real server-side
+  pagination, `listSessions()` itself still accumulates every page into one
+  in-memory array regardless of `pageSize` — callers who need bounded
+  memory should call `listSessionsPage()` directly.
+- **`ListRoots` wording** (issue #109): `docs/guides/streaming.md` no
+  longer says the runtime "serves `ListRoots`," which reads as "returns
+  real data" — reworded to state plainly that the runtime always returns an
+  empty root list. `docs/api/client.md`'s `listRoots` entry gains the same
+  statement, which it previously lacked entirely.
+
 ## [0.10.0](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/compare/v0.9.0...v0.10.0) (2026-09-01)
 
 

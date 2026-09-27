@@ -60,7 +60,6 @@
   "UNKNOWN_POLICY_VERSION",
   "UNSUPPORTED_PROTOCOL_VERSION",
   "VERSION",
-  "_resetLoggingForTests",
   "agent",
   "buildCommitmentPayload",
   "buildCommitmentRef",

@@ -131,9 +131,10 @@ console.log('first change at', change.observedAtUnixMs);
 `RootsWatcher` monitors changes to coordination roots/boundaries.
 
 > **Runtime 0.5.0 advertises `roots.list_changed: false`** in its `Initialize`
-> capabilities: it serves `ListRoots` but does not emit change notifications, so
-> `RootsWatcher` yields nothing against this runtime. Check
-> `capabilities.roots.listChanged` from `initialize()` before relying on it.
+> capabilities: `ListRoots` always returns an empty root list (the runtime does
+> not populate roots yet) and `WatchRoots` idles, so `RootsWatcher` yields
+> nothing against this runtime. Check `capabilities.roots.listChanged` from
+> `initialize()` before relying on it.
 
 ```typescript
 import { RootsWatcher } from 'macp-sdk-typescript';
