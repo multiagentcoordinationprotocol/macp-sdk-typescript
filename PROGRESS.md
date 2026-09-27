@@ -2209,5 +2209,14 @@ collision`, open a standalone PR (separate from the just-merged parity-
 plan PR — this fix is independent, sourced from a peer session's issue
 report, not part of `plans/sdk-parity-typescript.md`), watch CI, merge
 on green. Checkpoints appended below as each step completes.
-and ask how to proceed (own PR, per the peer's original ask and this
-fix's independence from the just-merged parity-plan PR).
+
+pushed fix/contribute-decoder-json-proto-collision 00eb8a1
+
+PR #110 opened: https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/pull/110
+
+merged #110 (squash, `26dddb6`), CI green on Node 22/24 + integration +
+verify-fixtures. This repo has no integration-runtime deploy target
+(library package, published on GitHub release, not a running service) —
+no post-merge deploy to watch. Local `fix/contribute-decoder-json-proto-
+collision` and `origin/fix/contribute-decoder-json-proto-collision`
+deleted; `main` fast-forwarded to `26dddb6`.
