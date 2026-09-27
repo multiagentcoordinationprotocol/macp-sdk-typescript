@@ -189,9 +189,24 @@ type _CommitmentFieldSetIsFrozen = AssertNever<
  * that is locale-sensitive and not equivalent to code-unit ordering; it is
  * moot only because the names above are already in the right order.
  *
- * `supersedes` is omitted entirely when `payload.supersedes === undefined`
- * (D2.3) — including when the payload itself is missing/malformed, `payload
- * ?? {}` never manufactures a `supersedes` key. An explicit
+ * `supersedes` is omitted entirely when `payload.supersedes` is `undefined`
+ * OR `null` (D2.3) — including when the payload itself is missing/malformed,
+ * `payload ?? {}` never manufactures a `supersedes` key. `supersedes` is a
+ * proto3 optional/message-typed field: its only two wire states are present
+ * and absent, and `null` is the idiomatic in-language representation of
+ * "absent" for a message-typed field (e.g. under a `defaults: true`
+ * protobufjs/proto-loader decode, or a payload round-tripped through JSON).
+ * The comparison below is deliberately `!= null` (loose), not `!==
+ * undefined` — do not tighten it back; that would resurrect issue #105,
+ * where a `null` `supersedes` hashed as present-but-empty instead of absent,
+ * diverging from `macp-sdk-python`'s `HasField`-based projection for the
+ * same logical commitment. This is deliberately more tolerant than
+ * `buildCommitmentPayload` (`envelope.ts`), which still throws on an
+ * explicit `supersedes: null` — that function validates a caller's stated
+ * intent and should reject a likely mistake; this one (D3) must tolerate
+ * whatever a `CommitmentPayload` from any source already contains,
+ * including a `null` that is a legitimate "absent" from elsewhere (e.g. a
+ * `defaults: true` decode). The two are not meant to converge. An explicit
  * `supersedes: { sessionId: '', commitmentHash: '' }` is NOT collapsed into
  * omission; it is present with two empty-string members, `commitment_hash`
  * before `session_id` (also alphabetical).
@@ -217,9 +232,10 @@ export function canonicalizeCommitmentPayload(payload: CommitmentPayload): strin
     `"reason":${jcsString(p.reason)}`,
   ];
 
-  if (p.supersedes !== undefined) {
+  if (p.supersedes != null) {
     // Optional chaining tolerates `supersedes` being present but not
-    // actually an object (null, a primitive, ...) on a malformed payload —
+    // actually an object (a primitive: `5`, `'x'`, `true`, ... — `null` is
+    // excluded above, it never reaches this branch) on a malformed payload —
     // it never throws, it just yields `undefined` for the sub-fields, which
     // `jcsString` then coerces to `""` the same way it handles any other
     // missing string field.

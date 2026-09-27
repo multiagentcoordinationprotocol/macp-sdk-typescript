@@ -1,6 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import { createHash } from 'node:crypto';
+import * as path from 'node:path';
+import protobuf from 'protobufjs';
 import { commitmentHash, canonicalizeCommitmentPayload, isCanonicalCommitmentHash } from '../src/commitment-hash';
+import { ProtoRegistry } from '../src/proto-registry';
 import type { CommitmentPayload } from '../src/types';
 
 const HASH_SHAPE = /^sha256:[0-9a-f]{64}$/;
@@ -57,6 +60,50 @@ describe('commitmentHash', () => {
     });
     expect(emptySupersedes).not.toBe(omitted);
   });
+
+  // Issue #105: `supersedes: null` must hash identically to `supersedes`
+  // being absent/undefined — both are "no supersession" on the wire (proto3
+  // message-typed fields have only present/absent states; `null` is the
+  // idiomatic in-language representation of "absent"). Before the fix,
+  // `supersedes: null` took the *present* branch and hashed the same as an
+  // explicit `{ sessionId: '', commitmentHash: '' }`, diverging from
+  // `macp-sdk-python`'s `HasField`-based projection for the same logical
+  // commitment.
+  it('issue #105: hashes supersedes: null identically to supersedes omitted entirely', () => {
+    const base = basePayload();
+    const withNull = commitmentHash({ ...base, supersedes: null as unknown as CommitmentPayload['supersedes'] });
+    const withoutKey = commitmentHash(base);
+    expect(withNull).toBe(withoutKey);
+  });
+
+  it('issue #105: a null supersedes still differs from an explicit empty CommitmentRef', () => {
+    const withNull = commitmentHash({
+      ...basePayload(),
+      supersedes: null as unknown as CommitmentPayload['supersedes'],
+    });
+    const emptySupersedes = commitmentHash({
+      ...basePayload(),
+      supersedes: { sessionId: '', commitmentHash: '' },
+    });
+    expect(withNull).not.toBe(emptySupersedes);
+  });
+
+  it.each([0, '', false, 5, 'x', true, []])(
+    'issue #105 non-vacuity guard: supersedes = %j is falsy-but-not-nullish, and still takes the present branch',
+    (value) => {
+      const payload = {
+        ...basePayload(),
+        supersedes: value as unknown as CommitmentPayload['supersedes'],
+      };
+      // Must contain the object-form key, not just the substring "supersedes"
+      // (which `!= null` guarantees anyway, but pins the shape too) — this is
+      // exactly what would start failing if the predicate were ever
+      // "simplified" to a truthiness check (`if (p.supersedes)`).
+      expect(canonicalizeCommitmentPayload(payload)).toContain('"supersedes":{');
+      expect(() => commitmentHash(payload)).not.toThrow();
+      expect(commitmentHash(payload)).toMatch(HASH_SHAPE);
+    },
+  );
 
   it('D2.2: omitting outcomePositive/policyVersion hashes the same as explicit false/"" on a bare object literal', () => {
     const bare = {
@@ -167,6 +214,14 @@ describe('canonicalizeCommitmentPayload (JCS output)', () => {
     expect(jcs).not.toContain('supersedes');
   });
 
+  it('issue #105: omits the supersedes key entirely when null, same as undefined', () => {
+    const jcs = canonicalizeCommitmentPayload({
+      ...basePayload(),
+      supersedes: null as unknown as CommitmentPayload['supersedes'],
+    });
+    expect(jcs).not.toContain('supersedes');
+  });
+
   it('G1/G3: produces the exact expected JCS string when supersedes is absent (relative member order pinned, not just each-vs-supersedes)', () => {
     const jcs = canonicalizeCommitmentPayload(basePayload());
     expect(jcs).toBe(EXPECTED_JCS_WITHOUT_SUPERSEDES);
@@ -250,6 +305,44 @@ describe('canonicalizeCommitmentPayload (JCS output)', () => {
       const literalReplacementChar = commitmentHash({ ...basePayload(), reason: '�' });
       expect(loneSurrogate).toBe(literalReplacementChar);
     });
+  });
+});
+
+// Issue #105: pins the two real decode paths through this SDK, rather than
+// only the hand-constructed `supersedes: null` used above.
+describe('issue #105: the real in-SDK decode paths for an absent supersedes', () => {
+  const registry = new ProtoRegistry();
+
+  // `ProtoRegistry.decodeMessage` (private) always decodes with
+  // `defaults: false` (proto-registry.ts:104) — this builds an independent
+  // `protobuf.Root` over the same proto files so the test can decode the
+  // identical wire bytes with `defaults: true` as well, without reaching
+  // into ProtoRegistry's private `lookupType`.
+  function loadCommitmentPayloadType(): protobuf.Type {
+    const root = new protobuf.Root();
+    root.resolvePath = (_origin, target) => (path.isAbsolute(target) ? target : path.join(registry.protoDir, target));
+    root.loadSync(path.join(registry.protoDir, 'macp/v1/core.proto'));
+    root.resolveAll();
+    return root.lookupType('macp.v1.CommitmentPayload');
+  }
+
+  it("this SDK's actual decode path (defaults: false) never produces supersedes: null — it stays undefined, so this path was never affected by issue #105", () => {
+    const bytes = registry.encodeKnownPayload('', 'Commitment', basePayload() as unknown as Record<string, unknown>);
+    const decoded = registry.decodeKnownPayload('', 'Commitment', bytes) as CommitmentPayload;
+    expect(decoded.supersedes).toBeUndefined();
+    expect(Object.prototype.hasOwnProperty.call(decoded, 'supersedes')).toBe(false);
+  });
+
+  it('the affected path: decoding the same wire bytes with defaults: true produces a genuine supersedes: null, and it now hashes the same as absent', () => {
+    const type = loadCommitmentPayloadType();
+    const bytes = registry.encodeKnownPayload('', 'Commitment', basePayload() as unknown as Record<string, unknown>);
+    const decodedWithDefaults = type.toObject(type.decode(bytes), { defaults: true }) as CommitmentPayload;
+
+    // Confirms this test actually exercises the case under test, rather than
+    // vacuously passing because protobufjs didn't materialize the default.
+    expect(decodedWithDefaults.supersedes).toBeNull();
+
+    expect(commitmentHash(decodedWithDefaults)).toBe(commitmentHash(basePayload()));
   });
 });
 
