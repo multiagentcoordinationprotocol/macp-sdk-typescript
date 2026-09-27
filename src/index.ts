@@ -18,7 +18,14 @@ export * from './decision';
 export * from './envelope';
 export * from './errors';
 export * from './handoff';
-export * from './logging';
+// Logging: export the public surface only. `_resetLoggingForTests` is a
+// test-only reset helper — excluded here (a one-hop wildcard, unlike
+// `PROJECTION_ANOMALY_FIELD_ORDER`'s two-hop chain via `./projections`,
+// which cannot be excluded this way). `package.json`'s `exports` map
+// exposes only `.`, so this makes it unreachable from the published
+// package, not merely un-barrelled — accepted, since it is test-only by
+// name and by purpose.
+export { configureLogging, logger, type LogLevel, type LogSink } from './logging';
 export * from './policy';
 export * from './projections';
 export * from './proposal';

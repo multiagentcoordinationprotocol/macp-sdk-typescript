@@ -57,4 +57,11 @@ describe('logging', () => {
     expect(sink).toHaveBeenCalledTimes(1);
     expect(sink).toHaveBeenCalledWith('error', ['should pass']);
   });
+
+  it('_resetLoggingForTests is on the ./logging submodule but not on the package barrel (issue #109.3)', async () => {
+    const submodule = await import('../../src/logging');
+    expect('_resetLoggingForTests' in submodule).toBe(true);
+    const barrel = await import('../../src/index');
+    expect('_resetLoggingForTests' in barrel).toBe(false);
+  });
 });
