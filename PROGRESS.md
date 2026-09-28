@@ -2684,3 +2684,20 @@ close-gaps → commit → ship cycle.
 What's next: ship Phase 6 (branch, commit `Closes #111`, PR, CI, merge,
 confirm #111 closed, cleanup) — PR 7, the last PR of this plan (issue #119
 is a separate, not-yet-planned follow-up).
+
+pushed fix/issue-111-task-phase-guard 61af737
+PR #120 opened: https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/pull/120
+CI green (build-and-test Node 22/24, integration, verify-fixtures).
+merged #120: squash-merged into `main` as `41f9010`. Issue #111 confirmed
+CLOSED. Remote and local feature branches deleted; local `main`
+fast-forwarded.
+
+**All seven PRs are now shipped and merged**, closing this entire plan
+(`plans/issue-105-109-fixes.md`): #112 (#109), #113 (#106), #114 (#105),
+#115 (#108 4A), #116 (#108 4B), #118 (#107), #120 (#111). One follow-up
+remains open and unplanned: issue #119 (same phase-guard bug class found in
+`proposal.ts`/`handoff.ts` during Phase 6's verification) — not part of
+this plan, would need its own `/plan` or `/implement` pass if picked up.
+
+What's next: nothing outstanding on this plan. Issue #119 is available as a
+future task if wanted.
