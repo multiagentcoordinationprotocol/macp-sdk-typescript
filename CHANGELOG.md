@@ -349,6 +349,19 @@ project uses [Semantic Versioning](https://semver.org/).
   vote on) instead of voting `REJECT` at ratio `0`. `BLOCK` and `REJECT`
   remain in the denominator — they are stances, not informational-only
   records.
+- **`intent`, `instructions`, `action`, and `summary` no longer rejected when
+  empty or omitted** (issue #124). `SessionStart.intent`,
+  `TaskSession.requestTask`'s `instructions`, and
+  `QuorumSession.requestApproval`'s `action`/`summary` are proto3 singular
+  `string` fields — implicit presence means an omitted value and an explicit
+  `''` serialize to identical bytes, so a client-side "required, non-empty"
+  check rejected a payload the runtime would accept and no runtime-side check
+  could ever distinguish. `intent` also has an explicit normative rule
+  (RFC-MACP-0001 §7.1: a runtime "MUST NOT reject a SessionStart solely
+  because intent is empty"). Every other `validateRequiredField` call
+  site — `taskId`, `title`, `requestId`, `proposalId`, `option`, `handoffId`,
+  `targetParticipant`, `modeVersion`, `configurationVersion` — is unaffected
+  and still rejects an empty value.
 
 ### Documentation
 

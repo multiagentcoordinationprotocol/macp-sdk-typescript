@@ -102,8 +102,8 @@ export class QuorumSession {
 
   async requestApproval(input: ApprovalRequestPayload & { sender?: string; auth?: AuthConfig }): Promise<Ack> {
     validateRequiredField('requestId', input.requestId);
-    validateRequiredField('action', input.action);
-    validateRequiredField('summary', input.summary);
+    // `action`/`summary` are proto3 singular string fields (implicit
+    // presence) -- no client-side non-empty check here (issue #124 item 3).
     const envelope = buildEnvelope({
       mode: MODE_QUORUM,
       messageType: 'ApprovalRequest',

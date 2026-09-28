@@ -30,6 +30,16 @@ describe('DecisionSession — projection roundtrip', () => {
     expect(session.projection.transcript.length).toBe(before + 1);
   });
 
+  it('start() accepts an empty intent (issue #124 item 3)', async () => {
+    const client = makeClient();
+    const session = new DecisionSession(client);
+    vi.spyOn(client, 'send').mockResolvedValue({ ok: true });
+
+    await expect(session.start({ intent: '', participants: ['alice', 'bob'], ttlMs: 10_000 })).resolves.toMatchObject({
+      ok: true,
+    });
+  });
+
   it('propose() records the proposal when ack.ok=true', async () => {
     const client = makeClient();
     const session = new DecisionSession(client);

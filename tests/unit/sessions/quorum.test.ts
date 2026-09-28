@@ -28,6 +28,16 @@ describe('QuorumSession — projection roundtrip', () => {
     expect(session.projection.transcript.length).toBe(before + 1);
   });
 
+  it('start() accepts an empty intent (issue #124 item 3)', async () => {
+    const client = makeClient();
+    const session = new QuorumSession(client);
+    vi.spyOn(client, 'send').mockResolvedValue({ ok: true });
+
+    await expect(session.start({ intent: '', participants: ['alice', 'bob'], ttlMs: 10_000 })).resolves.toMatchObject({
+      ok: true,
+    });
+  });
+
   it('requestApproval() records the request and moves phase to Voting', async () => {
     const client = makeClient();
     const session = new QuorumSession(client);
@@ -37,6 +47,29 @@ describe('QuorumSession — projection roundtrip', () => {
     expect(session.projection.requests.has('r1')).toBe(true);
     expect(session.projection.phase).toBe('Voting');
     expect(session.projection.threshold('r1')).toBe(2);
+  });
+
+  it('requestApproval() accepts an empty action and an empty summary, independently (issue #124 item 3)', async () => {
+    const client = makeClient();
+    const session = new QuorumSession(client);
+    vi.spyOn(client, 'send').mockResolvedValue({ ok: true });
+
+    await session.requestApproval({ requestId: 'r1', action: '', summary: 'ship', requiredApprovals: 1 });
+    expect(session.projection.requests.has('r1')).toBe(true);
+
+    const session2 = new QuorumSession(client);
+    await session2.requestApproval({ requestId: 'r2', action: 'deploy', summary: '', requiredApprovals: 1 });
+    expect(session2.projection.requests.has('r2')).toBe(true);
+  });
+
+  it('requestApproval() accepts omitted action/summary fields (issue #124 item 3 AC4 -- a non-TS/as-cast caller may omit them entirely, wire-identical to "")', async () => {
+    const client = makeClient();
+    const session = new QuorumSession(client);
+    vi.spyOn(client, 'send').mockResolvedValue({ ok: true });
+
+    const input = { requestId: 'r1', requiredApprovals: 1 } as Parameters<typeof session.requestApproval>[0];
+    await session.requestApproval(input);
+    expect(session.projection.requests.has('r1')).toBe(true);
   });
 
   it('does NOT mutate projection when client.send throws MacpAckError', async () => {

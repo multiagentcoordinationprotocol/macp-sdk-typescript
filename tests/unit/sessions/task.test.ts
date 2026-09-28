@@ -60,6 +60,16 @@ describe('TaskSession — projection roundtrip', () => {
     expect(session.projection.transcript.length).toBe(before + 1);
   });
 
+  it('start() accepts an empty intent (issue #124 item 3)', async () => {
+    const client = makeClient();
+    const session = new TaskSession(client);
+    vi.spyOn(client, 'send').mockResolvedValue({ ok: true });
+
+    await expect(session.start({ intent: '', participants: ['alice', 'bob'], ttlMs: 10_000 })).resolves.toMatchObject({
+      ok: true,
+    });
+  });
+
   it('requestTask() records a requested task in activeTasks()', async () => {
     const client = makeClient();
     const session = new TaskSession(client);
@@ -67,6 +77,25 @@ describe('TaskSession — projection roundtrip', () => {
 
     await session.requestTask({ taskId: 't1', title: 'review', instructions: 'look it over' });
     expect(session.projection.activeTasks().map((t) => t.taskId)).toEqual(['t1']);
+    expect(session.projection.getTask('t1')?.status).toBe('requested');
+  });
+
+  it('requestTask() accepts an empty instructions string (issue #124 item 3)', async () => {
+    const client = makeClient();
+    const session = new TaskSession(client);
+    vi.spyOn(client, 'send').mockResolvedValue({ ok: true });
+
+    await session.requestTask({ taskId: 't1', title: 'review', instructions: '' });
+    expect(session.projection.getTask('t1')?.status).toBe('requested');
+  });
+
+  it('requestTask() accepts an omitted instructions field (issue #124 item 3 AC4 -- a non-TS/as-cast caller may omit it entirely, wire-identical to "")', async () => {
+    const client = makeClient();
+    const session = new TaskSession(client);
+    vi.spyOn(client, 'send').mockResolvedValue({ ok: true });
+
+    const input = { taskId: 't1', title: 'review' } as Parameters<typeof session.requestTask>[0];
+    await session.requestTask(input);
     expect(session.projection.getTask('t1')?.status).toBe('requested');
   });
 
