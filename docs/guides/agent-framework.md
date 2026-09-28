@@ -125,7 +125,7 @@ const p2 = agent.fromBootstrap();
 | `mode` | yes | One of the five standard mode identifiers or an extension mode. |
 | `runtime_address` | yes | gRPC endpoint (`host:port`). Alias: `runtime_url`. |
 | `auth_token` | no | Bearer token. When present, the runner constructs `Auth.bearer(auth_token, { expectedSender: participant_id })` so the SDK's identity guard rejects forged senders before any RPC. |
-| `agent_id` | no | Only used when `auth_token` is absent, to drive `Auth.devAgent(agent_id ?? participant_id)`. |
+| `agent_id` | no | Only used when `auth_token` is absent, to drive `Auth.devAgent(agent_id ?? participant_id)`. Since issue #124, `Auth.devAgent` also sets `expectedSender` to that same id, so a diverging `agent_id` now fails client-side on the first typed handler-driven action (e.g. `acceptTask`, `vote`) — not on the initiator's `SessionStart`/kickoff, which pass no explicit `sender`, and not on the generic `send` escape hatch, which still only fails server-side. The runtime's dev fallback authenticates the connection as the bearer value (`agent_id`), while those actions' `sender` is `participant_id` — the two must match, dev mode included. |
 | `secure` | no | Defaults to `true` (TLS). |
 | `allow_insecure` | no | Must be `true` when `secure` is `false`; otherwise `MacpClient` throws. |
 | `mode_version`, `configuration_version`, `policy_version` | no | Version strings forwarded to the session helper. |

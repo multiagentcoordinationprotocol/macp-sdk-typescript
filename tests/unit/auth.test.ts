@@ -8,7 +8,16 @@ describe('Auth', () => {
       const config = Auth.devAgent('alice');
       expect(config.bearerToken).toBe('alice');
       expect(config.senderHint).toBe('alice');
-      expect(config.expectedSender).toBeUndefined();
+      expect(config.expectedSender).toBe('alice');
+    });
+
+    it("sets expectedSender to the agent id, matching the runtime's server-side enforcement (issue #124)", () => {
+      // macp-runtime/src/server.rs:229-231 already rejects a mismatched
+      // sender unconditionally for dev credentials, with no insecure/dev
+      // exemption -- this proves the client-side guard now matches.
+      expect(Auth.devAgent('alice').expectedSender).toBe('alice');
+      expect(() => assertSenderMatchesIdentity(Auth.devAgent('alice'), 'mallory')).toThrow(MacpIdentityMismatchError);
+      expect(() => assertSenderMatchesIdentity(Auth.devAgent('alice'), 'alice')).not.toThrow();
     });
 
     it('emits an Authorization: Bearer <agentId> frame, not x-macp-agent-id', () => {
@@ -116,6 +125,11 @@ describe('Auth', () => {
     it('is a no-op when caller did not pass a sender', () => {
       const auth = Auth.bearer('tok', { expectedSender: 'alice' });
       expect(() => assertSenderMatchesIdentity(auth, undefined)).not.toThrow();
+    });
+
+    it("is a no-op when sender is '' (issue #124 -- matches macp-runtime/src/server.rs:229's is_empty() check, which treats an empty sender the same as absent)", () => {
+      const auth = Auth.bearer('tok', { expectedSender: 'alice' });
+      expect(() => assertSenderMatchesIdentity(auth, '')).not.toThrow();
     });
 
     it('passes when sender matches expectedSender', () => {

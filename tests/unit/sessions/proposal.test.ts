@@ -128,11 +128,15 @@ describe('ProposalSession — projection roundtrip', () => {
     // test only passes if start() actually threads input.auth into senderFor()
     // — makeClient()'s expectedSender:'alice' would make this vacuous, since
     // sender:'mallory' would conflict with the client credential regardless.
+    // Auth.bearer(token, senderHintString) (the legacy 2-arg form), not
+    // Auth.devAgent -- since issue #124, devAgent also sets expectedSender,
+    // which would make this vacuous the same way (client.test.ts:153's
+    // precedent for this legacy-permissive construction).
     const client = new MacpClient({
       address: '127.0.0.1:50051',
       secure: false,
       allowInsecure: true,
-      auth: Auth.devAgent('alice'),
+      auth: Auth.bearer('devtok', 'alice'),
     });
     const session = new ProposalSession(client);
     vi.spyOn(client, 'send').mockResolvedValue({ ok: true });
