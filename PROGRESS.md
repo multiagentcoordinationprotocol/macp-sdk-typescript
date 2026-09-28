@@ -2928,3 +2928,9 @@ Files touched: `src/agent/strategies.ts`, `tests/unit/agent/strategies.test.ts`,
 pre-existing flaky test, `commitment-hash-frozen-fields.test.ts`, unrelated to this
 diff, confirmed by re-running in isolation); coverage 96.04/89.59/94.47/96.96 vs.
 92/84/91/94 floors; check/lint/format/build/verify-fixtures/verify-parity all green.
+
+pushed fix/issue-124-majority-voter-review-exclusion cfbc2f6
+PR #131 opened: https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/pull/131
+CI green (build-and-test Node 22/24, integration, verify-fixtures).
+merged #131: squash-merged into `main` as `b52c7f2`. Issue #124 stays OPEN (2 of 4 items
+remain -- Phases 3-4 below); PR intentionally used "Part of #124", not "Closes #124".
