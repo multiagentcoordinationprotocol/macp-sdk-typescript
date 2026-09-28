@@ -2904,3 +2904,9 @@ more than the plan's original draft named, since a second test also asserted the
 coercion; 4 new cases added). Full suite 1186 passed/20 skipped; coverage
 96.03/89.51/94.44/96.96 vs. 92/84/91/94 floors; check/lint/format/build/verify-fixtures/
 verify-parity all green.
+
+pushed fix/issue-124-contribute-value-coercion 90828ce
+PR #130 opened: https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/pull/130
+CI green (build-and-test Node 22/24, integration, verify-fixtures).
+merged #130: squash-merged into `main` as `02bbe90`. Issue #124 stays OPEN (3 of 4 items
+remain -- Phases 2-4 below); PR intentionally used "Part of #124", not "Closes #124".
