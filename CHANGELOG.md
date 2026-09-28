@@ -338,6 +338,17 @@ project uses [Semantic Versioning](https://semver.org/).
   it — `undefined` stays `undefined`, `null` stays `null`, a number stays a
   number. The canonical-protobuf decode path is unaffected (its `value` is
   always a `string`, per the proto schema).
+- **`majorityVoter` no longer counts `REVIEW` evaluations in its approval
+  ratio** (issue #124). RFC-MACP-0007 §4 states `REVIEW` evaluations "do not
+  block or approve a proposal; they serve as informational analysis records
+  only" — a `REVIEW` was nonetheless lowering the ratio's denominator, so a
+  proposal with one `APPROVE` and one `REVIEW` voted at ratio `0.5` instead
+  of `1.0`. The ratio's denominator is now the `decisive` evaluations
+  (everything except `REVIEW`, case-insensitive); `shouldVote` now returns
+  `false` for an evaluation set of only `REVIEW`s (no decisive evaluation to
+  vote on) instead of voting `REJECT` at ratio `0`. `BLOCK` and `REJECT`
+  remain in the denominator — they are stances, not informational-only
+  records.
 
 ### Documentation
 

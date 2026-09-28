@@ -88,19 +88,24 @@ export function majorityVoter(options?: { positiveThreshold?: number }): VotingS
   const threshold = options?.positiveThreshold ?? 0.5;
   return {
     shouldVote(projection: DecisionProjection): boolean {
-      return projection.evaluations.length > 0;
+      // RFC-MACP-0007 §4 (`rfcs/RFC-MACP-0007-decision-mode.md:73`): REVIEW
+      // evaluations "do not block or approve a proposal; they serve as
+      // informational analysis records only." A set of only REVIEWs has no
+      // decisive evaluation to vote on -- mirroring RFC-MACP-0012:137's
+      // denominator rule ("the denominator is the decisive votes ...
+      // Abstentions are excluded") for votes (issue #124 item 2).
+      return projection.evaluations.some((e) => e.recommendation.toLowerCase() !== 'review');
     },
     async decideVote(projection: DecisionProjection): Promise<VoteResult> {
-      const positive = projection.evaluations.filter((e) =>
-        ['approve', 'accept', 'yes'].includes(e.recommendation.toLowerCase()),
-      );
-      const ratio = projection.evaluations.length > 0 ? positive.length / projection.evaluations.length : 0;
+      const decisive = projection.evaluations.filter((e) => e.recommendation.toLowerCase() !== 'review');
+      const positive = decisive.filter((e) => ['approve', 'accept', 'yes'].includes(e.recommendation.toLowerCase()));
+      const ratio = decisive.length > 0 ? positive.length / decisive.length : 0;
       if (ratio >= threshold) {
-        return { vote: 'APPROVE', reason: `${positive.length}/${projection.evaluations.length} evaluations positive` };
+        return { vote: 'APPROVE', reason: `${positive.length}/${decisive.length} evaluations positive` };
       }
       return {
         vote: 'REJECT',
-        reason: `Only ${positive.length}/${projection.evaluations.length} evaluations positive`,
+        reason: `Only ${positive.length}/${decisive.length} evaluations positive`,
       };
     },
   };
