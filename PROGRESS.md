@@ -2953,3 +2953,10 @@ explicit RFC-MACP-0001 §7.1 rule against rejecting it empty. Every other
 handoff,quorum}.test.ts`, `docs/api/sessions.md`, `CHANGELOG.md`. Full suite green;
 coverage 96.03/89.59/94.47/96.95 vs. 92/84/91/94 floors;
 check/lint/format/build/verify-fixtures/verify-parity all green.
+
+pushed fix/issue-124-drop-overstrict-empty-field-validation 0ff9f2f
+PR #132 opened: https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/pull/132
+CI green (build-and-test Node 22/24, integration, verify-fixtures).
+merged #132: squash-merged into `main` as `aa157ee`. Issue #124 stays OPEN (1 of 4 items
+remain -- Phase 4, the breaking Auth.devAgent change, below); PR intentionally used
+"Part of #124", not "Closes #124".
