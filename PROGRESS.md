@@ -2983,3 +2983,6 @@ green (1204 passed, 20 skipped); coverage 96.03/89.61/94.47/96.95 vs. 94/84/91/9
 floors; check/lint/format/build/verify-fixtures/verify-parity all green.
 pushed fix/issue-124-devagent-expected-sender 4106fda862da70c04acfb6871f74995c2fbc7d8f
 PR #133 opened: https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/pull/133
+CI green (build-and-test Node 22/24, integration, verify-fixtures).
+merged #133: squash-merged into `main` as `cc0f344`. Issue #124 CLOSED -- all 4 items
+shipped (Phases 1-4). PR used "Closes #124" as planned (last PR referencing it).
