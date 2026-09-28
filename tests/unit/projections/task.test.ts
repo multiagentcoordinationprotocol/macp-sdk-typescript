@@ -109,6 +109,29 @@ describe('TaskProjection', () => {
       expect(projection.phase).toBe('Requested');
       expect(projection.tasks.size).toBe(1);
     });
+
+    // Issue #111 — TaskComplete/TaskFail must not advance phase for a
+    // task_id this projection never saw a TaskRequest for, mirroring the
+    // TaskAccept guard directly above.
+    it('a TaskComplete for an unknown task_id does not advance phase to Completed', () => {
+      projection.applyEnvelope(makeEnvelope('TaskRequest', { taskId: 't1', title: 'A', instructions: 'do' }), registry);
+      projection.applyEnvelope(
+        makeEnvelope('TaskComplete', { taskId: 'unknown-task', assignee: 'worker-a', summary: 'done' }, 'worker-a'),
+        registry,
+      );
+      expect(projection.phase).toBe('Requested');
+      expect(projection.tasks.size).toBe(1);
+    });
+
+    it('a TaskFail for an unknown task_id does not advance phase to Failed', () => {
+      projection.applyEnvelope(makeEnvelope('TaskRequest', { taskId: 't1', title: 'A', instructions: 'do' }), registry);
+      projection.applyEnvelope(
+        makeEnvelope('TaskFail', { taskId: 'unknown-task', assignee: 'worker-a', reason: 'x' }, 'worker-a'),
+        registry,
+      );
+      expect(projection.phase).toBe('Requested');
+      expect(projection.tasks.size).toBe(1);
+    });
   });
 
   // Issue #70 — RFC-MACP-0009 §5 rule 3c (`:72`), mirroring `macp-runtime`

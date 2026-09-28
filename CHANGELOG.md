@@ -278,6 +278,16 @@ project uses [Semantic Versioning](https://semver.org/).
   `{ response: { error } }` shape by hand rather than a real decode. Fixed to
   read `chunk.error` directly, and each inline error is now also logged at
   `warn` (it previously produced no log line anywhere).
+- **`TaskProjection.phase` no longer advances to `'Completed'`/`'Failed'` for
+  a `TaskComplete`/`TaskFail` naming an unknown `task_id`** (issue #111).
+  Both `this.phase` assignments sat outside the `if (task) { ... }` guard
+  that already gated every other per-task field mutation in the same
+  `applyMode` cases, so a message for a `task_id` this projection never saw
+  a `TaskRequest` for still flipped the session-level `phase` to a terminal
+  state even though no task actually completed or failed. Moved both
+  assignments inside their sibling `if (task)` block, matching the guard
+  already correct on `TaskAccept` (issue #71/#70) and on
+  `HandoffProjection`'s analogous `phase` transitions.
 
 ### Documentation
 
