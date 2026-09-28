@@ -3016,3 +3016,7 @@ before this phase); coverage 96.04/89.61/94.47/96.96 vs. 94/84/91/92 floors;
 check/lint/format/build/verify-fixtures/verify-parity all green.
 pushed fix/issue-126-128-projection-anomaly-kinds 915b3a1005fbf22a84518b7e7c5f4a98f3cbfa60
 PR #134 opened: https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/pull/134
+CI green (build-and-test Node 22/24, integration, verify-fixtures).
+merged #134: squash-merged into `main` as `a99668c`. Issues #126 and #128 CLOSED.
+All 5 phases of plans/issue-124-126-128-fixes.md shipped -- #124, #126, #128 fully
+resolved. Plan complete.
