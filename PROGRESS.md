@@ -2652,3 +2652,35 @@ remains.
 
 What's next: start Phase 6 (#111) via the same implement → verify →
 close-gaps → commit → ship cycle.
+
+### Phase 6 (#111 — TaskComplete/TaskFail phase transition outside guard) — DONE, 2026-09-27
+
+- Implemented: moved `this.phase = 'Completed'`/`'Failed'`
+  (`src/projections/task.ts:183`/`:197` pre-fix) inside their sibling
+  `if (task) {...}` blocks, matching the already-correct `TaskAccept`
+  pattern in the same file and `HandoffProjection`'s Accept/Decline pattern.
+  5 insertions/3 deletions, no other logic touched.
+- Tests: two new regression tests in `tests/unit/projections/task.test.ts`
+  mirroring the existing issue #71 precedent test — a `TaskComplete`/
+  `TaskFail` for an unknown `task_id` leaves `phase` unchanged and
+  `tasks.size` unaffected. Self-mutation-tested before handoff (reverted the
+  guard, both and only both new tests failed, restored byte-identical) and
+  independently re-confirmed by the verifier the same way.
+- Verifier: fresh Opus, round 1 PASS. Full local gate green (coverage
+  96.02/89.42/94.44/96.95 vs. 92/84/91/94 floors; `make verify-fixtures` and
+  `make verify-parity` both clean — no residual drift from Phase 3's sync).
+  Confirmed the plan's "no doc change needed" claim by independently reading
+  `docs/api/projections.md`/`docs/modes/task.md`.
+- Non-blocking finding from the verifier's mandated sibling-file sweep: the
+  identical bug shape (a `phase` assignment escaping its sibling
+  entity-existence guard) exists, unfixed, in `src/projections/proposal.ts`'s
+  `Reject` case and `src/projections/handoff.ts`'s `HandoffContext` case,
+  plus a lower-confidence note about `decision.ts`'s `Vote` case having no
+  guard at all. Out of scope for Phase 6 (scoped to `task.ts` only) — filed
+  as issue #119 rather than expanded into this phase.
+- Files touched: `src/projections/task.ts`, `tests/unit/projections/task.test.ts`,
+  `CHANGELOG.md`.
+
+What's next: ship Phase 6 (branch, commit `Closes #111`, PR, CI, merge,
+confirm #111 closed, cleanup) — PR 7, the last PR of this plan (issue #119
+is a separate, not-yet-planned follow-up).

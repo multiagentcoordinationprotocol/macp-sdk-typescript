@@ -179,8 +179,8 @@ export class TaskProjection extends BaseProjection {
         if (task) {
           task.status = 'completed';
           task.progress = 1;
+          this.phase = 'Completed';
         }
-        this.phase = 'Completed';
         break;
       }
       case 'TaskFail': {
@@ -193,8 +193,10 @@ export class TaskProjection extends BaseProjection {
         };
         this.failures.push({ ...record, retryable: record.retryable ?? false, sender: envelope.sender });
         const task = this.tasks.get(record.taskId);
-        if (task) task.status = 'failed';
-        this.phase = 'Failed';
+        if (task) {
+          task.status = 'failed';
+          this.phase = 'Failed';
+        }
         break;
       }
       default:
