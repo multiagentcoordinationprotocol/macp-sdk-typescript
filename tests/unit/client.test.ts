@@ -165,7 +165,7 @@ describe('Identity guard — mode helpers', () => {
     expect(sendSpy).toHaveBeenCalledTimes(1);
   });
 
-  it('guard is silent for Auth.devAgent', async () => {
+  it('Auth.devAgent throws when sender conflicts with the agent id (issue #124 -- was silent, matching the runtime which already rejects this)', async () => {
     const client = new MacpClient({
       address: '127.0.0.1:50051',
       secure: false,
@@ -175,7 +175,23 @@ describe('Identity guard — mode helpers', () => {
     const session = new DecisionSession(client);
     const sendSpy = vi.spyOn(client, 'send').mockResolvedValue({ ok: true });
 
-    const ack = await session.propose({ proposalId: 'p1', option: 'x', sender: 'bob' });
+    await expect(session.propose({ proposalId: 'p1', option: 'x', sender: 'bob' })).rejects.toBeInstanceOf(
+      MacpIdentityMismatchError,
+    );
+    expect(sendSpy).not.toHaveBeenCalled();
+  });
+
+  it('Auth.devAgent allows sender equal to the agent id', async () => {
+    const client = new MacpClient({
+      address: '127.0.0.1:50051',
+      secure: false,
+      allowInsecure: true,
+      auth: Auth.devAgent('alice'),
+    });
+    const session = new DecisionSession(client);
+    const sendSpy = vi.spyOn(client, 'send').mockResolvedValue({ ok: true });
+
+    const ack = await session.propose({ proposalId: 'p1', option: 'x', sender: 'alice' });
     expect(ack.ok).toBe(true);
     expect(sendSpy).toHaveBeenCalledTimes(1);
   });

@@ -35,11 +35,18 @@ export const Auth = {
    * otherwise). Not for production — use {@link Auth.bearer}.
    *
    * The legacy `x-macp-agent-id` header was removed in 0.5.0: no supported
-   * runtime reads it. Does not set {@link AuthConfig.expectedSender}; dev flows
-   * stay permissive so tests can reuse a single credential across senders.
+   * runtime reads it. Sets {@link AuthConfig.expectedSender} to `agentId`
+   * (issue #124): the runtime already refuses a mismatched `sender`
+   * unconditionally for dev credentials (`macp-runtime/src/server.rs:229-231`,
+   * no insecure/dev exemption), so this SDK now enforces the same guarantee
+   * client-side instead of surfacing the runtime's rejection late and
+   * confusingly. A caller that genuinely wants the pre-0.2 permissive
+   * behavior — reusing one credential across multiple senders — should use
+   * `Auth.bearer(token, senderHint)` (the legacy two-arg form) instead, which
+   * never sets `expectedSender`.
    */
   devAgent(agentId: string): AuthConfig {
-    return { bearerToken: agentId, senderHint: agentId };
+    return { bearerToken: agentId, senderHint: agentId, expectedSender: agentId };
   },
   /**
    * Production bearer-token credential. Pass `{ expectedSender }` to have the
@@ -82,12 +89,16 @@ export function authSender(auth?: AuthConfig): string | undefined {
 
 /**
  * Throw {@link MacpIdentityMismatchError} when a caller-supplied `sender`
- * conflicts with `auth.expectedSender`. Silent when either is undefined, so
- * dev credentials and legacy bearer usage retain pre-0.2 behavior.
+ * conflicts with `auth.expectedSender`. Silent when `auth.expectedSender` is
+ * undefined, or when `sender` is undefined or `''` — an empty `sender` is
+ * treated the same as absent, matching `macp-runtime/src/server.rs:229`'s
+ * `!env.sender.is_empty() && ...` guard (issue #124): the runtime always
+ * accepts an empty `sender`, so this client-side guard must too, or it would
+ * reject a payload the runtime would accept.
  */
 export function assertSenderMatchesIdentity(auth: AuthConfig | undefined, sender: string | undefined): void {
   if (!auth?.expectedSender) return;
-  if (sender === undefined) return;
+  if (sender === undefined || sender === '') return;
   if (sender !== auth.expectedSender) {
     throw new MacpIdentityMismatchError(auth.expectedSender, sender);
   }

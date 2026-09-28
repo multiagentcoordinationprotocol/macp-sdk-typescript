@@ -2960,3 +2960,26 @@ CI green (build-and-test Node 22/24, integration, verify-fixtures).
 merged #132: squash-merged into `main` as `aa157ee`. Issue #124 stays OPEN (1 of 4 items
 remain -- Phase 4, the breaking Auth.devAgent change, below); PR intentionally used
 "Part of #124", not "Closes #124".
+
+### Phase 4 (#124 item 4 -- Auth.devAgent sets expectedSender, breaking change) - DONE, 2026-09-28
+
+Verifier: fresh Opus, single round, PASS, no gaps -- all 9 acceptance criteria confirmed
+by citation (see plan file Phase 4 section for the full breakdown). `Auth.devAgent`
+(`src/auth.ts`) now returns `expectedSender: agentId` in addition to `bearerToken`/
+`senderHint`, matching the runtime's unconditional dev-credential sender check
+(`macp-runtime/src/server.rs:229-231`). Bundled a related fix: `assertSenderMatchesIdentity`
+now treats `sender === ''` as a no-op (matching the runtime's `is_empty()` check), not
+just `sender === undefined`. Investigated `src/agent/runner.ts:85` in full -- confirmed
+a diverging `agent_id`/`participant_id` bootstrap was already broken against any real
+runtime before this fix (10 of 11 `Participant` handler-driven call sites now fail
+client-side instead of late/server-side; the initiator kickoff and the generic `send`
+escape hatch are unaffected, documented as Option (a), no code change to `runner.ts`
+or `participant.ts`). Files touched: `src/auth.ts`, `tests/unit/auth.test.ts`,
+`tests/unit/client.test.ts`, `tests/unit/sessions/{decision,quorum,proposal,task,
+handoff}.test.ts` (client-level auth swapped from `Auth.devAgent` to `Auth.bearer` to
+keep the per-call auth assertions non-vacuous), `docs/guides/agent-framework.md`,
+`CHANGELOG.md` (new `### ⚠ BREAKING CHANGES` entry under `[Unreleased]`). Full suite
+green (1204 passed, 20 skipped); coverage 96.03/89.61/94.47/96.95 vs. 94/84/91/92
+floors; check/lint/format/build/verify-fixtures/verify-parity all green.
+pushed fix/issue-124-devagent-expected-sender 4106fda862da70c04acfb6871f74995c2fbc7d8f
+PR #133 opened: https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/pull/133

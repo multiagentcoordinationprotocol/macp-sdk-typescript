@@ -69,6 +69,22 @@ project uses [Semantic Versioning](https://semver.org/).
   pass `schemaVersion` explicitly get going forward. Pass
   `{ schemaVersion: 1 }` or `{ schemaVersion: 2 }` explicitly to keep the
   old fail-open behavior.
+* **auth:** `Auth.devAgent(agentId)` now also sets `expectedSender: agentId`
+  on the returned `AuthConfig` (issue #124 item 4). The runtime's dev
+  fallback already authenticates the gRPC connection as the bearer value
+  (`agentId`) and unconditionally refuses a mismatched `sender` for dev
+  credentials (`macp-runtime/src/server.rs:229-231`, no insecure/dev
+  exemption) — this SDK now enforces the same guarantee client-side instead
+  of surfacing the runtime's rejection late and confusingly. A bootstrap or
+  caller whose `agent_id`/credential diverges from the `sender`/
+  `participant_id` it actually sends now fails on the first typed
+  handler-driven action (e.g. `acceptTask`, `vote`) with
+  `MacpIdentityMismatchError`, instead of only failing server-side. The
+  initiator's `SessionStart`/kickoff path is unaffected (it passes no
+  explicit `sender`), as is the generic `actions.send` escape hatch (which
+  still only fails server-side). A caller that genuinely needs one
+  credential reused across multiple senders should use
+  `Auth.bearer(token, senderHint)` (the legacy two-arg form) instead.
 
 ### Features
 
