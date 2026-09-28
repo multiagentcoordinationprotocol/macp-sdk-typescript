@@ -55,11 +55,18 @@ function snakeToLowerCamel(name: string): string {
 }
 
 describe('parity contract (tests/parity/contract.json)', () => {
-  it('pins contract_version 1.0.0 — a version bump means re-reading this whole file', () => {
+  it('pins contract_version 1.1.0 — a version bump means re-reading this whole file', () => {
     // Not a manifest-content assertion: a tripwire so a future contract_version
     // bump (MINOR or MAJOR, per the manifest's own versioning rule) forces a
     // human to re-review every section below, not just whichever one changed.
-    expect(contract.contract_version).toBe('1.0.0');
+    // Bumped 1.0.0 -> 1.1.0 (2026-09-27): `contribute_payload` gained four
+    // `collision_*` vectors pinning the JSON-vs-protobuf canonicality
+    // tie-break (issue #104) at the byte-lengths where a JSON-first decoder
+    // without that tie-break can misread a canonical-proto payload as
+    // legacy JSON. Reviewed every section below against this bump; the only
+    // other change is `protocol`/`contribute_acceptance`'s `source` fields
+    // gaining a citation, which this file does not assert on.
+    expect(contract.contract_version).toBe('1.1.0');
   });
 
   describe('protocol', () => {
@@ -180,8 +187,8 @@ describe('parity contract (tests/parity/contract.json)', () => {
   });
 
   describe('contribute_payload', () => {
-    it('encodes every vector to the pinned canonical protobuf hex (4 vectors)', () => {
-      expect(contract.sections.contribute_payload.vectors).toHaveLength(4);
+    it('encodes every vector to the pinned canonical protobuf hex (8 vectors)', () => {
+      expect(contract.sections.contribute_payload.vectors).toHaveLength(8);
       for (const vector of contract.sections.contribute_payload.vectors) {
         const encoded = registry.encodeKnownPayload(MODE_MULTI_ROUND, 'Contribute', { value: vector.value });
         expect(encoded.toString('hex'), vector.name).toBe(vector.protobuf_hex);

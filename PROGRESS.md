@@ -2616,3 +2616,24 @@ is queued to start after Phase 3 ships.
 What's next: ship Phase 3 (final PR of the original plan), then start Phase 6
 (#111, PR 7) via the same implement → verify → close-gaps → commit → ship
 cycle.
+
+pushed fix/issue-107-client-error-handling f3e1c15
+PR #118 opened: https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/pull/118
+
+CI's required `verify-fixtures` check failed: `make verify-parity` drift,
+unrelated to this PR's own diff (confirmed pre-existing by the Phase 3
+verifier) but newly red in CI because the spec repo's
+`schemas/parity/contract.json` bumped `contract_version` 1.0.0 -> 1.1.0
+(4 new `collision_*` `contribute_payload` vectors pinning the JSON/protobuf
+canonicality tie-break from issue #104, already implemented in this SDK's
+`src/`) since PR #116 last synced it — this is a required check blocking
+every PR against current `main`, not specific to this branch. Fixed via
+`make sync-parity` (vendored `tests/parity/contract.json`) plus updating
+`tests/parity/contract.test.ts`'s two hardcoded pins (`contract_version`
+1.0.0->1.1.0, `contribute_payload` vector count 4->8) — no `src/` change
+needed; all 19 parity-contract tests pass, including the 4 new vectors'
+encode *and* legacy-JSON decode round-trip, confirming the existing #104
+fix already handles these byte-length collision cases correctly. Full local
+gate re-run green after the sync. Committed as a second, separately-labeled
+commit on the same branch/PR (needed to unblock this PR's required check;
+scoped and described independently of the #107 fix itself).
