@@ -2701,3 +2701,25 @@ this plan, would need its own `/plan` or `/implement` pass if picked up.
 
 What's next: nothing outstanding on this plan. Issue #119 is available as a
 future task if wanted.
+
+## New plan: issue-117-119-fixes.md (started 2026-09-27)
+
+User asked to `/plan` and `/implement` all remaining open issues. Two were open:
+#117 (re-vendor `tests/parity/SOURCE.md` prose — the code/test fix already landed
+in PR #118) and #119 (the phase-guard bug filed at the close of the plan above).
+Plan written to `plans/issue-117-119-fixes.md` (gitignored, local-only), reviewed
+by a fresh Opus agent (round 1: REVISE — 6 mostly-citation fixes applied, plus one
+genuine new finding: `quorum.ts`'s `setBallot` has the same fabrication bug shape
+without touching `phase`, filed separately as **issue #121**, deliberately not
+implemented here). PR strategy: 2 PRs, one per issue, zero file overlap
+(`tests/parity/SOURCE.md` vs. `src/projections/{proposal,handoff,decision}.ts` +
+tests + `CHANGELOG.md`). Ship order: #117 first (trivial), then #119.
+
+### Phase 1 (#117 — re-vendor SOURCE.md prose) — DONE, 2026-09-27
+
+Verifier: fresh Opus, round 1 PASS (2 cosmetic notes, no gaps). Re-cited the spec
+commit (`aaac582a...`, PR #151), `contract_version` 1.1.0, and rewrote both "Open
+items" bullets to mirror the spec repo's CURRENT `schemas/parity/README.md` (which
+had moved further than issue #117's own body predicted — grounding in the live
+seam doc over the stale issue text was confirmed correct, not a deviation). No
+`src/` or test change. Files touched: `tests/parity/SOURCE.md`.
