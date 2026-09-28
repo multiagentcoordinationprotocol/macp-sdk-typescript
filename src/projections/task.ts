@@ -118,16 +118,36 @@ export class TaskProjection extends BaseProjection {
         // below, which frees the slot — see its comment for why that needs no
         // policy input.
         //
-        // An anomaly would be recorded when this guard discards a second
-        // `TaskAccept`, but `ProjectionAnomalyKind` (`base.ts:8-9`) is
-        // deliberately frozen pending cross-SDK agreement with
-        // macp-sdk-python.
-        if (task && this.activeAssignment === undefined) {
-          task.assignee = record.assignee;
-          task.status = 'accepted';
-          this.activeAssignment = { sender: envelope.sender, taskId: record.taskId };
-          this.phase = 'InProgress';
+        // A discarded second `TaskAccept` records a `duplicate_task_accept`
+        // anomaly (issue #126/#128) only when this projection actually has a
+        // `TaskRequest` on file for the losing `taskId` (`task` is defined) —
+        // an accept for a `taskId` this projection never saw a `TaskRequest`
+        // for stays a silent no-op below, since a projection that joined
+        // mid-session may never have observed the original request, and that
+        // is not caller misuse. Note this guard's `activeAssignment` slot is
+        // session-scoped (see the comment above), so the `taskId` that loses
+        // here need not be the same one the slot is already held for — it is
+        // simply a second, separately-requested task competing for the one
+        // slot the session allows.
+        if (task) {
+          if (this.activeAssignment === undefined) {
+            task.assignee = record.assignee;
+            task.status = 'accepted';
+            this.activeAssignment = { sender: envelope.sender, taskId: record.taskId };
+            this.phase = 'InProgress';
+          } else {
+            this.recordAnomaly({
+              kind: 'duplicate_task_accept',
+              mode: envelope.mode,
+              messageType: envelope.messageType,
+              messageId: envelope.messageId,
+              sender: envelope.sender,
+              subjectId: record.taskId,
+              detail: `sender ${envelope.sender} attempted TaskAccept for ${record.taskId}, but ${this.activeAssignment.sender} already holds the session's one assignee slot with task ${this.activeAssignment.taskId}`,
+            });
+          }
         }
+        // unknown taskId (task undefined): stays a silent no-op.
         break;
       }
       case 'TaskReject': {

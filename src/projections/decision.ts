@@ -115,9 +115,12 @@ export class DecisionProjection extends BaseProjection {
         // not a normative MACP term (it appears once, in passing, at
         // RFC-MACP-0012 `:211`); this guard is justified by session
         // terminality, not by a phase specification. An anomaly would be
-        // recorded here too, but `ProjectionAnomalyKind` (`base.ts:8-9`) is
-        // deliberately frozen pending cross-SDK agreement with
-        // macp-sdk-python.
+        // recorded here too, but unlike five of the six sites that were
+        // "frozen pending cross-SDK agreement" (issue #126/#128, now
+        // resolved for `duplicate_task_accept`/`settled_handoff` — see
+        // `base.ts`), this one is a session-terminality phase-regression
+        // guard, not a settlement discard, and remains genuinely undecided
+        // per #128's own explicit scoping. No behavior change here.
         if (this.phase !== 'Committed') {
           this.phase = 'Voting';
         }

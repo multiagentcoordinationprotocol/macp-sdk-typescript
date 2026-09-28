@@ -75,10 +75,11 @@ type ProjectionLike = {
   commitment?: Record<string, unknown>;
   // Phase 6 (issue #55): optional because this local `ProjectionLike` is
   // structurally distinct from `src/agent/types.ts`'s exported interface of
-  // the same name — see that file for the deliberate divergence. Only
-  // `DecisionProjection` and `QuorumProjection` populate `anomalies` today;
-  // every fixture must still replay with zero, so an empty array/undefined
-  // is the passing case for the other four mode projections.
+  // the same name — see that file for the deliberate divergence.
+  // `DecisionProjection`, `QuorumProjection`, `TaskProjection`, and
+  // `HandoffProjection` populate `anomalies` today (issue #126/#128); every
+  // canonical fixture must still replay with zero, since no fixture carries
+  // the cardinality violation any of these kinds records.
   anomalies?: readonly ProjectionAnomaly[];
 };
 
@@ -266,13 +267,14 @@ describe('conformance: projection replay', () => {
       expect(transcript.length).toBe(acceptedMessages.length);
 
       // Phase 6 (issue #55): every canonical fixture must replay with ZERO
-      // anomalies. `DecisionProjection`/`QuorumProjection` are the only two
-      // that populate `anomalies` today; the other four are always `[]`/
-      // `undefined` here. A non-empty array means either a fixture regressed
-      // to carrying a duplicate accepted Vote/ballot (see the sibling
-      // 'conformance: no duplicate accepted vote or ballot' describe below,
-      // which should have already caught it) or a projection is
-      // over-flagging a conforming transcript.
+      // anomalies. `DecisionProjection`, `QuorumProjection`, `TaskProjection`,
+      // and `HandoffProjection` populate `anomalies` today (issue #126/#128);
+      // the other two (Proposal, and the `ext.multi_round.v1` extension mode)
+      // are always `[]`/`undefined` here. A non-empty array means either a
+      // fixture regressed to carrying a duplicate accepted Vote/ballot (see
+      // the sibling 'conformance: no duplicate accepted vote or ballot'
+      // describe below, which should have already caught it) or a projection
+      // is over-flagging a conforming transcript.
       const anomalies = projection.anomalies ?? [];
       expect(
         anomalies,

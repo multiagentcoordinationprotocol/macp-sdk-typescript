@@ -134,6 +134,71 @@ describe('TaskProjection', () => {
     });
   });
 
+  // Issue #126/#128: `duplicate_task_accept` anomaly recording for a
+  // discarded `TaskAccept`, now that the guard split (see `task.ts`'s
+  // `TaskAccept` case) distinguishes "unrequested task_id" (still a silent
+  // no-op) from "a separately-requested task_id losing the session's one
+  // assignee slot" (now an anomaly).
+  describe('duplicate_task_accept anomaly (issue #126/#128)', () => {
+    it('AC1: a second TaskAccept for the SAME task_id records exactly one anomaly naming that task_id', () => {
+      projection.applyEnvelope(makeEnvelope('TaskRequest', { taskId: 't1', title: 'A', instructions: 'do' }), registry);
+      projection.applyEnvelope(
+        makeEnvelope('TaskAccept', { taskId: 't1', assignee: 'worker-a' }, 'worker-a'),
+        registry,
+      );
+      projection.applyEnvelope(
+        makeEnvelope('TaskAccept', { taskId: 't1', assignee: 'worker-b' }, 'worker-b'),
+        registry,
+      );
+
+      expect(projection.anomalies).toHaveLength(1);
+      expect(projection.anomalies[0]).toMatchObject({
+        kind: 'duplicate_task_accept',
+        sender: 'worker-b',
+        subjectId: 't1',
+      });
+      expect(projection.anomalies[0]?.detail).toContain('worker-a');
+      expect(projection.anomalies[0]?.detail).toContain('t1');
+    });
+
+    it('AC2: a TaskAccept for a task_id with no TaskRequest on file records zero anomalies', () => {
+      projection.applyEnvelope(makeEnvelope('TaskRequest', { taskId: 't1', title: 'A', instructions: 'do' }), registry);
+      projection.applyEnvelope(
+        makeEnvelope('TaskAccept', { taskId: 'unknown-task', assignee: 'worker-a' }, 'worker-a'),
+        registry,
+      );
+
+      expect(projection.anomalies).toHaveLength(0);
+      expect(projection.hasAnomalies).toBe(false);
+    });
+
+    it('AC3: a TaskAccept for a DIFFERENT, separately-requested task_id competing for an already-held slot records one anomaly naming the LOSING task_id, with detail naming the holder sender and task_id', () => {
+      projection.applyEnvelope(makeEnvelope('TaskRequest', { taskId: 't1', title: 'A', instructions: 'do' }), registry);
+      projection.applyEnvelope(makeEnvelope('TaskRequest', { taskId: 't2', title: 'B', instructions: 'do' }), registry);
+      projection.applyEnvelope(
+        makeEnvelope('TaskAccept', { taskId: 't1', assignee: 'worker-a' }, 'worker-a'),
+        registry,
+      );
+      projection.applyEnvelope(
+        makeEnvelope('TaskAccept', { taskId: 't2', assignee: 'worker-b' }, 'worker-b'),
+        registry,
+      );
+
+      expect(projection.anomalies).toHaveLength(1);
+      const anomaly = projection.anomalies[0];
+      expect(anomaly).toMatchObject({
+        kind: 'duplicate_task_accept',
+        sender: 'worker-b',
+        // Names the LOSING task (t2, whose accept was just discarded) --
+        // not t1, which already holds the slot.
+        subjectId: 't2',
+      });
+      // detail names the holder via both activeAssignment.sender and .taskId.
+      expect(anomaly?.detail).toContain('worker-a');
+      expect(anomaly?.detail).toContain('t1');
+    });
+  });
+
   // Issue #70 — RFC-MACP-0009 §5 rule 3c (`:72`), mirroring `macp-runtime`
   // `crates/macp-modes/src/mode/task.rs:257-260`.
   describe('TaskReject frees the session assignee slot when the rejecter held it (issue #70)', () => {
