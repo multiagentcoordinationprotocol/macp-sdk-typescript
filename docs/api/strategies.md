@@ -105,7 +105,11 @@ const voter = agent.functionVoter(
 
 Prebuilt — votes `APPROVE` when the ratio of positive evaluations meets
 `positiveThreshold` (default `0.5`); otherwise `REJECT`. Positive
-recommendations are `approve` / `accept` / `yes` (case-insensitive).
+recommendations are `approve` / `accept` / `yes` (case-insensitive). `review`
+evaluations are excluded from the ratio entirely (RFC-MACP-0007 §4: `REVIEW`
+is informational-only, not a stance) — an evaluation set of only `review`s
+has no decisive evaluation, so `shouldVote` returns `false` and no vote is
+cast at all, rather than a `REJECT` at ratio `0`.
 
 ```typescript
 participant.on('Evaluation', votingHandler(majorityVoter({ positiveThreshold: 0.8 })));

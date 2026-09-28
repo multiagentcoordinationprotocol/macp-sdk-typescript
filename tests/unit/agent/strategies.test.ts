@@ -280,7 +280,7 @@ describe('strategies', () => {
   });
 
   describe('majorityVoter', () => {
-    it('shouldVote returns true when evaluations exist', () => {
+    it('shouldVote returns true when a decisive evaluation exists (renamed, issue #124 item 2 — was "when evaluations exist"; a REVIEW-only set is no longer decisive, see below)', () => {
       const voter = majorityVoter();
       const projection = new DecisionProjection();
       projection.evaluations.push({
@@ -296,6 +296,60 @@ describe('strategies', () => {
       const voter = majorityVoter();
       const projection = new DecisionProjection();
       expect(voter.shouldVote(projection)).toBe(false);
+    });
+
+    // Issue #124 item 2: RFC-MACP-0007:73 says REVIEW evaluations "do not
+    // block or approve a proposal; they serve as informational analysis
+    // records only" -- mirroring RFC-MACP-0012:137's abstention-exclusion
+    // rule ("the denominator is the decisive votes ... Abstentions are
+    // excluded"), REVIEW is excluded from majorityVoter's denominator.
+    it('AC1: one APPROVE + one REVIEW yields ratio 1.0 and votes APPROVE, not a borderline 0.5', async () => {
+      const voter = majorityVoter();
+      const projection = new DecisionProjection();
+      projection.evaluations.push(
+        { proposalId: 'p1', recommendation: 'approve', confidence: 0.9, sender: 'a' },
+        { proposalId: 'p1', recommendation: 'review', confidence: 0.5, sender: 'b' },
+      );
+
+      const result = await voter.decideVote(projection);
+      expect(result.vote).toBe('APPROVE');
+      expect(result.reason).toBe('1/1 evaluations positive');
+    });
+
+    it('AC2: an evaluation set of only REVIEWs is not decisive -- shouldVote is false and votingHandler never calls ctx.actions.vote', async () => {
+      const voter = majorityVoter();
+      const projection = new DecisionProjection();
+      projection.evaluations.push(
+        { proposalId: 'p1', recommendation: 'review', confidence: 0.5, sender: 'a' },
+        { proposalId: 'p1', recommendation: 'REVIEW', confidence: 0.6, sender: 'b' },
+      );
+      expect(voter.shouldVote(projection)).toBe(false);
+
+      const handler = votingHandler(voter);
+      const ctx = makeContext({ projection });
+      await handler(makeMessage('Evaluation', { proposalId: 'p1' }), ctx);
+      expect(ctx.actions.vote).not.toHaveBeenCalled();
+    });
+
+    it('decideVote still guards an empty decisive tally on its own (0/0), for a caller that invokes it directly without going through shouldVote/votingHandler', async () => {
+      const voter = majorityVoter();
+      const projection = new DecisionProjection();
+      projection.evaluations.push({ proposalId: 'p1', recommendation: 'review', confidence: 0.5, sender: 'a' });
+
+      const result = await voter.decideVote(projection);
+      expect(result.vote).toBe('REJECT');
+      expect(result.reason).toBe('Only 0/0 evaluations positive');
+    });
+
+    it('AC3: BLOCK and REJECT remain in the denominator -- one BLOCK alone still yields ratio 0 and votes REJECT, not a skip', async () => {
+      const voter = majorityVoter();
+      const projection = new DecisionProjection();
+      projection.evaluations.push({ proposalId: 'p1', recommendation: 'block', confidence: 0.9, sender: 'a' });
+
+      expect(voter.shouldVote(projection)).toBe(true);
+      const result = await voter.decideVote(projection);
+      expect(result.vote).toBe('REJECT');
+      expect(result.reason).toBe('Only 0/1 evaluations positive');
     });
 
     it('votes approve when majority evaluations are positive', async () => {

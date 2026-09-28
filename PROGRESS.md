@@ -2910,3 +2910,21 @@ PR #130 opened: https://github.com/multiagentcoordinationprotocol/macp-sdk-types
 CI green (build-and-test Node 22/24, integration, verify-fixtures).
 merged #130: squash-merged into `main` as `02bbe90`. Issue #124 stays OPEN (3 of 4 items
 remain -- Phases 2-4 below); PR intentionally used "Part of #124", not "Closes #124".
+
+### Phase 2 (#124 item 2 -- `majorityVoter` excludes `REVIEW` from its denominator) - DONE, 2026-09-28
+
+Verifier: fresh Opus, round 1 PASS (4 non-blocking notes -- see plan file Phase 2
+section: an untested direct-`decideVote` branch closed with a new test; a citation-label
+mix-up between RFC-MACP-0012's Denominator (`:137`) and Empty-tally (`:143`) paragraphs
+closed in the actual code comment; a doc gap in `docs/api/strategies.md` closed; a
+case-sensitivity note declined as pre-existing, out-of-scope behavior this phase
+doesn't touch). Verifier also proved the diff non-vacuous by reverting to HEAD and
+confirming AC1/AC2 fail against the pre-fix source. Fixed: `src/agent/strategies.ts`'s
+`majorityVoter` now excludes `review`-recommendation evaluations from its `decisive`
+array, deriving both the positive count and the ratio's denominator from `decisive`;
+`shouldVote` now checks for any decisive evaluation rather than any evaluation at all.
+Files touched: `src/agent/strategies.ts`, `tests/unit/agent/strategies.test.ts`,
+`docs/api/strategies.md`, `CHANGELOG.md`. Full suite 1190 passed/20 skipped (one
+pre-existing flaky test, `commitment-hash-frozen-fields.test.ts`, unrelated to this
+diff, confirmed by re-running in isolation); coverage 96.04/89.59/94.47/96.96 vs.
+92/84/91/94 floors; check/lint/format/build/verify-fixtures/verify-parity all green.
