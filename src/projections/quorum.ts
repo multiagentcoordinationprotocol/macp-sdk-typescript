@@ -60,6 +60,19 @@ export class QuorumProjection extends BaseProjection {
   }
 
   private setBallot(envelope: Envelope, requestId: string, vote: BallotRecord['vote'], reason?: string): void {
+    // RFC-MACP-0011 §5 rule 3 (`rfcs/RFC-MACP-0011-quorum-mode.md:69`): a ballot
+    // MUST reference the Session's accepted request_id. `applyEnvelope`'s input
+    // contract is accepted-only (see accepted-only-contract.test.ts), not a
+    // guarantee every field inside an accepted envelope is itself valid, so an
+    // unfiltered/multi-session transcript could still carry a ballot for a
+    // request_id this projection never saw an ApprovalRequest for. Without this
+    // guard that would fabricate a `ballots` Map entry: votedSenders() and
+    // approvalCount()/rejectionCount()/abstentionCount() would report on a
+    // request that doesn't exist, and a second such ballot from the same sender
+    // would fire a spurious duplicate_ballot anomaly against it (issue #121,
+    // same bug shape as issue #119's proposal.ts/handoff.ts/decision.ts sites).
+    if (!this.requests.has(requestId)) return;
+
     const senderMap = this.ballots.get(requestId) ?? new Map<string, BallotRecord>();
     const kept = senderMap.get(envelope.sender);
     if (kept !== undefined) {

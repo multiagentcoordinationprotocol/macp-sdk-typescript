@@ -2793,7 +2793,41 @@ and this PROGRESS.md entry itself, which the verifier correctly flagged as missi
 relative to every prior `tests/parity/` commit). Files touched: `tests/parity/{contract.json,
 contract.test.ts,SOURCE.md}`.
 
-Note: this entry ships on its own branch (`fix/issue-125-parity-resync-1.1.1`), based
-directly off `main`, independent of #121's still-open PR #127. The `## New plan:
-issue-121-fix.md` / `### Phase 1 (#121 ...)` sections above belong to that separate PR
-and are committed there, not duplicated here.
+pushed fix/issue-125-parity-resync-1.1.1 eb4c08e
+PR #129 opened: https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/pull/129
+CI green (build-and-test Node 22/24, integration, verify-fixtures -- including
+verify-parity itself, now passing).
+merged #129: squash-merged into `main` as `459e795`. Issue #125 confirmed CLOSED.
+Remote and local feature branches deleted.
+
+## New plan: issue-121-fix.md (started 2026-09-28)
+
+Single-phase plan for issue #121 (`QuorumProjection.setBallot` fabricates a `ballots`
+entry for an unknown `request_id`), the follow-up filed during the previous plan's
+review. Plan review round 1: REVISE (6 prose/citation corrections: wrong test count,
+wrong docs-table justification, misclassified blast radius for
+`approvalCount`/`rejectionCount`/`abstentionCount`, two wrong `file:line` citations in
+Long-term posture, and two added-coverage items -- canonical conformance fixture
+grounding, plus naming the other two test files that apply ballots). Core one-line fix
+confirmed correct and safe by the review agent applying it directly against the full
+suite before reverting. No round 2 needed. PR strategy: one phase, one PR.
+
+### Phase 1 (#121 -- guard `setBallot` on request existence) - DONE, 2026-09-28
+
+Verifier: fresh Opus, round 1 PASS (5 advisory items, none blocking; 2 closed before
+shipping as genuine AC gaps, 3 declined as out-of-scope -- see plan file for detail).
+Fixed: `src/projections/quorum.ts`'s `setBallot` now returns before any `this.ballots`
+read/write when `!this.requests.has(requestId)`. Files touched:
+`src/projections/quorum.ts`, `tests/unit/projections/quorum.test.ts`, `CHANGELOG.md`.
+Full suite 1184 passed/20 skipped; coverage 96.03/89.54/94.44/96.96 vs. 92/84/91/94
+floors; check/lint/format/build/verify-fixtures all green.
+
+**Note on `make verify-parity`:** was failing at the time this phase was implemented,
+for a reason unrelated to this diff (spec repo bumped `contract_version` 1.1.0 -> 1.1.1
+out-of-band, tracked as issue #125). Since fixed and merged separately -- see the
+"Unplanned follow-up: issue #125" entry above, which shipped first on its own branch to
+unblock this PR's CI.
+
+Also filed while working #121 (out-of-band, from the spec-repo session, not implemented
+here): #124 (parity follow-ups), #126 (ProjectionAnomaly design question). Neither
+picked up -- outside what was asked for this session.

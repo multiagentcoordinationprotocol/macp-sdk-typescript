@@ -315,6 +315,20 @@ project uses [Semantic Versioning](https://semver.org/).
   them (`isTerminallyRejected`, `hasTerminalRejection`) can still report
   `true` for an unknown id even though `phase` no longer moves — intentional,
   not a residual gap.
+- **`QuorumProjection.setBallot` no longer fabricates a `ballots` entry for an
+  unknown `request_id`** (issue #121, found during issue #119's plan-review
+  sweep). RFC-MACP-0011 §5 rule 3 requires a ballot (`Approve`/`Reject`/
+  `Abstain`) to reference the Session's accepted `request_id`; there was no
+  check against `this.requests` before creating or extending a `ballots` Map
+  entry, so an unfiltered/multi-session transcript could make
+  `votedSenders()` and `approvalCount()`/`rejectionCount()`/
+  `abstentionCount()` report on a `request_id` that was never opened, and a
+  second such ballot from the same sender could fire a spurious
+  `duplicate_ballot` anomaly against it. Unlike the three sites above, this
+  bug never touched `phase` — `QuorumProjection.phase` is set only by
+  `ApprovalRequest` and by `Commitment` handling in `BaseProjection` — so the
+  fix is a single existence guard at the top of `setBallot`, with no phase
+  component.
 
 ### Documentation
 

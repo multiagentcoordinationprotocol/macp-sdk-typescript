@@ -305,6 +305,60 @@ describe('QuorumProjection', () => {
     expect(projection.anomalies).toHaveLength(0);
   });
 
+  // RFC-MACP-0011 §5 rule 3 (`:69`): a ballot MUST reference the Session's
+  // accepted request_id. `quorum_reject_paths.json`'s canonical fixture pins
+  // exactly this shape at the runtime layer (an Approve for r1 before any
+  // ApprovalRequest, expect: 'reject'); conformance.test.ts only replays
+  // expect: 'accept' messages, so it never exercises setBallot directly --
+  // these three tests are the projection-level regression guard (issue #121).
+  describe.each([{ type: 'Approve' }, { type: 'Reject' }, { type: 'Abstain' }] as const)(
+    'a $type for an unknown requestId with no prior ApprovalRequest',
+    ({ type }) => {
+      it('is silently dropped, but the envelope still enters transcript (not swallowed)', () => {
+        const ghostBallot = makeEnvelope(type, { requestId: 'ghost' }, 'alice');
+        projection.applyEnvelope(ghostBallot, registry);
+
+        expect(projection.ballots.size).toBe(0);
+        expect(projection.votedSenders('ghost')).toEqual([]);
+        expect(projection.approvalCount('ghost')).toBe(0);
+        expect(projection.rejectionCount('ghost')).toBe(0);
+        expect(projection.abstentionCount('ghost')).toBe(0);
+        expect(projection.anomalies).toEqual([]);
+        // BaseProjection.applyEnvelope pushes to `transcript` before `applyMode`
+        // runs, so a dropped ballot is NOT the same as a redelivery — it's a
+        // real, distinct envelope that just fabricates no Map state.
+        expect(projection.transcript).toHaveLength(1);
+        expect(projection.transcript[0]).toBe(ghostBallot);
+      });
+    },
+  );
+
+  it('a second ballot from the same sender for the same unknown requestId still records zero anomalies', () => {
+    projection.applyEnvelope(makeEnvelope('Approve', { requestId: 'ghost' }, 'alice'), registry);
+    projection.applyEnvelope(makeEnvelope('Reject', { requestId: 'ghost' }, 'alice'), registry);
+
+    // There is no `ballots` entry to compare against for 'ghost', so this
+    // proves the fix doesn't just relocate the fabrication one line down --
+    // no duplicate_ballot can fire for a request that was never opened.
+    expect(projection.ballots.size).toBe(0);
+    expect(projection.anomalies).toEqual([]);
+  });
+
+  it('a ballot for an unknown requestId does not leak into a real, concurrently open requestId', () => {
+    projection.applyEnvelope(
+      makeEnvelope('ApprovalRequest', { requestId: 'r1', action: 'x', summary: 'y', requiredApprovals: 1 }),
+      registry,
+    );
+    projection.applyEnvelope(makeEnvelope('Approve', { requestId: 'ghost' }, 'alice'), registry);
+    projection.applyEnvelope(makeEnvelope('Approve', { requestId: 'r1' }, 'alice'), registry);
+
+    expect(projection.approvalCount('r1')).toBe(1);
+    expect(projection.hasQuorum('r1')).toBe(true);
+    expect(projection.votedSenders('r1')).toEqual(['alice']);
+    expect(projection.ballots.has('ghost')).toBe(false);
+    expect(projection.anomalies).toEqual([]);
+  });
+
   describe('duplicate_ballot anomaly logging', () => {
     afterEach(() => {
       _resetLoggingForTests();
