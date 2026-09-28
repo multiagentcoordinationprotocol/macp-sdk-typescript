@@ -2831,3 +2831,76 @@ unblock this PR's CI.
 Also filed while working #121 (out-of-band, from the spec-repo session, not implemented
 here): #124 (parity follow-ups), #126 (ProjectionAnomaly design question). Neither
 picked up -- outside what was asked for this session.
+
+## New plan: issue-124-126-128-fixes.md (started 2026-09-28)
+
+Picked up per explicit user instruction ("pick up #124 and #126 next too and 128
+also"). Five-phase plan covering all three issues (#124 bundles 4 independent fixes,
+#126 is the design question #128 answers for 5 of its 6 sites):
+- Phase 1: `decodeMultiRoundContribute` (`src/proto-registry.ts:182`) stops coercing a
+  non-string/absent legacy-JSON `value`.
+- Phase 2: `majorityVoter` (`src/agent/strategies.ts:87-105`) excludes `REVIEW`
+  evaluations from its denominator.
+- Phase 3: drop client-side `validateRequiredField` on `intent`/`instructions`/
+  `action`/`summary` (proto3 implicit-presence fields the wire can't distinguish
+  omitted-vs-empty on).
+- Phase 4 (breaking change): `Auth.devAgent` sets `expectedSender`, closing a
+  client-side identity gap the runtime already enforces server-side
+  (`macp-runtime/src/server.rs:229-231`). Also fixes `assertSenderMatchesIdentity` to
+  skip `sender === ''` (matching the runtime), and fixes 5 session-test files that would
+  otherwise go vacuous.
+- Phase 5: unfreezes 5 of 6 `ProjectionAnomalyKind` sites (`duplicate_task_accept`,
+  `settled_handoff`) per `macp-sdk-python`'s own already-merged proposal (PR #95); the
+  6th (`decision.ts`'s late-`Vote` guard) stays explicitly open per #128's own scoping.
+
+PR strategy: 5 independently shippable phases -> 5 PRs. Ship order 1, 2, 3 (any order,
+`Part of #124`) -> 4 (breaking change, sequenced last among #124's items, `Closes #124`)
+-> 5 (independent design-agreement item, `Closes #126` + `Closes #128`).
+
+**Plan review, round 1:** REVISE, ~13 findings (fresh Opus agent, code-grounded, not a
+cold read of the draft). Highlights: two off-by-one RFC/code citations; Phase 4's
+mechanism section undercounted `senderFor` duplicates (1 cited vs. the real 6 + 2
+`client.ts` guard sites = 8); a false claim that a diverging `agent_id` "never" sends
+successfully (the initiator path actually does, via `authSender()`); Phase 4's 5
+session-test-file fix mischaracterized as cosmetic when it actually makes those tests
+vacuous; a missing `sender === ''` false-reject edge case entirely absent from the
+draft; Phase 5's Files list missing several stale in-code comments; Phase 3's AC
+missing the "omitted" case alongside "empty." All applied -- see the plan's own `##
+Plan review` section for the full itemized list.
+
+**Plan review, round 2:** ran per `/plan`'s "re-review only what changed" guidance,
+scoped to the round-1 corrections (Phase 4 and Phase 5 especially). REVISE again, 5
+must-fix + 3 should-fix + 6 nits -- all closed-form (stale text not fully swept, two
+wrong technical claims: only 10 of 11 handler-driven call sites actually gain a
+client-side guard (the generic `send` escape hatch has none), and Phase 5's "different
+taskId" AC was checking the wrong precondition (`task === undefined` vs. a
+separately-requested-but-losing `taskId`) -- plus a Markdown list-numbering bug and a
+missing `public-api-snapshot.json` Files entry. All applied; full detail in the plan's
+`## Plan review` section, Round 2. Two-round cap reached -- no round 3. Ready for
+`/implement`.
+
+Repo map (files this plan touches, for reference without re-scanning):
+- `src/proto-registry.ts` -- proto encode/decode, incl. legacy-JSON `Contribute` path.
+- `src/agent/strategies.ts` -- composable handler factories (`majorityVoter` etc.).
+- `src/validation.ts`, `src/task.ts`, `src/quorum.ts` -- per-field required-ness guards.
+- `src/auth.ts` -- `Auth.devAgent`/`Auth.bearer`, `assertSenderMatchesIdentity`.
+- `src/agent/participant.ts` -- initiator vs. handler-driven send sites (sender wiring).
+- `src/agent/runner.ts` -- `fromBootstrap()`, the one production `devAgent` call site.
+- `src/{decision,proposal,handoff,quorum,task,base-session}.ts` -- 6 `senderFor` copies.
+- `src/client.ts` -- `sendSignal`/`sendProgress` guard sites, `send`'s own (lack of) guard.
+- `src/projections/{base,task,handoff,decision}.ts` -- `ProjectionAnomalyKind` sites.
+- `docs/guides/agent-framework.md`, `docs/api/projections.md` -- docs this plan updates.
+
+### Phase 1 (#124 item 1 -- `decodeMultiRoundContribute` stops coercing `value`) - DONE, 2026-09-28
+
+Verifier: fresh Opus, round 1 PASS (4 nits, none blocking -- see plan file Phase 1
+section for detail; one nit closed by adding a boolean/object/array pass-through test,
+the other three declined as out-of-scope/pre-existing/plan-bookkeeping-only). Fixed:
+`src/proto-registry.ts`'s `decodeMultiRoundContribute` now returns `{ value:
+parsed.value }` unmodified instead of coercing via `String(parsed.value ?? '')`; JSDoc
+above it corrected to describe the new (non-string-guaranteed) contract. Files touched:
+`src/proto-registry.ts`, `tests/unit/proto-registry.test.ts` (2 tests rewritten -- one
+more than the plan's original draft named, since a second test also asserted the old
+coercion; 4 new cases added). Full suite 1186 passed/20 skipped; coverage
+96.03/89.51/94.44/96.96 vs. 92/84/91/94 floors; check/lint/format/build/verify-fixtures/
+verify-parity all green.

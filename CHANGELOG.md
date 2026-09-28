@@ -329,6 +329,15 @@ project uses [Semantic Versioning](https://semver.org/).
   `ApprovalRequest` and by `Commitment` handling in `BaseProjection` — so the
   fix is a single existence guard at the top of `setBallot`, with no phase
   component.
+- **`ProtoRegistry.decodeMultiRoundContribute` no longer coerces a legacy-JSON
+  `Contribute` payload's `value` to a string** (issue #124). Previously
+  `String(parsed.value ?? '')` made an absent `value` key indistinguishable
+  from a genuine empty string, and stringified any non-string JSON value
+  (`123` decoded to `'123'`, `null` decoded to `''`). The legacy-JSON decode
+  path now passes `parsed.value` through exactly as `JSON.parse` produced
+  it — `undefined` stays `undefined`, `null` stays `null`, a number stays a
+  number. The canonical-protobuf decode path is unaffected (its `value` is
+  always a `string`, per the proto schema).
 
 ### Documentation
 
