@@ -203,7 +203,11 @@ different array, it does not make the array itself immutable; `.push()` onto
 `anomalies` works exactly like `.push()` onto `transcript`.
 
 ```typescript
-export type ProjectionAnomalyKind = 'duplicate_vote' | 'duplicate_ballot';
+export type ProjectionAnomalyKind =
+  | 'duplicate_vote'
+  | 'duplicate_ballot'
+  | 'duplicate_task_accept'
+  | 'settled_handoff';
 
 export interface ProjectionAnomaly {
   kind: ProjectionAnomalyKind;
@@ -211,7 +215,7 @@ export interface ProjectionAnomaly {
   messageType: string;
   messageId: string;
   sender: string;
-  /** proposal_id (Decision) or request_id (Quorum) the duplicate targeted */
+  /** proposal_id (Decision), request_id (Quorum), task_id (Task), or handoff_id (Handoff) the anomaly targeted */
   subjectId: string;
   detail: string;
 }
@@ -219,34 +223,55 @@ export interface ProjectionAnomaly {
 
 This is a **cross-SDK frozen contract**, agreed with `macp-sdk-python` (same
 seven fields, snake_case there) — do not add, rename, or remove a field
-without cross-SDK agreement. Two related exports pin this contract further:
-`ANOMALY_DUPLICATE_VOTE`/`ANOMALY_DUPLICATE_BALLOT` are the two
+without cross-SDK agreement. `duplicate_task_accept`/`settled_handoff` were
+added under exactly that agreement (issue #126/#128 — `macp-sdk-python`
+landed its half in PR #95). Four related exports pin this contract further:
+`ANOMALY_DUPLICATE_VOTE`/`ANOMALY_DUPLICATE_BALLOT`/
+`ANOMALY_DUPLICATE_TASK_ACCEPT`/`ANOMALY_SETTLED_HANDOFF` are the four
 `ProjectionAnomalyKind` string values as named constants, and
 `PROJECTION_ANOMALY_FIELD_ORDER` is the field list above as a runtime
-`readonly` tuple, in order — both are asserted against the spec repo's
-`schemas/parity/contract.json` manifest (`projection_anomaly.kinds`/
-`.fields`) by this SDK's own test suite; see
+`readonly` tuple, in order. Only the first two kinds are asserted against the
+spec repo's `schemas/parity/contract.json` manifest
+(`projection_anomaly.kinds`/`.fields`) by this SDK's own test suite today —
+the manifest's own versioning rule requires both SDKs to land a kind before
+the spec repo bumps it, a follow-up owned by that repo, not this one; see
 [Testing § Parity Contract Gate](../guides/testing.md#parity-contract-gate).
 
 **What an anomaly means — deliberately narrow, agreed wording across both
-SDKs:** an anomaly records that a second distinct `Vote` from this sender for
-this proposal (`duplicate_vote`, RFC-MACP-0007 §5.3), or a second distinct
-ballot across `Approve`/`Reject`/`Abstain` from this sender for this request
-(`duplicate_ballot`, RFC-MACP-0011 §5 rule 3), **was observed and discarded —
-the first stands.** (RFC-MACP-0011 §5 rule 3 caps *how many* ballots and is
-silent on *which of two* stands; first-ballot-wins here is parity with
-RFC-MACP-0007 §5.3 plus runtime-enforced behaviour.) It does **not**, and
-structurally cannot, claim "this transcript violates the spec": a projection
-has no way to tell a genuinely non-conforming source from a conforming source
-fed through an unfiltered loader, because acceptance is not a wire property
-(see [Input contract](#input-contract) above). Do not read more into an
-anomaly than what was observed and what this projection did about it.
+SDKs:** an anomaly records that one of the following was observed and
+discarded:
+- A second distinct `Vote` from this sender for this proposal
+  (`duplicate_vote`, RFC-MACP-0007 §5.3) — **the first stands.**
+- A second distinct ballot across `Approve`/`Reject`/`Abstain` from this
+  sender for this request (`duplicate_ballot`, RFC-MACP-0011 §5 rule 3) —
+  **the first stands.** (RFC-MACP-0011 §5 rule 3 caps *how many* ballots and
+  is silent on *which of two* stands; first-ballot-wins here is parity with
+  RFC-MACP-0007 §5.3 plus runtime-enforced behaviour.)
+- A `TaskAccept` for a task this projection has a `TaskRequest` on file for,
+  arriving after some task already holds the session's one assignee slot
+  (`duplicate_task_accept`, RFC-MACP-0009 §5 rules 3/3a) — the slot holder is
+  unchanged; `subjectId` names the *losing* `task_id`, not the holder's.
+- A `HandoffAccept`/`HandoffDecline` for a `handoff_id` that already settled
+  as accepted or declined (`settled_handoff`, RFC-MACP-0010 §5 rule 4) — the
+  prior settlement is unchanged.
 
-**Only `DecisionProjection` and `QuorumProjection` populate `anomalies`
-today** — a duplicate `Vote` and a duplicate ballot, respectively. The other
-three built-in projections (`ProposalProjection`, `TaskProjection`,
-`HandoffProjection`) expose the same field and getter for a uniform surface,
-but nothing currently writes to them.
+It does **not**, and structurally cannot, claim "this transcript violates the
+spec": a projection has no way to tell a genuinely non-conforming source from
+a conforming source fed through an unfiltered loader, because acceptance is
+not a wire property (see [Input contract](#input-contract) above). Do not
+read more into an anomaly than what was observed and what this projection did
+about it.
+
+**A `TaskAccept`/`HandoffAccept`/`HandoffDecline` for an unknown `task_id`/
+`handoff_id` records no anomaly.** This is a deliberate, investigated
+determination (issue #126/#128), not an oversight: an unknown id is not
+caller misuse — a projection that joined mid-session may never have observed
+the original `TaskRequest`/`HandoffOffer`.
+
+**`DecisionProjection`, `QuorumProjection`, `TaskProjection`, and
+`HandoffProjection` populate `anomalies` today.** `ProposalProjection`
+exposes the same field and getter for a uniform surface, but nothing
+currently writes to it.
 
 Recording an anomaly does two things:
 1. Pushes the `ProjectionAnomaly` onto `anomalies` — the canonical, cross-SDK
@@ -261,9 +286,10 @@ Recording an anomaly does two things:
    variable.
 
 `BaseProjection` also exposes a `protected recordAnomaly(anomaly)` helper
-that does both of the above; `DecisionProjection` and `QuorumProjection` (see
+that does both of the above; `DecisionProjection`, `QuorumProjection`,
+`TaskProjection`, and `HandoffProjection` (see
 [BaseProjection (custom modes)](#baseprojection-custom-modes) below) call it
-from their duplicate-detection call sites.
+from their respective anomaly-detection call sites.
 
 ## Design intent: shared projection instance
 
@@ -381,9 +407,13 @@ reference runtime's single `TaskState.active_assignee`.
 
 - **First accept wins, per session.** The first `TaskAccept` that names a
   known `task_id` takes the slot and sets that task's `assignee` (rule 3a,
-  `:70`). Every later `TaskAccept` — including one for a *different*
-  `task_id` in the same transcript — is discarded while the slot is held, and
-  does not advance `phase` to `'InProgress'` on its own.
+  `:70`). Every later `TaskAccept` for a `task_id` this projection has a
+  `TaskRequest` on file for — including one for a *different* `task_id` in
+  the same transcript — is discarded while the slot is held, does not advance
+  `phase` to `'InProgress'` on its own, and is recorded in
+  [`anomalies`](#anomalies) as `duplicate_task_accept`. A `TaskAccept` for an
+  unknown `task_id` is discarded the same way but records no anomaly (see
+  [Anomalies](#anomalies)).
 - **A reject by the slot holder frees the slot** (rule 3c, `:72`): "the
   session returns to the pre-assignment state. Other eligible participants MAY
   then send `TaskAccept` for the same `task_id`." `TaskProjection` clears both
@@ -440,7 +470,7 @@ otherwise be wrong — Proposal's last-accept-wins — it is already modelled.
 
 | Method | Returns | Description |
 |--------|---------|-------------|
-| `getHandoff(handoffId)` | `HandoffRecord \| undefined` | Full handoff record (`.implicit` set once accepted) — `status` settles once: once a `handoff_id` transitions to `'accepted'` or `'declined'`, a later contradictory `HandoffAccept`/`HandoffDecline` for the same ID is ignored ([RFC-MACP-0010](https://github.com/multiagentcoordinationprotocol/multiagentcoordinationprotocol/blob/main/rfcs/RFC-MACP-0010-handoff-mode.md) §5 rule 4, §5.1(4)) |
+| `getHandoff(handoffId)` | `HandoffRecord \| undefined` | Full handoff record (`.implicit` set once accepted) — `status` settles once: once a `handoff_id` transitions to `'accepted'` or `'declined'`, a later contradictory `HandoffAccept`/`HandoffDecline` for the same ID is ignored and recorded in [`anomalies`](#anomalies) as `settled_handoff` ([RFC-MACP-0010](https://github.com/multiagentcoordinationprotocol/multiagentcoordinationprotocol/blob/main/rfcs/RFC-MACP-0010-handoff-mode.md) §5 rule 4, §5.1(4)); a `HandoffAccept`/`HandoffDecline` for an *unknown* `handoff_id` is also ignored but records no anomaly (see [Anomalies](#anomalies)) |
 | `isAccepted(handoffId)` | `boolean` | HandoffAccept received |
 | `isImplicitlyAccepted(handoffId)` | `boolean` | Accepted by a runtime synthetic implicit accept ([RFC-MACP-0010 (Handoff Mode)](https://github.com/multiagentcoordinationprotocol/multiagentcoordinationprotocol/blob/main/rfcs/RFC-MACP-0010-handoff-mode.md) §5.1, proto ≥ 0.1.6) |
 | `isDeclined(handoffId)` | `boolean` | HandoffDecline received |

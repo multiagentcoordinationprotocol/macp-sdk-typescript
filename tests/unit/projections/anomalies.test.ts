@@ -3,17 +3,22 @@
  * surface — types, fields, `BaseProjection.anomalies`/`recordAnomaly`, and
  * the same `anomalies` field on all five mode projections. At the time this
  * plan landed, nothing populated a `ProjectionAnomaly` outside this test
- * file's own synthetic subclass; Phases 4-5 of that plan then added real
- * detection (Decision `Vote`, Quorum ballots).
+ * file's own synthetic subclass; that plan's own Phases 4-5 then added real
+ * detection for Decision `Vote` and Quorum ballots, and the separate,
+ * later plans/issue-124-126-128-fixes.md Phase 5 (issue #126/#128) added
+ * detection for Task `TaskAccept` and Handoff `HandoffAccept`/
+ * `HandoffDecline`.
  *
  * **Corrected 2026-09-25** (this docblock previously said `recordAnomaly`
  * has no caller because `DecisionProjection`/`QuorumProjection` didn't
  * extend `BaseProjection` — true when written, stale after issue #91's
  * refactor): both now extend `BaseProjection` and DO call the inherited
- * `recordAnomaly` (`decision.ts:77`, `quorum.ts:81`) when they discard a
- * duplicate vote/ballot. `SmokeAnomalyProjection` below remains a useful
- * synthetic ext-mode consumer for exercising the base-class method directly,
- * independent of either built-in mode's own call site.
+ * `recordAnomaly` (`decision.ts:94`, `quorum.ts:94`) when they discard a
+ * duplicate vote/ballot; `TaskProjection`/`HandoffProjection` do too
+ * (`task.ts:139`, `handoff.ts:95,129`) for a duplicate task accept / settled
+ * handoff. `SmokeAnomalyProjection` below remains a useful synthetic
+ * ext-mode consumer for exercising the base-class method directly,
+ * independent of any built-in mode's own call site.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { MODE_DECISION } from '../../../src/constants';
@@ -44,12 +49,14 @@ afterEach(() => {
 
 // ── BaseProjection.recordAnomaly, via a third-party ext-mode subclass ──────
 //
-// All five built-in mode projections extend BaseProjection (issue #91), but
-// only DecisionProjection/QuorumProjection actually call the inherited
-// `recordAnomaly` today (decision.ts:77, quorum.ts:81) — the other three
-// never populate `anomalies`. This synthetic subclass exercises
-// `recordAnomaly` directly, independent of either built-in call site, the
-// same shape as an out-of-tree ext mode would use it.
+// All five built-in mode projections extend BaseProjection (issue #91).
+// DecisionProjection/QuorumProjection call the inherited `recordAnomaly` for
+// a duplicate vote/ballot (decision.ts:94, quorum.ts:94); TaskProjection/
+// HandoffProjection call it for a duplicate task accept / settled handoff
+// (issue #126/#128, task.ts:139, handoff.ts:95,129). ProposalProjection is
+// the one built-in mode that never populates `anomalies`. This synthetic
+// subclass exercises `recordAnomaly` directly, independent of any built-in
+// call site, the same shape as an out-of-tree ext mode would use it.
 const EXT_MODE = 'ext.anomaly-smoke.v1';
 const EXPECTED_KIND: ProjectionAnomaly['kind'] = 'duplicate_vote';
 
@@ -179,9 +186,15 @@ describe('BaseProjection.recordAnomaly', () => {
 
 // ── The five mode projections: additive surface only, nothing populates it ─
 //
-// Phase 3 is deliberately non-detecting: a fresh instance of every one of
-// the six classes must have an empty `anomalies` array and `hasAnomalies ===
-// false`. Detection (Decision Vote, Quorum ballots) lands in Phases 4-5.
+// Phase 3 (of plans/rfc-0007-first-vote-stands.md) is deliberately
+// non-detecting: a fresh instance of every one of the six classes must have
+// an empty `anomalies` array and `hasAnomalies === false`. Real detection was
+// added later, incrementally: Decision Vote and Quorum ballots by that same
+// plan's own Phases 4-5; Task `TaskAccept` and Handoff
+// `HandoffAccept`/`HandoffDecline` by the separate, later
+// plans/issue-124-126-128-fixes.md Phase 5 (issue #126/#128) — not the same
+// "Phase 5" as the first mention, a naming collision worth calling out
+// explicitly here.
 const MODE_PROJECTION_CASES = [
   { name: 'DecisionProjection', factory: () => new DecisionProjection() },
   { name: 'ProposalProjection', factory: () => new ProposalProjection() },

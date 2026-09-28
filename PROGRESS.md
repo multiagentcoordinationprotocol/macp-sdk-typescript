@@ -2986,3 +2986,33 @@ PR #133 opened: https://github.com/multiagentcoordinationprotocol/macp-sdk-types
 CI green (build-and-test Node 22/24, integration, verify-fixtures).
 merged #133: squash-merged into `main` as `cc0f344`. Issue #124 CLOSED -- all 4 items
 shipped (Phases 1-4). PR used "Closes #124" as planned (last PR referencing it).
+
+### Phase 5 (#126/#128 -- unfreeze 5 of 6 ProjectionAnomalyKind sites) - DONE, 2026-09-28
+
+Verifier: fresh Opus, single round, PASS, no gaps -- all 10 acceptance criteria
+confirmed by citation (see plan file Phase 5 section for the full breakdown).
+`ProjectionAnomalyKind` (`src/projections/base.ts`) widens from 2 to 4 members,
+adding `duplicate_task_accept`/`settled_handoff` -- cross-SDK agreement already
+reached, `macp-sdk-python` landed its half in PR #95. `TaskProjection.applyMode`'s
+`TaskAccept` case (`src/projections/task.ts`) now splits the combined guard:
+unknown `taskId` stays a silent no-op; a separately-requested `taskId` losing the
+session's one assignee slot now records a `duplicate_task_accept` anomaly, with
+`subjectId` naming the LOSING task (not the holder) and `detail` naming the
+holder via both sender and taskId -- the subtlest acceptance criterion in the
+phase, independently verified. `HandoffProjection.applyMode`'s `HandoffAccept`/
+`HandoffDecline` cases (`src/projections/handoff.ts`) now record a
+`settled_handoff` anomaly on an already-settled discard; unknown `handoffId`
+stays a silent no-op, both confirmed unchanged. `DecisionProjection`'s late-`Vote`
+guard (`src/projections/decision.ts`) got a comment-only update -- the sixth site,
+deliberately left undecided per #128's own scoping, byte-identical logic. Files
+touched: `src/projections/{base,task,handoff,decision}.ts`,
+`tests/unit/projections/{task,handoff,anomalies}.test.ts`,
+`tests/conformance/conformance.test.ts` (comment-only), `docs/api/projections.md`,
+`tests/unit/public-api-snapshot.json` (new constants auto-export via the existing
+two-hop wildcard), `CHANGELOG.md`. Deliberately did NOT touch
+`tests/parity/contract.json` (spec-repo-owned MINOR bump, out of scope) or the
+sixth Decision-mode site. Full suite green (1211 passed, 20 skipped, up from 1204
+before this phase); coverage 96.04/89.61/94.47/96.96 vs. 94/84/91/92 floors;
+check/lint/format/build/verify-fixtures/verify-parity all green.
+pushed fix/issue-126-128-projection-anomaly-kinds 915b3a1005fbf22a84518b7e7c5f4a98f3cbfa60
+PR #134 opened: https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/pull/134

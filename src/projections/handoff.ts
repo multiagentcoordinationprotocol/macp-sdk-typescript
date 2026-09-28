@@ -70,9 +70,10 @@ export class HandoffProjection extends BaseProjection {
           // and HandoffDecline MUST reference an existing handoff_id." An
           // accept for an unknown/never-offered handoff_id is invalid input
           // (e.g. an unfiltered transcript) and MUST NOT mutate `phase` or
-          // fabricate a handoff record. An anomaly would be recorded here,
-          // but `ProjectionAnomalyKind` (`base.ts:8-9`) is deliberately
-          // frozen pending cross-SDK agreement with macp-sdk-python.
+          // fabricate a handoff record. Confirmed (issue #126/#128): no
+          // anomaly is recorded for this case — an unknown `handoff_id` is
+          // not caller misuse (a projection that joined mid-session may never
+          // have observed the original offer).
           break;
         }
         // RFC-MACP-0010 §5 rule 4 (`:68`): "Once an offer has been
@@ -81,10 +82,7 @@ export class HandoffProjection extends BaseProjection {
         // direction too: a `handoff_id` transitions
         // offered -> accepted | declined exactly once. Only settle if this
         // handoff hasn't already resolved — the same shape as the
-        // HandoffContext guard just above. An anomaly would be recorded when
-        // this guard discards a competing accept, but `ProjectionAnomalyKind`
-        // (`base.ts:8-9`) is deliberately frozen pending cross-SDK agreement
-        // with macp-sdk-python.
+        // HandoffContext guard just above.
         if (handoff.status === 'offered' || handoff.status === 'context_sent') {
           handoff.status = 'accepted';
           handoff.acceptedBy = record.acceptedBy;
@@ -93,6 +91,16 @@ export class HandoffProjection extends BaseProjection {
           // is loaded — `true` marks a runtime synthetic implicit accept.
           handoff.implicit = record.implicit ?? false;
           this.phase = 'Accepted';
+        } else {
+          this.recordAnomaly({
+            kind: 'settled_handoff',
+            mode: envelope.mode,
+            messageType: envelope.messageType,
+            messageId: envelope.messageId,
+            sender: envelope.sender,
+            subjectId: record.handoffId,
+            detail: `sender ${envelope.sender} attempted HandoffAccept for ${record.handoffId}, but it already settled as '${handoff.status}'`,
+          });
         }
         break;
       }
@@ -104,21 +112,29 @@ export class HandoffProjection extends BaseProjection {
           // and HandoffDecline MUST reference an existing handoff_id." A
           // decline for an unknown/never-offered handoff_id is invalid input
           // (e.g. an unfiltered transcript) and MUST NOT mutate `phase` or
-          // fabricate a handoff record. An anomaly would be recorded here,
-          // but `ProjectionAnomalyKind` (`base.ts:8-9`) is deliberately
-          // frozen pending cross-SDK agreement with macp-sdk-python.
+          // fabricate a handoff record. Confirmed (issue #126/#128): no
+          // anomaly is recorded for this case — an unknown `handoff_id` is
+          // not caller misuse (a projection that joined mid-session may never
+          // have observed the original offer).
           break;
         }
         // RFC-MACP-0010 §5 rule 4 (`:68`) + §5.1(4) (`:113-116`): a
         // `handoff_id` settles once. A decline after the handoff already
-        // settled (accepted or declined) is invalid and ignored. An anomaly
-        // would be recorded here too, but `ProjectionAnomalyKind`
-        // (`base.ts:8-9`) is deliberately frozen pending cross-SDK agreement
-        // with macp-sdk-python.
+        // settled (accepted or declined) is invalid and ignored.
         if (handoff.status === 'offered' || handoff.status === 'context_sent') {
           handoff.status = 'declined';
           handoff.declinedBy = record.declinedBy;
           this.phase = 'Declined';
+        } else {
+          this.recordAnomaly({
+            kind: 'settled_handoff',
+            mode: envelope.mode,
+            messageType: envelope.messageType,
+            messageId: envelope.messageId,
+            sender: envelope.sender,
+            subjectId: record.handoffId,
+            detail: `sender ${envelope.sender} attempted HandoffDecline for ${record.handoffId}, but it already settled as '${handoff.status}'`,
+          });
         }
         break;
       }

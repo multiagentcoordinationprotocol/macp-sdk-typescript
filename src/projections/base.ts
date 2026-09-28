@@ -6,9 +6,11 @@ import type { Envelope } from '../types';
  * The kind of cardinality anomaly a projection recorded while replaying an
  * accepted transcript. Cross-SDK frozen contract (`macp-sdk-python` adopted
  * the identical field set, snake_case there) — do not add a kind without
- * cross-SDK agreement.
+ * cross-SDK agreement. `duplicate_task_accept`/`settled_handoff` were added
+ * under exactly that agreement (issue #126/#128; `macp-sdk-python` landed its
+ * half in PR #95, merged `32c6437`).
  */
-export type ProjectionAnomalyKind = 'duplicate_vote' | 'duplicate_ballot';
+export type ProjectionAnomalyKind = 'duplicate_vote' | 'duplicate_ballot' | 'duplicate_task_accept' | 'settled_handoff';
 
 /**
  * A recorded observation that a second distinct `Vote` from this sender for
@@ -34,7 +36,8 @@ export type ProjectionAnomalyKind = 'duplicate_vote' | 'duplicate_ballot';
  * `macp-sdk-python`). Do not add, rename, or remove a field without
  * cross-SDK agreement.
  *
- * Only `DecisionProjection` and `QuorumProjection` populate this today.
+ * `DecisionProjection`, `QuorumProjection`, `TaskProjection`, and
+ * `HandoffProjection` populate this today.
  */
 export interface ProjectionAnomaly {
   kind: ProjectionAnomalyKind;
@@ -42,7 +45,10 @@ export interface ProjectionAnomaly {
   messageType: string;
   messageId: string;
   sender: string;
-  /** `proposal_id` (Decision) or `request_id` (Quorum) the duplicate targeted. */
+  /**
+   * `proposal_id` (Decision), `request_id` (Quorum), `task_id` (Task), or
+   * `handoff_id` (Handoff) the anomaly targeted.
+   */
   subjectId: string;
   /**
    * Human-readable detail. For a cross-type Quorum duplicate, `messageType`
@@ -100,14 +106,21 @@ type _ProjectionAnomalyFieldSetIsFrozen = AssertNever<
 >;
 
 /**
- * The two `ProjectionAnomalyKind` values as named constants. Cross-SDK
- * contract, now literally pinned by the spec repo's
- * `schemas/parity/contract.json` (`projection_anomaly.kinds`) — `satisfies`
- * links each constant to the union above at compile time, so a drifted value
- * fails `npm run check` before it can ever reach `make verify-parity`.
+ * The `ProjectionAnomalyKind` values as named constants. `ANOMALY_DUPLICATE_VOTE`/
+ * `ANOMALY_DUPLICATE_BALLOT` are cross-SDK contract, literally pinned by the
+ * spec repo's `schemas/parity/contract.json` (`projection_anomaly.kinds`) —
+ * `satisfies` links each constant to the union above at compile time, so a
+ * drifted value fails `npm run check` before it can ever reach
+ * `make verify-parity`. `ANOMALY_DUPLICATE_TASK_ACCEPT`/`ANOMALY_SETTLED_HANDOFF`
+ * are also cross-SDK agreed (issue #126/#128) but not yet in the vendored
+ * manifest — the manifest's own versioning rule requires both SDKs to land a
+ * kind before the spec repo bumps it, which is a spec-repo-owned follow-up,
+ * not part of this SDK's scope (see `tests/parity/SOURCE.md`).
  */
 export const ANOMALY_DUPLICATE_VOTE = 'duplicate_vote' satisfies ProjectionAnomalyKind;
 export const ANOMALY_DUPLICATE_BALLOT = 'duplicate_ballot' satisfies ProjectionAnomalyKind;
+export const ANOMALY_DUPLICATE_TASK_ACCEPT = 'duplicate_task_accept' satisfies ProjectionAnomalyKind;
+export const ANOMALY_SETTLED_HANDOFF = 'settled_handoff' satisfies ProjectionAnomalyKind;
 
 /**
  * Runtime field order for `ProjectionAnomaly`, with the same frozen-set
@@ -201,7 +214,9 @@ export abstract class BaseProjection {
   /**
    * Cardinality anomalies recorded while replaying this projection's
    * accepted transcript (e.g. a duplicate vote or ballot from the same
-   * sender). See `ProjectionAnomaly`. Empty unless a subclass calls
+   * sender, a duplicate `TaskAccept` competing for an already-held assignee
+   * slot, or a `HandoffAccept`/`HandoffDecline` for an already-settled
+   * handoff). See `ProjectionAnomaly`. Empty unless a subclass calls
    * `recordAnomaly`. **Corrected 2026-09-25** (this note previously said
    * nothing calls `recordAnomaly` because `DecisionProjection`/
    * `QuorumProjection` didn't extend `BaseProjection` — that was true before
@@ -221,8 +236,8 @@ export abstract class BaseProjection {
 
   /**
    * True once at least one `ProjectionAnomaly` has been recorded — i.e. this
-   * projection observed and discarded a duplicate vote or ballot from the
-   * same sender (see `anomalies` above). This getter is exactly
+   * projection observed and discarded a cardinality anomaly (see `anomalies`
+   * above for the full set of kinds). This getter is exactly
    * `anomalies.length > 0`; it never asserts "this transcript violates the
    * spec" (see `ProjectionAnomaly`'s docblock, and `applyEnvelope`'s "Input
    * contract: accepted-only" section above, for why a projection cannot make

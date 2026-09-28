@@ -127,6 +127,24 @@ project uses [Semantic Versioning](https://semver.org/).
   `BaseSession.start()` already accepted and threaded a per-call `auth`
   before this change; see the `BaseSession.start()` validation entry below
   for what actually changed there in 4B.
+- **`ProjectionAnomalyKind` gains two new, cross-SDK-agreed kinds:
+  `duplicate_task_accept` and `settled_handoff`** (issue #126/#128;
+  `macp-sdk-python` landed its half in PR #95). `TaskProjection` now records
+  a `duplicate_task_accept` anomaly when a `TaskAccept` for a task it has a
+  `TaskRequest` on file for is discarded because another task already holds
+  the session's one assignee slot (RFC-MACP-0009 §5 rules 3/3a).
+  `HandoffProjection` now records a `settled_handoff` anomaly when a
+  `HandoffAccept`/`HandoffDecline` targets a `handoff_id` that already
+  settled as accepted or declined (RFC-MACP-0010 §5 rule 4). Both new
+  constants (`ANOMALY_DUPLICATE_TASK_ACCEPT`/`ANOMALY_SETTLED_HANDOFF`)
+  export from the package root alongside the existing pair. A `TaskAccept`/
+  `HandoffAccept`/`HandoffDecline` for an *unknown* `task_id`/`handoff_id`
+  still records no anomaly — that determination (not caller misuse) is
+  unchanged by this release. This is purely additive observability: no
+  change to `phase`, `tasks`, or `handoffs` state itself at any of these
+  sites. `DecisionProjection`'s late-`Vote`-after-`Commitment` site remains
+  the one still-open, undecided case (per #128's own explicit scoping) —
+  unaffected by this change.
 
 ### Changed
 

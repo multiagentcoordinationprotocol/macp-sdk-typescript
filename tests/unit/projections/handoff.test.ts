@@ -181,6 +181,71 @@ describe('HandoffProjection', () => {
     expect(projection.getHandoff('h1')?.status).not.toBe('declined');
   });
 
+  // Issue #126/#128: a discarded HandoffAccept/HandoffDecline for an
+  // already-settled handoff_id now records a `settled_handoff` anomaly;
+  // an unknown handoff_id (tested separately below) still records none.
+  describe('settled_handoff anomaly (issue #126/#128)', () => {
+    it('AC4: a HandoffAccept after an already-accepted handoff_id records exactly one anomaly naming that handoff_id', () => {
+      projection.applyEnvelope(
+        makeEnvelope('HandoffOffer', { handoffId: 'h1', targetParticipant: 'bob', scope: 'frontend' }),
+        registry,
+      );
+      projection.applyEnvelope(makeEnvelope('HandoffAccept', { handoffId: 'h1', acceptedBy: 'bob' }, 'bob'), registry);
+      projection.applyEnvelope(
+        makeEnvelope('HandoffAccept', { handoffId: 'h1', acceptedBy: 'carol' }, 'carol'),
+        registry,
+      );
+
+      expect(projection.anomalies).toHaveLength(1);
+      expect(projection.anomalies[0]).toMatchObject({
+        kind: 'settled_handoff',
+        sender: 'carol',
+        subjectId: 'h1',
+      });
+      expect(projection.anomalies[0]?.detail).toContain('accepted');
+    });
+
+    it('AC4: a HandoffAccept after an already-declined handoff_id records exactly one anomaly naming that handoff_id', () => {
+      projection.applyEnvelope(
+        makeEnvelope('HandoffOffer', { handoffId: 'h1', targetParticipant: 'bob', scope: 'frontend' }),
+        registry,
+      );
+      projection.applyEnvelope(
+        makeEnvelope('HandoffDecline', { handoffId: 'h1', declinedBy: 'bob', reason: 'no capacity' }, 'bob'),
+        registry,
+      );
+      projection.applyEnvelope(makeEnvelope('HandoffAccept', { handoffId: 'h1', acceptedBy: 'bob' }, 'bob'), registry);
+
+      expect(projection.anomalies).toHaveLength(1);
+      expect(projection.anomalies[0]).toMatchObject({
+        kind: 'settled_handoff',
+        sender: 'bob',
+        subjectId: 'h1',
+      });
+      expect(projection.anomalies[0]?.detail).toContain('declined');
+    });
+
+    it('AC4: a HandoffDecline after an already-accepted handoff_id records exactly one anomaly naming that handoff_id', () => {
+      projection.applyEnvelope(
+        makeEnvelope('HandoffOffer', { handoffId: 'h1', targetParticipant: 'bob', scope: 'frontend' }),
+        registry,
+      );
+      projection.applyEnvelope(makeEnvelope('HandoffAccept', { handoffId: 'h1', acceptedBy: 'bob' }, 'bob'), registry);
+      projection.applyEnvelope(
+        makeEnvelope('HandoffDecline', { handoffId: 'h1', declinedBy: 'bob', reason: 'too late' }, 'bob'),
+        registry,
+      );
+
+      expect(projection.anomalies).toHaveLength(1);
+      expect(projection.anomalies[0]).toMatchObject({
+        kind: 'settled_handoff',
+        sender: 'bob',
+        subjectId: 'h1',
+      });
+      expect(projection.anomalies[0]?.detail).toContain('accepted');
+    });
+  });
+
   // RFC-MACP-0010 §5 rule 2: HandoffDecline MUST reference an existing
   // handoff_id. A decline for a never-offered handoff_id is invalid input
   // (e.g. an unfiltered transcript) and must not mutate `phase` — even
@@ -201,6 +266,24 @@ describe('HandoffProjection', () => {
     expect(projection.getHandoff('h1')?.status).toBe('accepted');
     expect(projection.getHandoff('ghost')).toBeUndefined();
     expect(projection.phase).toBe('Accepted');
+    // AC5 (issue #126/#128): an unknown handoff_id records zero anomalies —
+    // unchanged from today, re-confirmed here rather than re-implemented.
+    expect(projection.anomalies).toHaveLength(0);
+  });
+
+  // AC5 (issue #126/#128), the HandoffAccept sibling of the HandoffDecline
+  // case directly above.
+  it('does not let an accept for an unknown handoff_id mutate phase or record an anomaly', () => {
+    projection.applyEnvelope(
+      makeEnvelope('HandoffOffer', { handoffId: 'h1', targetParticipant: 'bob', scope: 'frontend' }),
+      registry,
+    );
+    projection.applyEnvelope(makeEnvelope('HandoffAccept', { handoffId: 'ghost', acceptedBy: 'bob' }, 'bob'), registry);
+
+    expect(projection.getHandoff('h1')?.status).toBe('offered');
+    expect(projection.getHandoff('ghost')).toBeUndefined();
+    expect(projection.phase).toBe('OfferPending');
+    expect(projection.anomalies).toHaveLength(0);
   });
 
   it('tracks decline', () => {
