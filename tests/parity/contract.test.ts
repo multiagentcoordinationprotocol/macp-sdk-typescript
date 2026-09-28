@@ -55,7 +55,7 @@ function snakeToLowerCamel(name: string): string {
 }
 
 describe('parity contract (tests/parity/contract.json)', () => {
-  it('pins contract_version 1.1.0 — a version bump means re-reading this whole file', () => {
+  it('pins contract_version 1.1.1 — a version bump means re-reading this whole file', () => {
     // Not a manifest-content assertion: a tripwire so a future contract_version
     // bump (MINOR or MAJOR, per the manifest's own versioning rule) forces a
     // human to re-review every section below, not just whichever one changed.
@@ -66,7 +66,14 @@ describe('parity contract (tests/parity/contract.json)', () => {
     // legacy JSON. Reviewed every section below against this bump; the only
     // other change is `protocol`/`contribute_acceptance`'s `source` fields
     // gaining a citation, which this file does not assert on.
-    expect(contract.contract_version).toBe('1.1.0');
+    // Bumped 1.1.0 -> 1.1.1 (spec-repo PR #154, merged 2026-09-27; re-synced
+    // here 2026-09-28, issue #125): PATCH, annotation-only per the
+    // manifest's own versioning rule — the only diff is this
+    // `contract_version` line and `projection_anomaly`'s `source` field
+    // gaining more explanatory text (still not asserted on by
+    // `kinds`/`fields` below, both unchanged). No pinned value changed;
+    // re-reviewed every section below against the bump regardless.
+    expect(contract.contract_version).toBe('1.1.1');
   });
 
   describe('protocol', () => {

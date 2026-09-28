@@ -7,13 +7,18 @@ schemas/parity/contract.json
 ```
 
 from the spec repo (`multiagentcoordinationprotocol/multiagentcoordinationprotocol`),
-commit `aaac582a54ac53f46042e14e6dc72d7fdb039f33` (spec-repo PR
-[#151](https://github.com/multiagentcoordinationprotocol/multiagentcoordinationprotocol/pull/151),
-bumping `contract_version` to add four `collision_*` `contribute_payload` vectors),
-last re-synced 2026-09-27 as part of fixing this repo's issue #107 (PR #118), whose
-`verify-fixtures` CI check went red against `main` for this unrelated, repo-wide
-drift. Originally copied on 2026-09-25 as part of `plans/sdk-parity-typescript.md`
-Phase 5, at `contract_version` `1.0.0`. `contract_version` at last sync: `1.1.0`.
+commit `99756f897cace4ae3f65ab3bdf7bdadcc6e4f13e` (spec-repo PR
+[#154](https://github.com/multiagentcoordinationprotocol/multiagentcoordinationprotocol/pull/154),
+a PATCH bump per the manifest's own versioning rule — annotation-only:
+`contract_version` plus `projection_anomaly.source` gaining more explanatory text, no
+pinned value changed), last re-synced 2026-09-28 as part of fixing this repo's issue
+#125, filed when `verify-parity`'s byte-diff against the spec repo's default branch
+went red for this drift (this gate has no version pin to wait on; it diffs live).
+Previously re-synced 2026-09-27 as part of fixing issue #107 (PR #118), at
+`contract_version` `1.1.0` (spec-repo PR #151, adding four `collision_*`
+`contribute_payload` vectors). Originally copied on 2026-09-25 as part of
+`plans/sdk-parity-typescript.md` Phase 5, at `contract_version` `1.0.0`.
+`contract_version` at last sync: `1.1.1`.
 
 ## Why this directory lives outside `tests/conformance/`
 
