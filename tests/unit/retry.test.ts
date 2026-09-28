@@ -116,6 +116,27 @@ describe('retrySend', () => {
     expect(client.send).toHaveBeenCalledOnce();
   });
 
+  // Issue #107 3b: after client.ts's gRPC-status→MacpAckError reclassification,
+  // a FAILED_PRECONDITION send() surfaces as MacpAckError(POLICY_DENIED) rather
+  // than being retried to exhaustion as MacpTransportError (which previously
+  // surfaced as MacpRetryError, not MacpAckError, via retry.ts:47-48 -> :65-67).
+  // Pin the retry-layer interaction explicitly: POLICY_DENIED is not in
+  // retryableCodes, so this throws on the FIRST attempt.
+  it('issue #107: does not retry MacpAckError(POLICY_DENIED) — surfaces immediately, not as MacpRetryError', async () => {
+    const client = makeMockClient([makeAck(false, 'POLICY_DENIED', 'read-only registry')]);
+
+    let caught: unknown;
+    try {
+      await retrySend(client, makeEnvelope());
+    } catch (err) {
+      caught = err;
+    }
+
+    expect(caught).toBeInstanceOf(MacpAckError);
+    expect(caught).not.toBeInstanceOf(MacpRetryError);
+    expect(client.send).toHaveBeenCalledOnce();
+  });
+
   it('passes auth option to client.send', async () => {
     const client = makeMockClient([makeAck(true)]);
     const envelope = makeEnvelope();

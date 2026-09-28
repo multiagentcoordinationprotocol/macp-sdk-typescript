@@ -10,8 +10,10 @@ import * as path from 'node:path';
 import * as grpc from '@grpc/grpc-js';
 import * as protoLoader from '@grpc/proto-loader';
 import { assertSenderMatchesIdentity, authSender, type AuthConfig, metadataFromAuth } from './auth';
+import { POLICY_DENIED, SESSION_ALREADY_EXISTS } from './constants';
 import { buildEnvelope, buildProgressPayload, buildSignalPayload } from './envelope';
 import { MacpAckError, MacpSdkError, MacpSessionError, MacpTimeoutError, MacpTransportError } from './errors';
+import { logger } from './logging';
 import { ProtoRegistry } from './proto-registry';
 import { validateProgressScope, validateSignalType } from './validation';
 import type {
@@ -105,6 +107,39 @@ export function grpcStatusName(code: unknown): string | undefined {
   return typeof name === 'string' ? name : undefined;
 }
 
+/**
+ * Per-RPC opt-in: maps a gRPC status *name* (e.g. `'FAILED_PRECONDITION'`) to
+ * a MACP Ack error code. When {@link MacpClient}'s private `unary()` is given
+ * one of these for a call, a matching gRPC failure is raised as
+ * {@link MacpAckError} instead of {@link MacpTransportError} — the same gRPC
+ * status means different things on different RPCs (issue #107), so this is
+ * scoped per call site rather than applied globally.
+ */
+type AckStatusMap = Partial<Record<string, string>>;
+
+/**
+ * Shared by the five registry-mutation RPCs (issue #107, Python's
+ * `_map_registry_mutation_error`, `client.py:347-362`): a `FAILED_PRECONDITION`
+ * against a read-only registry is a rejection of the *call*, not a transport
+ * fault — surface it as `MacpAckError`, not `MacpTransportError`.
+ */
+const REGISTRY_MUTATION_ACK_STATUSES: AckStatusMap = { FAILED_PRECONDITION: 'FAILED_PRECONDITION' };
+
+/**
+ * Convert `grpc.ServiceError.metadata` (a `grpc.Metadata` instance) into the
+ * plain `{ key, value }[]` shape {@link MacpAckError}'s constructor expects.
+ * `Metadata.getMap()` returns `-bin`-suffixed keys as `Buffer` and all other
+ * keys as `string` — exactly the union `MacpAckError.grpcMetadata` declares.
+ * Returns `undefined` when the error carries no metadata (e.g. a
+ * locally-raised error never sent over the wire).
+ */
+function grpcMetadataEntries(
+  metadata: grpc.Metadata | undefined,
+): Array<{ key: string; value: string | Buffer }> | undefined {
+  if (!metadata) return undefined;
+  return Object.entries(metadata.getMap()).map(([key, value]) => ({ key, value }));
+}
+
 const TIMEOUT = Symbol('stream-read-timeout');
 
 const STREAM_END = Symbol('stream-end');
@@ -120,13 +155,21 @@ export class MacpStream {
 
   constructor(private readonly call: grpc.ClientDuplexStream<any, any>) {
     call.on('data', (chunk: any) => {
-      // Support both old format (chunk.envelope) and new oneof format (chunk.response.envelope)
-      const envelope = chunk?.response?.envelope ?? chunk?.envelope;
+      // `StreamSessionResponse.response` is a proto3 `oneof` (envelope | error).
+      // Under this file's own proto-loader options (`oneofs: true`), the
+      // decoded object exposes the payload directly as `chunk.envelope` /
+      // `chunk.error`, with `chunk.response` set to the oneof's ARM NAME as a
+      // *string* (`'envelope'` or `'error'`) — verified against a real
+      // StreamSessionResponse encode/decode roundtrip. So `chunk.response.error`
+      // indexes a string and is always `undefined`; it never matched a real
+      // decoded frame, which is why inline errors were silently dropped.
+      const envelope = chunk?.envelope;
       if (envelope) {
         this.queue.push(envelope);
-      } else if (chunk?.response?.error) {
-        // Inline application-level error — stream stays open
-        for (const cb of this.inlineErrorCallbacks) cb(chunk.response.error);
+      } else if (chunk?.error) {
+        // Inline application-level error — stream stays open (core.proto).
+        logger.warn('inline stream error', { code: chunk.error.code, message: chunk.error.message });
+        for (const cb of this.inlineErrorCallbacks) cb(chunk.error);
       }
     });
     call.on('error', (error: grpc.ServiceError) => {
@@ -296,11 +339,26 @@ export class MacpClient {
     request: TRequest,
     auth?: AuthConfig,
     deadlineMs?: number,
+    ackStatuses?: AckStatusMap,
   ): Promise<TResponse> {
     return new Promise<TResponse>((resolve, reject) => {
       const callback = (error: grpc.ServiceError | null, response: TResponse) => {
-        if (error) reject(new MacpTransportError(error.details || error.message, grpcStatusName(error.code)));
-        else resolve(response);
+        if (error) {
+          const statusName = grpcStatusName(error.code);
+          const mappedCode = statusName ? ackStatuses?.[statusName] : undefined;
+          if (mappedCode) {
+            reject(
+              new MacpAckError(
+                { ok: false, error: { code: mappedCode, message: error.details || error.message } },
+                grpcMetadataEntries(error.metadata),
+              ),
+            );
+          } else {
+            reject(new MacpTransportError(error.details || error.message, statusName));
+          }
+        } else {
+          resolve(response);
+        }
       };
       const deadline = this.deadline(deadlineMs);
       const metadata = this.metadata(auth);
@@ -349,6 +407,10 @@ export class MacpClient {
       { envelope },
       auth,
       options?.deadlineMs,
+      // gRPC ALREADY_EXISTS/FAILED_PRECONDITION on Send are application-level
+      // rejections the runtime couldn't express as a normal NACK (issue #107);
+      // surface them as MacpAckError, matching macp-sdk-python (client.py:442-452).
+      { ALREADY_EXISTS: SESSION_ALREADY_EXISTS, FAILED_PRECONDITION: POLICY_DENIED },
     );
     const ack = response.ack;
     // Duplicate acks are success — the message was already accepted
@@ -483,7 +545,13 @@ export class MacpClient {
       );
     }
     const auth = this.requireAuth(options?.auth);
-    return this.unary('RegisterExtMode', { modeDescriptor: descriptor }, auth, options?.deadlineMs) as Promise<{
+    return this.unary(
+      'RegisterExtMode',
+      { modeDescriptor: descriptor },
+      auth,
+      options?.deadlineMs,
+      REGISTRY_MUTATION_ACK_STATUSES,
+    ) as Promise<{
       ok: boolean;
       error?: string;
     }>;
@@ -494,7 +562,13 @@ export class MacpClient {
     options?: { auth?: AuthConfig; deadlineMs?: number },
   ): Promise<{ ok: boolean; error?: string }> {
     const auth = this.requireAuth(options?.auth);
-    return this.unary('UnregisterExtMode', { mode }, auth, options?.deadlineMs) as Promise<{
+    return this.unary(
+      'UnregisterExtMode',
+      { mode },
+      auth,
+      options?.deadlineMs,
+      REGISTRY_MUTATION_ACK_STATUSES,
+    ) as Promise<{
       ok: boolean;
       error?: string;
     }>;
@@ -506,7 +580,13 @@ export class MacpClient {
     options?: { auth?: AuthConfig; deadlineMs?: number },
   ): Promise<{ ok: boolean; error?: string; mode?: string }> {
     const auth = this.requireAuth(options?.auth);
-    return this.unary('PromoteMode', { mode, promotedModeName }, auth, options?.deadlineMs) as Promise<{
+    return this.unary(
+      'PromoteMode',
+      { mode, promotedModeName },
+      auth,
+      options?.deadlineMs,
+      REGISTRY_MUTATION_ACK_STATUSES,
+    ) as Promise<{
       ok: boolean;
       error?: string;
       mode?: string;
@@ -518,7 +598,13 @@ export class MacpClient {
     options?: { auth?: AuthConfig; deadlineMs?: number },
   ): Promise<{ ok: boolean; error?: string }> {
     const auth = this.requireAuth(options?.auth);
-    return this.unary('RegisterPolicy', { policyDescriptor: descriptor }, auth, options?.deadlineMs) as Promise<{
+    return this.unary(
+      'RegisterPolicy',
+      { policyDescriptor: descriptor },
+      auth,
+      options?.deadlineMs,
+      REGISTRY_MUTATION_ACK_STATUSES,
+    ) as Promise<{
       ok: boolean;
       error?: string;
     }>;
@@ -529,7 +615,13 @@ export class MacpClient {
     options?: { auth?: AuthConfig; deadlineMs?: number },
   ): Promise<{ ok: boolean; error?: string }> {
     const auth = this.requireAuth(options?.auth);
-    return this.unary('UnregisterPolicy', { policyId }, auth, options?.deadlineMs) as Promise<{
+    return this.unary(
+      'UnregisterPolicy',
+      { policyId },
+      auth,
+      options?.deadlineMs,
+      REGISTRY_MUTATION_ACK_STATUSES,
+    ) as Promise<{
       ok: boolean;
       error?: string;
     }>;
