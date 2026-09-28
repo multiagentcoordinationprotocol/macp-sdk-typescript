@@ -2637,3 +2637,18 @@ fix already handles these byte-length collision cases correctly. Full local
 gate re-run green after the sync. Committed as a second, separately-labeled
 commit on the same branch/PR (needed to unblock this PR's required check;
 scoped and described independently of the #107 fix itself).
+
+CI green (build-and-test Node 22/24, integration, verify-fixtures) after the
+parity sync.
+merged #118: squash-merged into `main` as `28d4c52`. Issue #107 confirmed
+CLOSED. Remote and local feature branches deleted; local `main`
+fast-forwarded.
+
+**All six PRs of the original #105-#109 plan are now shipped and merged:**
+PR #112 (#109), PR #113 (#106), PR #114 (#105), PR #115 (#108 part 1, `Refs
+#108`), PR #116 (#108 part 2, `Closes #108`), and now PR #118 (#107) — the
+original plan is complete. Only Phase 6 (#111, PR 7, added 2026-09-27)
+remains.
+
+What's next: start Phase 6 (#111) via the same implement → verify →
+close-gaps → commit → ship cycle.
