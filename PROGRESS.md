@@ -2981,3 +2981,4 @@ keep the per-call auth assertions non-vacuous), `docs/guides/agent-framework.md`
 `CHANGELOG.md` (new `### ⚠ BREAKING CHANGES` entry under `[Unreleased]`). Full suite
 green (1204 passed, 20 skipped); coverage 96.03/89.61/94.47/96.95 vs. 94/84/91/92
 floors; check/lint/format/build/verify-fixtures/verify-parity all green.
+pushed fix/issue-124-devagent-expected-sender 4106fda862da70c04acfb6871f74995c2fbc7d8f
