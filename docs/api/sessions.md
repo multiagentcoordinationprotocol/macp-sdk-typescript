@@ -43,9 +43,12 @@ interface SessionOptions {
 ```
 
 `start()`'s validation is identical across all five built-in mode sessions and
-`BaseSession` — `intent` and `participants` must be non-empty (no duplicate
-participants), `ttlMs` must be in range, and `maxSuspendMs` (if given) must be
-`>= 0`.
+`BaseSession` — `participants` must be non-empty (no duplicate participants),
+`ttlMs` must be in range, and `maxSuspendMs` (if given) must be `>= 0`.
+`intent` may be empty or omitted (issue #124 item 3): it's a proto3 singular
+`string` field with implicit presence — an omitted value and an explicit `''`
+are wire-identical — and RFC-MACP-0001 §7.1 states a runtime "MUST NOT reject
+a SessionStart solely because intent is empty."
 
 ### Common `commit()` Input
 

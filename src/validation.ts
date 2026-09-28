@@ -175,7 +175,11 @@ export function validateSessionStart(input: {
   modeVersion: string;
   configurationVersion: string;
 }): void {
-  validateRequiredField('intent', input.intent);
+  // `intent` is a proto3 singular string field (implicit presence -- an
+  // omitted field and an explicit "" serialize identically on the wire), and
+  // RFC-MACP-0001 §7.1 states a runtime "MUST NOT reject a SessionStart
+  // solely because intent is empty" -- no client-side non-empty check here
+  // (issue #124 item 3).
   validateParticipants(input.participants);
   validateTtlMs(input.ttlMs);
   if (input.maxSuspendMs !== undefined) validateMaxSuspendMs(input.maxSuspendMs);

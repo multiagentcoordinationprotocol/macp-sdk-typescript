@@ -2934,3 +2934,22 @@ PR #131 opened: https://github.com/multiagentcoordinationprotocol/macp-sdk-types
 CI green (build-and-test Node 22/24, integration, verify-fixtures).
 merged #131: squash-merged into `main` as `b52c7f2`. Issue #124 stays OPEN (2 of 4 items
 remain -- Phases 3-4 below); PR intentionally used "Part of #124", not "Closes #124".
+
+### Phase 3 (#124 item 3 -- client-side validation stops rejecting what the wire/RFC permit) - DONE, 2026-09-28
+
+Verifier: fresh Opus, round 1 PASS (2 real gaps, both closed -- see plan file Phase 3
+section: a stale `docs/api/sessions.md:46` line the plan wrongly claimed didn't exist,
+closed; a missing `CHANGELOG.md` entry, closed; one minor pre-existing test-coverage gap
+declined as out of scope). Verifier proved non-vacuity by reverting the three `src/`
+fixes and confirming all 12 new tests fail, none of the 202 others. Fixed: removed the
+`validateRequiredField` call for `intent` (`src/validation.ts`'s `validateSessionStart`),
+`instructions` (`src/task.ts`'s `requestTask`), and `action`/`summary`
+(`src/quorum.ts`'s `requestApproval`) -- all four are proto3 singular string fields
+(implicit presence: omitted and `''` are wire-identical), and `intent` also has an
+explicit RFC-MACP-0001 §7.1 rule against rejecting it empty. Every other
+`validateRequiredField` call site is unchanged. Files touched: `src/validation.ts`,
+`src/task.ts`, `src/quorum.ts`, `tests/unit/validation.test.ts`,
+`tests/unit/base-session.test.ts`, `tests/unit/sessions/{decision,proposal,task,
+handoff,quorum}.test.ts`, `docs/api/sessions.md`, `CHANGELOG.md`. Full suite green;
+coverage 96.03/89.59/94.47/96.95 vs. 92/84/91/94 floors;
+check/lint/format/build/verify-fixtures/verify-parity all green.

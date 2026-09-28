@@ -28,6 +28,16 @@ describe('ProposalSession — projection roundtrip', () => {
     expect(session.projection.transcript.length).toBe(before + 1);
   });
 
+  it('start() accepts an empty intent (issue #124 item 3)', async () => {
+    const client = makeClient();
+    const session = new ProposalSession(client);
+    vi.spyOn(client, 'send').mockResolvedValue({ ok: true });
+
+    await expect(session.start({ intent: '', participants: ['alice', 'bob'], ttlMs: 10_000 })).resolves.toMatchObject({
+      ok: true,
+    });
+  });
+
   it('propose() records an open proposal in activeProposals()', async () => {
     const client = makeClient();
     const session = new ProposalSession(client);

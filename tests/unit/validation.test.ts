@@ -289,8 +289,13 @@ describe('validation', () => {
       expect(() => validateSessionStart(validInput)).not.toThrow();
     });
 
-    it('rejects empty intent', () => {
-      expect(() => validateSessionStart({ ...validInput, intent: '' })).toThrow(MacpSessionError);
+    it('accepts an empty intent (issue #124 item 3 -- RFC-MACP-0001 §7.1: a runtime "MUST NOT reject a SessionStart solely because intent is empty")', () => {
+      expect(() => validateSessionStart({ ...validInput, intent: '' })).not.toThrow();
+    });
+
+    it('accepts an omitted intent (issue #124 item 3 AC4 -- proto3 implicit presence makes omitted and "" wire-identical)', () => {
+      const { intent: _intent, ...withoutIntent } = validInput;
+      expect(() => validateSessionStart(withoutIntent as typeof validInput)).not.toThrow();
     });
 
     it('rejects empty participants', () => {

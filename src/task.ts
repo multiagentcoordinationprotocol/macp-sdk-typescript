@@ -105,7 +105,8 @@ export class TaskSession {
   async requestTask(input: TaskRequestPayload & { sender?: string; auth?: AuthConfig }): Promise<Ack> {
     validateRequiredField('taskId', input.taskId);
     validateRequiredField('title', input.title);
-    validateRequiredField('instructions', input.instructions);
+    // `instructions` is a proto3 singular string field (implicit presence) --
+    // no client-side non-empty check here (issue #124 item 3).
     const envelope = buildEnvelope({
       mode: MODE_TASK,
       messageType: 'TaskRequest',

@@ -107,11 +107,11 @@ describe('BaseSession / BaseProjection extension point', () => {
   // Issue #108.4/4d: start() now calls the full validateSessionStart, bringing
   // this extension point up to parity with the five built-in mode sessions
   // (which already validated all of this). Fails on old code: previously
-  // start() only checked participant count + maxSuspendMs, so an empty
-  // intent, empty/duplicate participants, or an out-of-range ttlMs reached
-  // the wire unvalidated.
+  // start() only checked participant count + maxSuspendMs, so an
+  // empty/duplicate participants, or an out-of-range ttlMs reached the wire
+  // unvalidated. (Empty intent moved out of this table -- see below, issue
+  // #124 item 3: it's now accepted, not rejected.)
   it.each([
-    ['empty intent', { intent: '', participants: ['alice'], ttlMs: 30_000 }],
     ['empty participants', { intent: 'test', participants: [], ttlMs: 30_000 }],
     ['duplicate participants', { intent: 'test', participants: ['alice', 'alice'], ttlMs: 30_000 }],
     ['ttlMs of 0', { intent: 'test', participants: ['alice'], ttlMs: 0 }],
@@ -123,6 +123,17 @@ describe('BaseSession / BaseProjection extension point', () => {
 
     await expect(session.start(input)).rejects.toThrow();
     expect(sendSpy).not.toHaveBeenCalled();
+  });
+
+  it('start() accepts an empty intent (issue #124 item 3 -- RFC-MACP-0001 §7.1: a runtime "MUST NOT reject a SessionStart solely because intent is empty")', async () => {
+    const client = makeClient();
+    const sendSpy = vi.spyOn(client, 'send').mockResolvedValue({ ok: true });
+    const session = new SmokeSession(client);
+
+    await expect(session.start({ intent: '', participants: ['alice'], ttlMs: 30_000 })).resolves.toMatchObject({
+      ok: true,
+    });
+    expect(sendSpy).toHaveBeenCalledOnce();
   });
 
   it('commit() success feeds the projection: phase Committed, commitment decoded', async () => {
