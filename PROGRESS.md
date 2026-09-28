@@ -2756,3 +2756,18 @@ bug shape without a `phase` component, found in `quorum.ts`'s `setBallot`
 during plan review, is tracked separately as issue #121, deliberately not
 implemented here). Files touched: `src/projections/{proposal,handoff,
 decision}.ts`, their three test files, `CHANGELOG.md`.
+
+pushed fix/issue-119-phase-guards 9e10c9a
+PR #123 opened: https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/pull/123
+CI green (build-and-test Node 22/24, integration, verify-fixtures).
+merged #123: squash-merged into `main` as `866490a`. Issue #119 confirmed
+CLOSED. Remote and local feature branches deleted; local `main`
+fast-forwarded.
+
+**Both PRs of `plans/issue-117-119-fixes.md` are now shipped and merged**: #122
+(#117), #123 (#119). Issue #121 (the `quorum.ts` `setBallot` fabrication bug
+found during this plan's review) remains open and unplanned — a separate,
+smaller-blast-radius follow-up, not part of this plan.
+
+What's next: nothing outstanding on this plan. Issue #121 is available as a
+future task if wanted.
