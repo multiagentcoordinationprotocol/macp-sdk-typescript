@@ -3014,3 +3014,4 @@ two-hop wildcard), `CHANGELOG.md`. Deliberately did NOT touch
 sixth Decision-mode site. Full suite green (1211 passed, 20 skipped, up from 1204
 before this phase); coverage 96.04/89.61/94.47/96.96 vs. 94/84/91/92 floors;
 check/lint/format/build/verify-fixtures/verify-parity all green.
+pushed fix/issue-126-128-projection-anomaly-kinds 915b3a1005fbf22a84518b7e7c5f4a98f3cbfa60
