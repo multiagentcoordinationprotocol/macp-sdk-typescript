@@ -106,16 +106,14 @@ type _ProjectionAnomalyFieldSetIsFrozen = AssertNever<
 >;
 
 /**
- * The `ProjectionAnomalyKind` values as named constants. `ANOMALY_DUPLICATE_VOTE`/
- * `ANOMALY_DUPLICATE_BALLOT` are cross-SDK contract, literally pinned by the
- * spec repo's `schemas/parity/contract.json` (`projection_anomaly.kinds`) —
- * `satisfies` links each constant to the union above at compile time, so a
- * drifted value fails `npm run check` before it can ever reach
- * `make verify-parity`. `ANOMALY_DUPLICATE_TASK_ACCEPT`/`ANOMALY_SETTLED_HANDOFF`
- * are also cross-SDK agreed (issue #126/#128) but not yet in the vendored
- * manifest — the manifest's own versioning rule requires both SDKs to land a
- * kind before the spec repo bumps it, which is a spec-repo-owned follow-up,
- * not part of this SDK's scope (see `tests/parity/SOURCE.md`).
+ * The four `ProjectionAnomalyKind` values as named constants — all four are
+ * cross-SDK contract, literally pinned by the spec repo's
+ * `schemas/parity/contract.json` (`projection_anomaly.kinds`, `contract_version`
+ * 1.2.0 — `ANOMALY_DUPLICATE_TASK_ACCEPT`/`ANOMALY_SETTLED_HANDOFF` landed there
+ * under issue #126/#128, after this SDK's PR #134 completed the agreement
+ * `macp-sdk-python`'s PR #95 started). `satisfies` links each constant to the
+ * union above at compile time, so a drifted value fails `npm run check` before
+ * it can ever reach `make verify-parity`.
  */
 export const ANOMALY_DUPLICATE_VOTE = 'duplicate_vote' satisfies ProjectionAnomalyKind;
 export const ANOMALY_DUPLICATE_BALLOT = 'duplicate_ballot' satisfies ProjectionAnomalyKind;
