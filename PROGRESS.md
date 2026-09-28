@@ -3020,3 +3020,20 @@ CI green (build-and-test Node 22/24, integration, verify-fixtures).
 merged #134: squash-merged into `main` as `a99668c`. Issues #126 and #128 CLOSED.
 All 5 phases of plans/issue-124-126-128-fixes.md shipped -- #124, #126, #128 fully
 resolved. Plan complete.
+
+### Issue #135 (re-vendor parity contract.json for contract_version 1.2.0) - DONE, 2026-09-28
+
+Time-sensitive fix flagged by a peer session working the spec repo: PR #134 (Phase 5
+above) completed the ProjectionAnomalyKind cross-SDK agreement, which the spec repo
+bumped schemas/parity/contract.json to 1.2.0 for (spec PR #158). Re-vendored
+tests/parity/contract.json, widened contract.test.ts kinds assertion to all four
+constants, updated the version tripwire (assertion + title), collapsed base.ts stale
+"not yet in the vendored manifest" docblock. Byte-identity independently confirmed
+against the spec repo checkout at 45406dd. Verified by a fresh Opus subagent against
+issue #135's own 4-item acceptance checklist: PASS, no gaps.
+
+pushed fix/issue-135-parity-contract-1.2.0 729c02b
+PR #136 opened: https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/pull/136
+CI green (build-and-test Node 22/24, integration, verify-fixtures).
+merged #136: squash-merged into `main` as `8ef1ab1`. Issue #135 CLOSED. make verify-parity
+confirmed green post-merge.
