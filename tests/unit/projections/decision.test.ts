@@ -89,6 +89,27 @@ describe('DecisionProjection', () => {
     expect(totals['p2']).toBe(1);
   });
 
+  // RFC-MACP-0007 §5 rule 2: Vote MUST reference an existing proposal_id. A
+  // Vote for a never-proposed proposalId is invalid input (e.g. an unfiltered
+  // transcript) and must not mutate `phase` or fabricate a `votes` entry
+  // (issue #119, same shape as issue #111).
+  it('a Vote for an unknown proposalId does not mutate phase or fabricate a votes entry', () => {
+    projection.applyEnvelope(makeEnvelope('Proposal', { proposalId: 'p1', option: 'a' }), registry);
+    expect(projection.phase).toBe('Evaluation');
+
+    const ghostVote = makeEnvelope('Vote', { proposalId: 'ghost', vote: 'approve' }, 'alice');
+    projection.applyEnvelope(ghostVote, registry);
+
+    expect(projection.phase).toBe('Evaluation');
+    expect(projection.votes.has('ghost')).toBe(false);
+    expect(projection.voteTotals()['ghost']).toBeUndefined();
+    // Accepted-only contract: the envelope is still an accepted message from
+    // the caller's point of view, so it still lands in the transcript — this
+    // is a guard against fabricated mode state, not a decode failure, and the
+    // base rollback/dedup behavior is unaffected.
+    expect(projection.transcript).toHaveLength(2);
+  });
+
   it('majorityWinner returns proposal with most votes', () => {
     projection.applyEnvelope(makeEnvelope('Proposal', { proposalId: 'p1', option: 'a' }), registry);
     projection.applyEnvelope(makeEnvelope('Proposal', { proposalId: 'p2', option: 'b' }), registry);

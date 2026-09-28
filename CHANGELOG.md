@@ -288,6 +288,33 @@ project uses [Semantic Versioning](https://semver.org/).
   assignments inside their sibling `if (task)` block, matching the guard
   already correct on `TaskAccept` (issue #71/#70) and on
   `HandoffProjection`'s analogous `phase` transitions.
+- **Three more `phase`-transition-outside-guard sites, same bug shape as
+  issue #111, found during that fix's verification** (issue #119):
+  - `ProposalProjection`'s `Reject` case moved `this.phase =
+    'TerminalRejected'` inside the sibling `if (proposal) { ... }` guard. A
+    terminal `Reject` for an unknown `proposalId` no longer advances `phase`
+    — which matters beyond bookkeeping, since `'TerminalRejected'` is a
+    `TERMINAL_PHASES` member in `src/agent/participant.ts`, so the bug could
+    end a live `Participant`'s `run()` loop for a session that never
+    actually terminated.
+  - `HandoffProjection`'s `HandoffContext` case moved its `phase` transition
+    (`'OfferPending'` → `'ContextSharing'`) inside the sibling `if (handoff)
+    { ... }` guard, matching `HandoffAccept`/`HandoffDecline`, which were
+    already correct.
+  - `DecisionProjection`'s `Vote` case gained a new existence guard (none
+    existed before): `if (!this.proposals.has(record.proposalId)) break;`,
+    per RFC-MACP-0007 §5 rule 2 ("`Evaluation`, `Objection`, and `Vote` MUST
+    reference an existing `proposal_id`"). Previously a `Vote` for an unknown
+    `proposalId` fabricated a `votes` `Map` entry and flipped `phase` to
+    `'Voting'` — the fabricated entry also inflated `voteTotals()`'s and
+    `majorityWinner()`'s denominators, able to flip a real proposal from
+    winner to non-winner in a close tally.
+
+  All three sites' `rejections`/audit-array-style writes remain unconditional
+  (append-only logs, matching the runtime), so query methods reading from
+  them (`isTerminallyRejected`, `hasTerminalRejection`) can still report
+  `true` for an unknown id even though `phase` no longer moves — intentional,
+  not a residual gap.
 
 ### Documentation
 

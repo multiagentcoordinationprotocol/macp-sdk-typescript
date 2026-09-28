@@ -2723,3 +2723,36 @@ items" bullets to mirror the spec repo's CURRENT `schemas/parity/README.md` (whi
 had moved further than issue #117's own body predicted — grounding in the live
 seam doc over the stale issue text was confirmed correct, not a deviation). No
 `src/` or test change. Files touched: `tests/parity/SOURCE.md`.
+
+pushed fix/issue-117-parity-source-docs 33fb2cf
+PR #122 opened: https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/pull/122
+CI green (build-and-test Node 22/24, integration, verify-fixtures).
+merged #122: squash-merged into `main` as `668c4fc`. Issue #117 confirmed
+CLOSED. Remote and local feature branches deleted; local `main`
+fast-forwarded.
+
+### Phase 2 (#119 — phase-transition-outside-guard, 3 sites) — DONE, 2026-09-27
+
+Verifier: fresh Opus, round 1 PASS. Fixed `proposal.ts`'s `Reject` case (moved
+`this.phase = 'TerminalRejected'` inside the sibling `if (proposal)` guard —
+concretely worse than cosmetic, since `'TerminalRejected'` is a
+`TERMINAL_PHASES` member in `src/agent/participant.ts`, so the bug could end a
+live agent's `run()` loop for a session that never terminated),
+`handoff.ts`'s `HandoffContext` case (same move, into the sibling `if
+(handoff)` guard), and `decision.ts`'s `Vote` case (added a NEW existence
+guard, `if (!this.proposals.has(record.proposalId)) break;`, per
+RFC-MACP-0007 §5 rule 2 — no guard existed before, so this also closes a
+distinct `votes` Map-fabrication bug that was inflating
+`voteTotals()`/`majorityWinner()`'s denominators). Verifier ran its own
+independent mutation-testing pass (reverted each fix one at a time against
+the full suite): exactly one test failed per mutation, zero collateral. Full
+suite 1179 passed/20 skipped; coverage 96.03/89.53/94.44/96.96 vs.
+92/84/91/94 floors; check/lint/format/build/verify-fixtures/verify-parity all
+green. Confirmed via grep sweep that every `this.phase =` site across all
+five projections is now either guarded or on the confirmed
+entity-creating/session-level exception list — this closes out the
+phase-transition-outside-guard bug class entirely (the sibling *fabrication*
+bug shape without a `phase` component, found in `quorum.ts`'s `setBallot`
+during plan review, is tracked separately as issue #121, deliberately not
+implemented here). Files touched: `src/projections/{proposal,handoff,
+decision}.ts`, their three test files, `CHANGELOG.md`.

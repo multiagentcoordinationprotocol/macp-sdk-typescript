@@ -98,10 +98,25 @@ export class ProposalProjection extends BaseProjection {
           reason: record.reason,
           sender: envelope.sender,
         });
+        // RFC-MACP-0008 §5 rule 3 requires `Reject` to reference an existing
+        // proposal_id, so `this.phase` must only move to the terminal state
+        // when a proposal record for it actually exists here (issue #119,
+        // same shape as issue #111's TaskComplete/TaskFail fix) — otherwise
+        // an unfiltered transcript could flip `phase` to `'TerminalRejected'`
+        // (a TERMINAL_PHASES member, see `src/agent/participant.ts`) on a
+        // never-seen proposalId, ending a live Participant's run() loop for a
+        // session that never actually terminated. `this.rejections.push(...)`
+        // above stays unconditional — it's an append-only audit log (see
+        // `docs/api/projections.md` "List accumulators and logical
+        // duplicates"), so `isTerminallyRejected`/`hasTerminalRejection` can
+        // still report `true` for an unknown id even though `phase` does not
+        // move; that split is intentional, not a residual bug.
         if (terminal) {
           const proposal = this.proposals.get(record.proposalId);
-          if (proposal) proposal.status = 'rejected';
-          this.phase = 'TerminalRejected';
+          if (proposal) {
+            proposal.status = 'rejected';
+            this.phase = 'TerminalRejected';
+          }
         }
         break;
       }

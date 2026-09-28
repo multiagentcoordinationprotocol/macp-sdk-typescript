@@ -56,6 +56,27 @@ describe('HandoffProjection', () => {
     expect(projection.phase).toBe('ContextSharing');
   });
 
+  // RFC-MACP-0010 §5 rule 2: HandoffContext MUST reference an existing
+  // handoff_id. A HandoffContext for a never-offered handoff_id is invalid
+  // input (e.g. an unfiltered transcript) and must not mutate `phase` while a
+  // different, real handoff is still pending (issue #119).
+  it('a HandoffContext for an unknown handoffId does not mutate phase', () => {
+    projection.applyEnvelope(
+      makeEnvelope('HandoffOffer', { handoffId: 'h1', targetParticipant: 'bob', scope: 'frontend' }),
+      registry,
+    );
+    expect(projection.phase).toBe('OfferPending');
+
+    projection.applyEnvelope(
+      makeEnvelope('HandoffContext', { handoffId: 'ghost', contentType: 'application/json' }),
+      registry,
+    );
+
+    expect(projection.phase).toBe('OfferPending');
+    expect(projection.getHandoff('h1')?.status).toBe('offered');
+    expect(projection.getHandoff('ghost')).toBeUndefined();
+  });
+
   it('tracks acceptance', () => {
     projection.applyEnvelope(
       makeEnvelope('HandoffOffer', { handoffId: 'h1', targetParticipant: 'bob', scope: 'frontend' }),
