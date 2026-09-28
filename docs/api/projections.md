@@ -225,16 +225,15 @@ This is a **cross-SDK frozen contract**, agreed with `macp-sdk-python` (same
 seven fields, snake_case there) — do not add, rename, or remove a field
 without cross-SDK agreement. `duplicate_task_accept`/`settled_handoff` were
 added under exactly that agreement (issue #126/#128 — `macp-sdk-python`
-landed its half in PR #95). Four related exports pin this contract further:
-`ANOMALY_DUPLICATE_VOTE`/`ANOMALY_DUPLICATE_BALLOT`/
-`ANOMALY_DUPLICATE_TASK_ACCEPT`/`ANOMALY_SETTLED_HANDOFF` are the four
-`ProjectionAnomalyKind` string values as named constants, and
-`PROJECTION_ANOMALY_FIELD_ORDER` is the field list above as a runtime
-`readonly` tuple, in order. Only the first two kinds are asserted against the
-spec repo's `schemas/parity/contract.json` manifest
-(`projection_anomaly.kinds`/`.fields`) by this SDK's own test suite today —
-the manifest's own versioning rule requires both SDKs to land a kind before
-the spec repo bumps it, a follow-up owned by that repo, not this one; see
+landed its half in PR #95, this SDK's PR #134 completed it). Four related
+exports pin this contract further: `ANOMALY_DUPLICATE_VOTE`/
+`ANOMALY_DUPLICATE_BALLOT`/`ANOMALY_DUPLICATE_TASK_ACCEPT`/
+`ANOMALY_SETTLED_HANDOFF` are the four `ProjectionAnomalyKind` string values
+as named constants, and `PROJECTION_ANOMALY_FIELD_ORDER` is the field list
+above as a runtime `readonly` tuple, in order. All four kinds are now
+asserted against the spec repo's `schemas/parity/contract.json` manifest
+(`projection_anomaly.kinds`/`.fields`, `contract_version` 1.2.0) by this
+SDK's own test suite; see
 [Testing § Parity Contract Gate](../guides/testing.md#parity-contract-gate).
 
 **What an anomaly means — deliberately narrow, agreed wording across both

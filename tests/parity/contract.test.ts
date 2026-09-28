@@ -41,7 +41,9 @@ import { isCanonicalCommitmentHash } from '../../src/commitment-hash';
 import { buildDecisionPolicy } from '../../src/policy';
 import {
   ANOMALY_DUPLICATE_BALLOT,
+  ANOMALY_DUPLICATE_TASK_ACCEPT,
   ANOMALY_DUPLICATE_VOTE,
+  ANOMALY_SETTLED_HANDOFF,
   PROJECTION_ANOMALY_FIELD_ORDER,
 } from '../../src/projections/base';
 import { ProtoRegistry } from '../../src/proto-registry';
@@ -55,7 +57,7 @@ function snakeToLowerCamel(name: string): string {
 }
 
 describe('parity contract (tests/parity/contract.json)', () => {
-  it('pins contract_version 1.1.1 — a version bump means re-reading this whole file', () => {
+  it('pins contract_version 1.2.0 — a version bump means re-reading this whole file', () => {
     // Not a manifest-content assertion: a tripwire so a future contract_version
     // bump (MINOR or MAJOR, per the manifest's own versioning rule) forces a
     // human to re-review every section below, not just whichever one changed.
@@ -73,7 +75,18 @@ describe('parity contract (tests/parity/contract.json)', () => {
     // gaining more explanatory text (still not asserted on by
     // `kinds`/`fields` below, both unchanged). No pinned value changed;
     // re-reviewed every section below against the bump regardless.
-    expect(contract.contract_version).toBe('1.1.1');
+    // Bumped 1.1.1 -> 1.2.0 (spec-repo PR #158, merged 2026-09-28; re-synced
+    // here 2026-09-28, issue #135): MINOR — this repo's own PR #134
+    // (unfreezing 5 of 6 `ProjectionAnomalyKind` sites, issue #126/#128)
+    // completed the cross-SDK agreement `macp-sdk-python` PR #95 started;
+    // `projection_anomaly.kinds` gains `duplicate_task_accept`/
+    // `settled_handoff`, and `.source` is rewritten with the precise
+    // qualification that only 3 of those 5 resolved sites actually record
+    // an anomaly (the other 2 resolved as deliberate silent no-ops) — see
+    // `kinds`/`fields` assertions below, both updated to match. No other
+    // section changed; re-reviewed every section below against the bump
+    // regardless.
+    expect(contract.contract_version).toBe('1.2.0');
   });
 
   describe('protocol', () => {
@@ -163,8 +176,13 @@ describe('parity contract (tests/parity/contract.json)', () => {
   });
 
   describe('projection_anomaly', () => {
-    it('kinds match ANOMALY_DUPLICATE_VOTE/ANOMALY_DUPLICATE_BALLOT', () => {
-      expect([ANOMALY_DUPLICATE_VOTE, ANOMALY_DUPLICATE_BALLOT]).toEqual(contract.sections.projection_anomaly.kinds);
+    it('kinds match ANOMALY_DUPLICATE_VOTE/ANOMALY_DUPLICATE_BALLOT/ANOMALY_DUPLICATE_TASK_ACCEPT/ANOMALY_SETTLED_HANDOFF, in order', () => {
+      expect([
+        ANOMALY_DUPLICATE_VOTE,
+        ANOMALY_DUPLICATE_BALLOT,
+        ANOMALY_DUPLICATE_TASK_ACCEPT,
+        ANOMALY_SETTLED_HANDOFF,
+      ]).toEqual(contract.sections.projection_anomaly.kinds);
     });
 
     it('fields, transformed per field_case_rule, match PROJECTION_ANOMALY_FIELD_ORDER in order', () => {
