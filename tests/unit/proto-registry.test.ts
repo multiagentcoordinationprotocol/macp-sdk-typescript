@@ -169,10 +169,48 @@ describe('ProtoRegistry', () => {
       expect(decoded).toEqual({ value: 'x' });
     });
 
-    it('coerces a non-string legacy JSON value to a string', () => {
+    it('passes a non-string legacy JSON value through unstringified (issue #124)', () => {
+      // Before the fix, a non-string `value` was coerced via `String(...)`,
+      // making a genuine number indistinguishable from a string that happens
+      // to look like one.
       const encoded = Buffer.from('{"value":123}', 'utf8');
       const decoded = registry.decodeKnownPayload(MODE_MULTI_ROUND, 'Contribute', encoded);
-      expect(decoded).toEqual({ value: '123' });
+      expect(decoded).toEqual({ value: 123 });
+    });
+
+    it('decodes a legacy JSON Contribute payload with no value key to { value: undefined } (issue #124)', () => {
+      // Before the fix, an absent key coerced to `''` via `?? ''`, making an
+      // absent value indistinguishable from a genuine empty string. Asserted
+      // directly (not just via toEqual, which ignores undefined properties on
+      // both sides and would pass just as well against `{}`) so this actually
+      // pins `decoded.value === undefined`, not merely "no exception."
+      const encoded = Buffer.from('{"other":"x"}', 'utf8');
+      const decoded = registry.decodeKnownPayload(MODE_MULTI_ROUND, 'Contribute', encoded);
+      expect(decoded).toEqual({ value: undefined });
+      expect((decoded as { value: unknown }).value).toBeUndefined();
+      expect((decoded as { value: unknown }).value).not.toBe('');
+    });
+
+    it('decodes a legacy JSON Contribute payload with a null value to { value: null } (issue #124)', () => {
+      const encoded = Buffer.from('{"value":null}', 'utf8');
+      const decoded = registry.decodeKnownPayload(MODE_MULTI_ROUND, 'Contribute', encoded);
+      expect(decoded).toEqual({ value: null });
+    });
+
+    it('passes a boolean, object, or array legacy JSON value through unaltered (issue #124)', () => {
+      // The docblock above now advertises pass-through for every JSON shape,
+      // not just numbers and null (covered above) -- pin the remaining shapes
+      // too so that claim is backed by an assertion, not just the number/null
+      // cases plus manual inspection.
+      expect(registry.decodeKnownPayload(MODE_MULTI_ROUND, 'Contribute', Buffer.from('{"value":true}'))).toEqual({
+        value: true,
+      });
+      expect(registry.decodeKnownPayload(MODE_MULTI_ROUND, 'Contribute', Buffer.from('{"value":{"a":1}}'))).toEqual({
+        value: { a: 1 },
+      });
+      expect(registry.decodeKnownPayload(MODE_MULTI_ROUND, 'Contribute', Buffer.from('{"value":[1,2]}'))).toEqual({
+        value: [1, 2],
+      });
     });
 
     it('decodes a legacy JSON Contribute payload with leading whitespace (issue #93)', () => {
@@ -256,22 +294,19 @@ describe('ProtoRegistry', () => {
         expect(failures).toEqual([]);
       });
 
-      it('does not change decoding of non-canonical, non-dict JSON values', () => {
+      it("does not change decoding of non-canonical, non-dict JSON values (issue #124: no longer coerced to '')", () => {
         // These never collided (they aren't canonical proto bytes for any
-        // ContributePayload), so isCanonicalProto must return false and the
-        // existing coercion-to-string behavior must be unchanged.
-        expect(registry.decodeKnownPayload(MODE_MULTI_ROUND, 'Contribute', Buffer.from('0'))).toEqual({
-          value: '',
-        });
-        expect(registry.decodeKnownPayload(MODE_MULTI_ROUND, 'Contribute', Buffer.from('[]'))).toEqual({
-          value: '',
-        });
-        expect(registry.decodeKnownPayload(MODE_MULTI_ROUND, 'Contribute', Buffer.from('true'))).toEqual({
-          value: '',
-        });
-        expect(registry.decodeKnownPayload(MODE_MULTI_ROUND, 'Contribute', Buffer.from('"x"'))).toEqual({
-          value: '',
-        });
+        // ContributePayload), so isCanonicalProto must return false regardless
+        // of issue #124's fix — this pins that the tie-break itself is
+        // unaffected by removing the coercion. None of these JSON values is an
+        // object with a `value` key, so `parsed.value` is `undefined` for all
+        // four — before issue #124's fix this coerced to `''`; now it passes
+        // through as `undefined`, same as the absent-key case above.
+        for (const literal of ['0', '[]', 'true', '"x"']) {
+          const decoded = registry.decodeKnownPayload(MODE_MULTI_ROUND, 'Contribute', Buffer.from(literal));
+          expect(decoded, literal).toEqual({ value: undefined });
+          expect((decoded as { value: unknown }).value, literal).toBeUndefined();
+        }
       });
 
       it.each([

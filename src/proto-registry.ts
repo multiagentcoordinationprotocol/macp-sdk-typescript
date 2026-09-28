@@ -137,7 +137,13 @@ export class ProtoRegistry {
    * Decode an `ext.multi_round.v1` `Contribute` payload, accepting both wire
    * formats: legacy JSON (`{"value":"..."}`, still replayed verbatim from
    * pre-proto histories) and canonical protobuf (`ContributePayload`). Both
-   * normalize to `{ value: string }`.
+   * normalize to `{ value }`, but only the protobuf path's `value` is always
+   * a `string` — the legacy-JSON path passes `parsed.value` through exactly
+   * as `JSON.parse` produced it (issue #124: no `String(...)` coercion, no
+   * `?? ''` fallback for an absent key), so `value` may be `undefined`,
+   * `null`, a number, a boolean, or an object/array for malformed-but-valid
+   * legacy JSON. This method's own contract is observational, not a gate —
+   * see the `contribute_acceptance` note below.
    *
    * Parse-then-fallback (issue #93), not a first-byte shortcut: JSON is always
    * attempted first, and only a `JSON.parse` failure falls through to
@@ -179,7 +185,7 @@ export class ProtoRegistry {
     try {
       const parsed = JSON.parse(payload.toString('utf8')) as Record<string, unknown>;
       if (!this.isCanonicalProto(MULTI_ROUND_CONTRIBUTE, payload)) {
-        return { value: typeof parsed.value === 'string' ? parsed.value : String(parsed.value ?? '') };
+        return { value: parsed.value };
       }
     } catch {
       // Not JSON at all — fall through to the protobuf decode below.
