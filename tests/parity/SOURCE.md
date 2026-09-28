@@ -7,10 +7,13 @@ schemas/parity/contract.json
 ```
 
 from the spec repo (`multiagentcoordinationprotocol/multiagentcoordinationprotocol`),
-commit `4f15b96cac6e39d62925a5baa1ef80a42c2f818d` ("tooling(parity): add
-schemas/parity/contract.json and hold it to its sources (#134) (#138)",
-2026-09-20), copied on 2026-09-25 as part of `plans/sdk-parity-typescript.md`
-Phase 5. `contract_version` at copy time: `1.0.0`.
+commit `aaac582a54ac53f46042e14e6dc72d7fdb039f33` (spec-repo PR
+[#151](https://github.com/multiagentcoordinationprotocol/multiagentcoordinationprotocol/pull/151),
+bumping `contract_version` to add four `collision_*` `contribute_payload` vectors),
+last re-synced 2026-09-27 as part of fixing this repo's issue #107 (PR #118), whose
+`verify-fixtures` CI check went red against `main` for this unrelated, repo-wide
+drift. Originally copied on 2026-09-25 as part of `plans/sdk-parity-typescript.md`
+Phase 5, at `contract_version` `1.0.0`. `contract_version` at last sync: `1.1.0`.
 
 ## Why this directory lives outside `tests/conformance/`
 
@@ -56,11 +59,24 @@ source of truth; cite the named RFC/registry/proto instead.
 
 ## Open items (from the spec repo's README, not resolved by this SDK)
 
-- `contribute_payload` decode behavior on non-canonical inputs (leading
-  whitespace, non-string `value`, empty payload) is deliberately not pinned
-  — the three implementations don't yet agree off the canonical vectors.
-- `contribute_acceptance` (`applies_to: [macp-runtime]` only) — whether this
-  SDK should reject an empty `Contribute` payload is an open cross-SDK
-  question. No assertion in `contract.test.ts` for this section; do not add
-  one until `applies_to` actually names `macp-sdk-typescript` (a MINOR bump
-  upstream).
+- `contribute_payload` — the canonical-proto/legacy-JSON length-collision band is now
+  pinned by the four `collision_*` vectors, and empty-payload gating is settled (see
+  the `contribute_acceptance` bullet below). What remains genuinely unpinned is
+  narrower than it was at 1.0.0: what a decoder does with valid legacy JSON whose
+  `value` is not a string. `macp-sdk-typescript` coerces it (`String(parsed.value ??
+  '')`), `macp-sdk-python` passes it through uninterpreted, and `macp-runtime`
+  declines it outright (its legacy-JSON reader requires a string `value`) — no two of
+  the three agree, so no value is seeded here. Tracked upstream as spec-repo issue
+  #142 (`schemas/parity/README.md` "Open items").
+- `contribute_acceptance` (`applies_to: [macp-runtime]` only) — **settled, not
+  pending an upstream bump.** Whether this SDK should reject an empty `Contribute`
+  payload was an open cross-SDK question at 1.0.0 vendoring time; the spec repo has
+  since decided `applies_to` stays `[macp-runtime]` permanently.
+  `macp-runtime` is the sole acceptance gate for this mode (`parse_contribute_value`);
+  both SDKs deliberately decode without raising instead of gating — this SDK's decode
+  layer is observational rather than an acceptance gate, decoding zero bytes to `{}`
+  under proto3 defaults (which gives `ContributePayload.value` no field presence, so
+  an explicitly-empty payload and an absent one are the same zero bytes on the wire
+  regardless). No assertion belongs in `contract.test.ts` for this section, and none
+  should be added later expecting a MINOR bump that names `macp-sdk-typescript` —
+  there isn't one coming.
