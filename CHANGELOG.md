@@ -156,6 +156,25 @@ project uses [Semantic Versioning](https://semver.org/).
   `ttlMs` reached the wire unvalidated from a custom mode built on
   `BaseSession` — the weakest-validated mode in the SDK. All five now
   reject client-side, matching every built-in mode session.
+- **BREAKING (narrows an exception type): `send()` now throws `MacpAckError`,
+  not `MacpTransportError`, for a gRPC `ALREADY_EXISTS`/`FAILED_PRECONDITION`;
+  same for `registerExtMode`/`unregisterExtMode`/`promoteMode`/
+  `registerPolicy`/`unregisterPolicy` on `FAILED_PRECONDITION`** (issue #107).
+  These are application-level rejections the runtime couldn't express as a
+  normal Ack, not transport faults — `MacpAckError` (`failure.code`
+  `'SESSION_ALREADY_EXISTS'` / `'POLICY_DENIED'` / `'FAILED_PRECONDITION'`
+  respectively) is the correct, Python-parity model
+  (`client.py:442-452`, `_map_registry_mutation_error` at `client.py:347-362`).
+  Code today catching `MacpTransportError` around these calls for these
+  specific statuses stops matching (`MacpAckError` extends `MacpSdkError`
+  directly, not `MacpTransportError`); every other gRPC status on these RPCs,
+  and every status on every other RPC, is unaffected. A knock-on effect on
+  `retrySend()`: a `FAILED_PRECONDITION` `send()` was previously retried to
+  exhaustion (no code filter on `MacpTransportError`) and surfaced as
+  `MacpRetryError`; it now surfaces immediately as `MacpAckError`, since
+  `POLICY_DENIED` is not in `DEFAULT_RETRY_POLICY.retryableCodes` — strictly
+  more correct (neither condition is retryable) and no longer masks the real
+  error behind a generic "retries exhausted."
 
 ### Fixed
 
@@ -246,6 +265,19 @@ project uses [Semantic Versioning](https://semver.org/).
   value. Both handlers now reuse this SDK's own `validateRecommendation`/
   `validateConfidence`/`validateVote` (throwing the documented
   `MacpSessionError`) and dispatch the validators' normalized return value.
+- **`MacpStream`'s inline-error path was reading a shape a real decode never
+  produces, silently dropping every inline application-level error** (issue
+  #107). `StreamSessionResponse.response` is a proto3 `oneof`; under this
+  file's own `@grpc/proto-loader` options (`oneofs: true`), the decoded
+  object exposes the payload directly as `chunk.envelope`/`chunk.error`, with
+  `chunk.response` set to the oneof's *arm name as a string* (`'envelope'` or
+  `'error'`) — not a nested object. The old code read
+  `chunk?.response?.error`, which indexes a string and is always `undefined`
+  on every message that has ever crossed this stream; the corresponding unit
+  test only ever passed because it emitted the same fictional
+  `{ response: { error } }` shape by hand rather than a real decode. Fixed to
+  read `chunk.error` directly, and each inline error is now also logged at
+  `warn` (it previously produced no log line anywhere).
 
 ### Documentation
 

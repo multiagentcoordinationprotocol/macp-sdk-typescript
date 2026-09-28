@@ -67,7 +67,13 @@ is exhausted (see `src/retry.ts`).
 
 ## MacpAckError
 
-Thrown when the runtime returns a negative acknowledgement (`ack.ok === false`).
+Thrown when the runtime returns a negative acknowledgement (`ack.ok === false`)
+— **and also** when `send()` or one of the five registry-mutation RPCs
+(`registerExtMode`, `unregisterExtMode`, `promoteMode`, `registerPolicy`,
+`unregisterPolicy`) fails with a gRPC `ALREADY_EXISTS`/`FAILED_PRECONDITION`
+status the runtime couldn't express as a normal Ack; `err.ack` is then a
+synthesized `{ ok: false, error: { code, message } }` (see
+[error-handling.md](../guides/error-handling.md#macpackerror)).
 
 ```typescript
 import { MacpAckError } from 'macp-sdk-typescript';
@@ -155,6 +161,7 @@ bearer) — pre-0.2 code continues to work unchanged.
 | `FORBIDDEN` | Not authorized for this session or message type |
 | `SESSION_NOT_FOUND` | Session does not exist |
 | `SESSION_NOT_OPEN` | Session already resolved or expired |
+| `SESSION_ALREADY_EXISTS` | `send()`'s `SessionStart` collided with an existing session id (mapped from a gRPC `ALREADY_EXISTS`) |
 | `DUPLICATE_MESSAGE` | message_id already accepted |
 | `INVALID_ENVELOPE` | Validation failed or payload invalid |
 | `UNSUPPORTED_PROTOCOL_VERSION` | No mutually supported version |

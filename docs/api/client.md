@@ -73,6 +73,13 @@ const ack: Ack = await client.send(envelope, {
 A duplicate ack (`ack.duplicate === true`) is treated as success and returned
 without throwing — the message was already accepted.
 
+A gRPC `ALREADY_EXISTS` or `FAILED_PRECONDITION` on the underlying call also
+throws `MacpAckError` (`failure.code` `'SESSION_ALREADY_EXISTS'` /
+`'POLICY_DENIED'` respectively) rather than `MacpTransportError` — these are
+application-level rejections the runtime couldn't express as a normal Ack.
+Every other gRPC status is still `MacpTransportError`. See
+[error-handling.md › MacpAckError](../guides/error-handling.md#macpackerror).
+
 ### `getSession(sessionId, options?)`
 
 Query session metadata.
@@ -246,6 +253,13 @@ Guardrails (runtime ≥ 0.5.0):
   `modeVersion`; a later `Commitment` must echo that bound version. `BaseSession`
   defaults `modeVersion` to `'1.0.0'`, so set the descriptor's version to match
   (or override the session's `modeVersion`) or the commitment will mismatch.
+
+`registerExtMode`, `unregisterExtMode`, `promoteMode`, `registerPolicy`, and
+`unregisterPolicy` all throw `MacpAckError` with `failure.code`
+`'FAILED_PRECONDITION'` — not `MacpTransportError` — when the underlying gRPC
+call fails with `FAILED_PRECONDITION` (e.g. a read-only registry started with
+`MACP_POLICIES_DIR`; see [policy.md](policy.md)). Every other gRPC status on
+these calls is still `MacpTransportError`.
 
 ### `unregisterExtMode(mode, options?)`
 
@@ -478,9 +492,11 @@ Throws `MacpTimeoutError` if `timeoutMs` elapses first, and
 
 ### `onInlineError(callback)`
 
-Register a callback for inline application-level errors delivered on the stream
-(`response.error` frames). The stream stays open when these arrive — they are
-not transport failures.
+Register a callback for inline application-level errors delivered on the
+stream (a `StreamSessionResponse` frame whose oneof arm is `error`, not
+`envelope`). The stream stays open when these arrive — they are not transport
+failures. The SDK also logs each one at `warn` (via `src/logging.ts`'s
+`logger`/`configureLogging`) before invoking registered callbacks.
 
 ```typescript
 stream.onInlineError(({ code, message }) => {

@@ -128,10 +128,13 @@ factories) plus the metadata/deadline dispatch matrix itself.
 
 `client-stream.test.ts` pins down `MacpStream` semantics:
 
-- **Envelope unwrap** — both the oneof format (`chunk.response.envelope`) and
-  the legacy format (`chunk.envelope`) are delivered.
-- **Inline errors** — an application-level `chunk.response.error` invokes
-  `onInlineError` callbacks while the stream stays open.
+- **Envelope unwrap** — an envelope frame is read from `chunk.envelope`.
+  `chunk.response` is the proto3 `oneof` arm *name* (a string, e.g.
+  `'envelope'`/`'error'`), not a nested object — verified by a real encode/
+  decode roundtrip via the `realStreamResponse()` helper, not a hand-built
+  literal.
+- **Inline errors** — an application-level `chunk.error` invokes
+  `onInlineError` callbacks and logs one `warn`, while the stream stays open.
 - **`read()` timeouts** — `read(timeoutMs)` throws `MacpTimeoutError` when no
   envelope arrives in time.
 - **`STREAM_END` semantics** — end-of-stream is sticky: `read()` returns

@@ -2561,3 +2561,58 @@ CLOSED. Remote and local feature branches deleted; local `main`
 fast-forwarded.
 
 What's next: continue with Phase 3 (#107, final PR of 6).
+
+### Phase 3 (#107 — inline stream errors, `MacpAckError` gRPC mapping) — DONE, 2026-09-27
+
+- Verifier: fresh Opus, round 1 GAPS (2 doc items, both docs-only; all code,
+  all 9 acceptance criteria, and 8 independent mutation tests confirmed
+  non-vacuous). Closed without a fresh re-verify per established
+  docs-only-gap precedent: `docs/guides/testing.md`'s Stream data path
+  section still described the fictional `chunk.response.envelope`/
+  `chunk.response.error` shapes as the pinned contract (corrected to
+  `chunk.envelope`/`chunk.error`, `chunk.response` noted as the oneof arm
+  name); `docs/api/errors.md`'s `MacpAckError` section and runtime-error-code
+  table were missing the gRPC-mapping caveat and `SESSION_ALREADY_EXISTS` row
+  already present in `error-handling.md`.
+- Divergence from plan (recorded in `plans/issue-105-109-fixes.md`'s Phase 3
+  Status line): 3a fully removes the dead `chunk?.response?.envelope`
+  fragment (plan said keep it) and rewrites all ~12 fictional-shape test
+  emits in `client-stream.test.ts` against a real proto-loader decode
+  roundtrip (plan estimated ~2) — verifier endorsed as strictly better than
+  the plan, whose own "two neighbouring tests" count was itself stale.
+- Files touched this phase: `src/client.ts`, `tests/unit/client-stream.test.ts`,
+  `tests/unit/client-unary.test.ts`, `tests/unit/retry.test.ts`,
+  `docs/guides/policy.md`, `docs/guides/error-handling.md`,
+  `docs/api/client.md`, `docs/guides/testing.md` (gap closure),
+  `docs/api/errors.md` (gap closure), `CHANGELOG.md`.
+- Local gate (post gap-closure): `npm test` 1174 passed/20 skipped;
+  `npm run test:coverage` 96.02/89.42/94.44/96.95 (stmts/branches/funcs/lines,
+  all above the 92/84/91/94 floors); `npm run check`, `npm run lint`,
+  `npm run format:check`, `npm run build` all clean; `make verify-fixtures`
+  green; `make verify-parity` pre-existing/unrelated drift (spec-repo
+  `contract_version` bump), not fixed — confirmed untouched by this phase's
+  diff.
+
+What's next: ship Phase 3 (branch, commit `Closes #107`, PR, CI, merge,
+confirm #107 closed, cleanup) — the 6th and final PR of the original
+#105-#109 plan.
+
+### Plan addition: issue #111 folded in as Phase 6, 2026-09-27
+
+At the user's request, added GitHub issue #111
+("TaskComplete/TaskFail phase transition fires for unknown task_id") to
+`plans/issue-105-109-fixes.md` as a new Phase 6 / PR 7 — independently
+shippable, no file overlap with Phases 1-5 or Phase 3 (`src/projections/task.ts`
+is untouched by all of them). Verified the issue's claim against the current
+code before writing the phase: `this.phase = 'Completed'`/`'Failed'` sit
+outside their sibling `if (task) {...}` guards at `src/projections/task.ts:183`
+and `:197`, while the same file's `TaskAccept` case (`:125-130`) and
+`src/projections/handoff.ts`'s `acceptHandoff`/`decline` (`:90`, `:116`) already
+gate their analogous `phase` assignment correctly — same bug class as the
+already-fixed issue #71/#70 guards in this same file. Not yet implemented —
+per the plan's own one-phase-at-a-time discipline, Phase 6's implementation
+is queued to start after Phase 3 ships.
+
+What's next: ship Phase 3 (final PR of the original plan), then start Phase 6
+(#111, PR 7) via the same implement → verify → close-gaps → commit → ship
+cycle.

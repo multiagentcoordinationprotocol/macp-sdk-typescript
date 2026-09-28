@@ -49,9 +49,12 @@ await client.registerPolicy(policy);
 > **Read-only registry (`MACP_POLICIES_DIR`).** When the runtime is started with
 > a policies directory, its registry is read-only: `Initialize` advertises
 > `capabilities.policyRegistry.registerPolicy: false`, and `registerPolicy` /
-> `unregisterPolicy` fail with `FAILED_PRECONDITION` (inspect via
-> `MacpTransportError.code`). Check the capability flag before attempting to
-> register:
+> `unregisterPolicy` fail with `MacpAckError` whose `failure.code` is
+> `'FAILED_PRECONDITION'` (inspect via `err.failure.code`, not
+> `MacpTransportError.code` — the gRPC-level rejection is reclassified into the
+> same Ack-error model every NACK uses; see
+> [error-handling.md](error-handling.md#macpackerror)). Check the capability
+> flag before attempting to register:
 >
 > ```typescript
 > const init = await client.initialize();

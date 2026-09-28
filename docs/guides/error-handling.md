@@ -15,7 +15,20 @@ Error
 
 ## MacpAckError
 
-Thrown when the runtime returns an Ack with `ok: false`. Contains the full Ack object:
+Thrown when the runtime returns an Ack with `ok: false` — **and also** when
+`send()` or one of the five registry-mutation RPCs (`registerExtMode`,
+`unregisterExtMode`, `promoteMode`, `registerPolicy`, `unregisterPolicy`)
+fails with a gRPC `ALREADY_EXISTS`/`FAILED_PRECONDITION` status the runtime
+couldn't express as a normal Ack. `send()` maps a gRPC `ALREADY_EXISTS` to
+`failure.code: 'SESSION_ALREADY_EXISTS'` and `FAILED_PRECONDITION` to
+`'POLICY_DENIED'`; the five registry methods map `FAILED_PRECONDITION` to
+`'FAILED_PRECONDITION'` (e.g. a read-only registry started with
+`MACP_POLICIES_DIR`). In both cases `err.ack` is a synthesized
+`{ ok: false, error: { code, message } }`, so existing `err.ack.error?.code`
+handling works unchanged. Every other gRPC status on these calls (and every
+status on every other RPC) is still `MacpTransportError`, not `MacpAckError`.
+
+Contains the full Ack object:
 
 ```typescript
 import { MacpAckError } from 'macp-sdk-typescript';
@@ -104,6 +117,7 @@ most often:
 | `FORBIDDEN` | Sender not authorized for this session or message type |
 | `SESSION_NOT_FOUND` | Session does not exist |
 | `SESSION_NOT_OPEN` | Session already resolved, expired, or suspended |
+| `SESSION_ALREADY_EXISTS` | `send()`'s `SessionStart` collided with an existing session id (mapped from a gRPC `ALREADY_EXISTS`) |
 | `INVALID_ENVELOPE` | Envelope validation failed or payload structure invalid |
 | `POLICY_DENIED` | Governance policy denied the message (e.g. commitment without quorum) |
 | `RATE_LIMITED` | Too many requests |

@@ -1,10 +1,39 @@
 import { EventEmitter } from 'node:events';
+import * as path from 'node:path';
 import * as grpc from '@grpc/grpc-js';
+import * as protoLoader from '@grpc/proto-loader';
+import { protoDir } from '@multiagentcoordinationprotocol/proto';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Auth } from '../../src/auth';
 import { MacpClient, MacpStream } from '../../src/client';
 import { MacpSdkError, MacpTimeoutError, MacpTransportError } from '../../src/errors';
+import { _resetLoggingForTests, configureLogging, type LogSink } from '../../src/logging';
 import type { Envelope } from '../../src/types';
+
+// Encode/decode a real `StreamSessionResponse` through the exact proto
+// definitions and `@grpc/proto-loader` options `MacpClient` itself loads
+// (issue #107 3a). This is what proves a test can only pass if the code
+// reads the shape the wire actually produces — a hand-built `{ response: {
+// envelope } }` literal is exactly the fictional shape that let the old
+// `chunk?.response?.error` bug pass with full test coverage.
+const streamResponsePackageDefinition = protoLoader.loadSync(
+  [
+    path.join(protoDir, 'macp/v1/core.proto'),
+    path.join(protoDir, 'macp/v1/envelope.proto'),
+    path.join(protoDir, 'macp/v1/policy.proto'),
+  ],
+  { keepCase: false, longs: String, enums: String, defaults: true, oneofs: true, includeDirs: [protoDir] },
+);
+const StreamSessionResponseType = (grpc.loadPackageDefinition(streamResponsePackageDefinition) as any).macp.v1
+  .StreamSessionResponse;
+
+function realStreamResponse(input: { envelope: Envelope } | { error: { code?: string; message?: string } }): {
+  response: 'envelope' | 'error';
+  envelope?: Envelope;
+  error?: { code?: string; message?: string };
+} {
+  return StreamSessionResponseType.deserialize(StreamSessionResponseType.serialize(input));
+}
 
 // ── MacpStream runtime path ─────────────────────────────────────────
 //
@@ -57,6 +86,7 @@ function makeClient(): MacpClient {
 
 afterEach(() => {
   vi.restoreAllMocks();
+  _resetLoggingForTests();
 });
 
 describe('MacpClient.openStream', () => {
@@ -100,17 +130,21 @@ describe('MacpClient.openStream', () => {
 });
 
 describe('MacpStream — data delivery', () => {
-  it('delivers the new oneof format (chunk.response.envelope)', async () => {
+  it("delivers a real decoded envelope frame (chunk.envelope; chunk.response === 'envelope' as the oneof arm name)", async () => {
     const duplex = new FakeDuplex();
     const stream = makeStream(duplex);
     const envelope = makeEnvelope('m1');
+    const chunk = realStreamResponse({ envelope });
+    // Positive pin: a real decode's oneof arm-name field is 'envelope', a
+    // string — not a nested object with an .envelope property.
+    expect(chunk.response).toBe('envelope');
 
-    duplex.emit('data', { response: { envelope } });
+    duplex.emit('data', chunk);
 
     await expect(stream.read()).resolves.toEqual(envelope);
   });
 
-  it('still accepts the legacy format (chunk.envelope)', async () => {
+  it('also accepts a bare { envelope } chunk with no response arm-name field present', async () => {
     const duplex = new FakeDuplex();
     const stream = makeStream(duplex);
     const envelope = makeEnvelope('m1');
@@ -126,14 +160,14 @@ describe('MacpStream — data delivery', () => {
     const envelope = makeEnvelope('m1');
 
     duplex.emit('data', {});
-    duplex.emit('data', { response: {} });
-    duplex.emit('data', { response: { envelope } });
+    duplex.emit('data', { foo: 'bar' });
+    duplex.emit('data', { envelope });
 
-    // The empty chunks queued nothing; the first read sees the real envelope.
+    // The empty/malformed chunks queued nothing; the first read sees the real envelope.
     await expect(stream.read()).resolves.toEqual(envelope);
   });
 
-  it('fires onInlineError callbacks for chunk.response.error and keeps the stream open', async () => {
+  it("fires onInlineError callbacks for a real decoded error frame (chunk.error; chunk.response === 'error') and keeps the stream open", async () => {
     const duplex = new FakeDuplex();
     const stream = makeStream(duplex);
     const first = vi.fn();
@@ -141,15 +175,41 @@ describe('MacpStream — data delivery', () => {
     stream.onInlineError(first);
     stream.onInlineError(second);
 
-    const inlineError = { code: 'POLICY_DENIED', message: 'not allowed' };
-    duplex.emit('data', { response: { error: inlineError } });
-    const envelope = makeEnvelope('m1');
-    duplex.emit('data', { response: { envelope } });
+    const errorChunk = realStreamResponse({ error: { code: 'POLICY_DENIED', message: 'not allowed' } });
+    // Positive pin, mirroring the envelope-arm pin above.
+    expect(errorChunk.response).toBe('error');
 
-    expect(first).toHaveBeenCalledWith(inlineError);
-    expect(second).toHaveBeenCalledWith(inlineError);
+    duplex.emit('data', errorChunk);
+    const envelope = makeEnvelope('m1');
+    duplex.emit('data', { envelope });
+
+    expect(first).toHaveBeenCalledWith(errorChunk.error);
+    expect(second).toHaveBeenCalledWith(errorChunk.error);
     // Stream is still readable after an inline error.
     await expect(stream.read()).resolves.toEqual(envelope);
+  });
+
+  it('logs exactly one warn for an inline error frame', () => {
+    const sink: LogSink = vi.fn();
+    configureLogging({ sink }); // default level 'warn' — a warn call would still reach this sink
+    const duplex = new FakeDuplex();
+    makeStream(duplex);
+
+    duplex.emit('data', realStreamResponse({ error: { code: 'POLICY_DENIED', message: 'not allowed' } }));
+
+    expect(sink).toHaveBeenCalledTimes(1);
+    expect(sink).toHaveBeenCalledWith('warn', expect.anything());
+  });
+
+  it('logs zero warn for a normal envelope frame', () => {
+    const sink: LogSink = vi.fn();
+    configureLogging({ sink });
+    const duplex = new FakeDuplex();
+    makeStream(duplex);
+
+    duplex.emit('data', realStreamResponse({ envelope: makeEnvelope('m1') }));
+
+    expect(sink).not.toHaveBeenCalled();
   });
 });
 
@@ -193,7 +253,7 @@ describe('MacpStream — error and end events', () => {
     const stream = makeStream(duplex);
     const envelope = makeEnvelope('m1');
 
-    duplex.emit('data', { response: { envelope } });
+    duplex.emit('data', { envelope });
     duplex.emit('end');
 
     await expect(stream.read()).resolves.toEqual(envelope);
@@ -210,8 +270,8 @@ describe('MacpStream.responses()', () => {
     const e1 = makeEnvelope('m1');
     const e2 = makeEnvelope('m2');
 
-    duplex.emit('data', { response: { envelope: e1 } });
-    duplex.emit('data', { response: { envelope: e2 } });
+    duplex.emit('data', { envelope: e1 });
+    duplex.emit('data', { envelope: e2 });
     duplex.emit('end');
 
     const seen: Envelope[] = [];
@@ -229,7 +289,7 @@ describe('MacpStream.responses()', () => {
     const stream = makeStream(duplex);
     const e1 = makeEnvelope('m1');
 
-    duplex.emit('data', { response: { envelope: e1 } });
+    duplex.emit('data', { envelope: e1 });
     duplex.emit('error', { code: 14, details: 'gone', message: '14 UNAVAILABLE' });
 
     const seen: Envelope[] = [];
@@ -251,7 +311,7 @@ describe('MacpStream.read() timeouts', () => {
     const envelope = makeEnvelope('m1');
 
     const pending = stream.read();
-    duplex.emit('data', { response: { envelope } });
+    duplex.emit('data', { envelope });
 
     await expect(pending).resolves.toEqual(envelope);
   });
@@ -272,7 +332,7 @@ describe('MacpStream.read() timeouts', () => {
     await expect(stream.read(5)).rejects.toBeInstanceOf(MacpTimeoutError);
     // The timed-out resolver was spliced out of the queue, so the next data
     // event must satisfy the NEXT read, not vanish into the dead resolver.
-    duplex.emit('data', { response: { envelope } });
+    duplex.emit('data', { envelope });
     await expect(stream.read(5)).resolves.toEqual(envelope);
   });
 
@@ -282,7 +342,7 @@ describe('MacpStream.read() timeouts', () => {
     const envelope = makeEnvelope('m1');
 
     const pending = stream.read(1_000);
-    duplex.emit('data', { response: { envelope } });
+    duplex.emit('data', { envelope });
 
     await expect(pending).resolves.toEqual(envelope);
   });

@@ -185,6 +185,129 @@ describe('MacpClient.send', () => {
     await expect(client.send(envelope)).rejects.toThrow(MacpSdkError);
     expect(calls).toHaveLength(0);
   });
+
+  // Issue #107 3b: a gRPC-level ALREADY_EXISTS/FAILED_PRECONDITION on Send is
+  // an application-level rejection the runtime couldn't express as a normal
+  // NACK — surface it as MacpAckError, matching macp-sdk-python. Fails on old
+  // code, which unconditionally wrapped every ServiceError in MacpTransportError.
+  it('issue #107: gRPC ALREADY_EXISTS raises MacpAckError(SESSION_ALREADY_EXISTS)', async () => {
+    const client = makeClient();
+    stubUnary(
+      client,
+      'Send',
+      { code: grpc.status.ALREADY_EXISTS, details: 'session already exists', message: '6 ALREADY_EXISTS' },
+      { fail: true },
+    );
+
+    let caught: unknown;
+    try {
+      await client.send(envelope);
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(MacpAckError);
+    expect((caught as MacpAckError).failure.code).toBe('SESSION_ALREADY_EXISTS');
+    expect((caught as MacpAckError).failure.message).toBe('session already exists');
+  });
+
+  it('issue #107: gRPC FAILED_PRECONDITION raises MacpAckError(POLICY_DENIED)', async () => {
+    const client = makeClient();
+    stubUnary(
+      client,
+      'Send',
+      { code: grpc.status.FAILED_PRECONDITION, details: 'policy denies this', message: '9 FAILED_PRECONDITION' },
+      { fail: true },
+    );
+
+    let caught: unknown;
+    try {
+      await client.send(envelope);
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(MacpAckError);
+    expect((caught as MacpAckError).failure.code).toBe('POLICY_DENIED');
+  });
+
+  it('issue #107: failure.reasons is extracted from the macp-error-details-bin trailing metadata', async () => {
+    const client = makeClient();
+    const metadata = new grpc.Metadata();
+    metadata.set('macp-error-details-bin', Buffer.from(JSON.stringify({ reasons: ['rule-a', 'rule-b'] })));
+    stubUnary(
+      client,
+      'Send',
+      { code: grpc.status.FAILED_PRECONDITION, details: 'no', message: 'nope', metadata },
+      { fail: true },
+    );
+
+    let caught: unknown;
+    try {
+      await client.send(envelope);
+    } catch (err) {
+      caught = err;
+    }
+    expect((caught as MacpAckError).failure.reasons).toEqual(['rule-a', 'rule-b']);
+  });
+
+  it('issue #107: malformed macp-error-details-bin metadata yields reasons: [] without throwing', async () => {
+    const client = makeClient();
+    const metadata = new grpc.Metadata();
+    metadata.set('macp-error-details-bin', Buffer.from('not json'));
+    stubUnary(
+      client,
+      'Send',
+      { code: grpc.status.FAILED_PRECONDITION, details: 'no', message: 'nope', metadata },
+      { fail: true },
+    );
+
+    let caught: unknown;
+    try {
+      await client.send(envelope);
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(MacpAckError);
+    expect((caught as MacpAckError).failure.reasons).toEqual([]);
+  });
+
+  it('issue #107: an error with no metadata at all still constructs MacpAckError with reasons: []', async () => {
+    const client = makeClient();
+    stubUnary(
+      client,
+      'Send',
+      { code: grpc.status.FAILED_PRECONDITION, details: 'no', message: 'nope' },
+      { fail: true },
+    );
+
+    let caught: unknown;
+    try {
+      await client.send(envelope);
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(MacpAckError);
+    expect((caught as MacpAckError).failure.reasons).toEqual([]);
+  });
+
+  // Non-vacuity guard against over-broad mapping: other gRPC statuses on
+  // Send must still surface as MacpTransportError with .code set.
+  it.each(['UNAVAILABLE', 'DEADLINE_EXCEEDED', 'UNAUTHENTICATED'] as const)(
+    'issue #107: gRPC %s on Send is still MacpTransportError',
+    async (statusName) => {
+      const client = makeClient();
+      const code = grpc.status[statusName];
+      stubUnary(client, 'Send', { code, details: 'x', message: `${code} ${statusName}` }, { fail: true });
+
+      let caught: unknown;
+      try {
+        await client.send(envelope);
+      } catch (err) {
+        caught = err;
+      }
+      expect(caught).toBeInstanceOf(MacpTransportError);
+      expect((caught as MacpTransportError).code).toBe(statusName);
+    },
+  );
 });
 
 describe('MacpClient discovery and registry RPCs', () => {
@@ -309,6 +432,99 @@ describe('MacpClient policy RPCs', () => {
     stubUnary(client, 'ListPolicies', {});
 
     await expect(client.listPolicies('macp.mode.decision.v1')).resolves.toEqual([]);
+  });
+});
+
+// Issue #107 3c: the five registry-mutation RPCs raise MacpAckError(code:
+// 'FAILED_PRECONDITION') against a read-only registry, matching
+// macp-sdk-python's `_map_registry_mutation_error`. Fails on old code for all
+// five, which unconditionally wrapped every ServiceError in MacpTransportError.
+const REGISTRY_MUTATION_CALLS: Array<{
+  name: string;
+  rpc: string;
+  invoke: (client: MacpClient) => Promise<unknown>;
+}> = [
+  {
+    name: 'registerExtMode',
+    rpc: 'RegisterExtMode',
+    invoke: (client) =>
+      client.registerExtMode({
+        mode: 'ext.custom.v1',
+        modeVersion: '1.0.0',
+        description: 'x',
+        messageTypes: ['SessionStart', 'Contribute', 'Commitment'],
+        terminalMessageTypes: ['Commitment'],
+      }),
+  },
+  {
+    name: 'unregisterExtMode',
+    rpc: 'UnregisterExtMode',
+    invoke: (client) => client.unregisterExtMode('ext.custom.v1'),
+  },
+  { name: 'promoteMode', rpc: 'PromoteMode', invoke: (client) => client.promoteMode('ext.custom.v1') },
+  {
+    name: 'registerPolicy',
+    rpc: 'RegisterPolicy',
+    invoke: (client) =>
+      client.registerPolicy({
+        policyId: 'pol-1',
+        policyVersion: 'policy.v1',
+        mode: 'macp.mode.decision.v1',
+        description: 'x',
+        rules: [],
+      }),
+  },
+  { name: 'unregisterPolicy', rpc: 'UnregisterPolicy', invoke: (client) => client.unregisterPolicy('pol-1') },
+];
+
+describe('MacpClient registry-mutation RPCs — gRPC FAILED_PRECONDITION mapping', () => {
+  it.each(REGISTRY_MUTATION_CALLS)(
+    'issue #107: $name raises MacpAckError(FAILED_PRECONDITION) on a gRPC FAILED_PRECONDITION',
+    async ({ rpc, invoke }) => {
+      const client = makeClient();
+      stubUnary(
+        client,
+        rpc,
+        { code: grpc.status.FAILED_PRECONDITION, details: 'read-only registry', message: 'nope' },
+        {
+          fail: true,
+        },
+      );
+
+      let caught: unknown;
+      try {
+        await invoke(client);
+      } catch (err) {
+        caught = err;
+      }
+      expect(caught).toBeInstanceOf(MacpAckError);
+      expect((caught as MacpAckError).failure.code).toBe('FAILED_PRECONDITION');
+    },
+  );
+
+  it('issue #107: a registry method given ALREADY_EXISTS (not in its map) still raises MacpTransportError — proves the maps are per-RPC', async () => {
+    const client = makeClient();
+    stubUnary(
+      client,
+      'RegisterPolicy',
+      { code: grpc.status.ALREADY_EXISTS, details: 'x', message: 'dup' },
+      { fail: true },
+    );
+
+    let caught: unknown;
+    try {
+      await client.registerPolicy({
+        policyId: 'pol-1',
+        policyVersion: 'policy.v1',
+        mode: 'macp.mode.decision.v1',
+        description: 'x',
+        rules: [],
+      });
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(MacpTransportError);
+    expect((caught as MacpTransportError).code).toBe('ALREADY_EXISTS');
   });
 });
 
