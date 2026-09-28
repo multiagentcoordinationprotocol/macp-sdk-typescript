@@ -46,6 +46,11 @@ export class HandoffProjection extends BaseProjection {
       case 'HandoffContext': {
         const record = payload as { handoffId: string; contentType: string };
         const handoff = this.handoffs.get(record.handoffId);
+        // RFC-MACP-0010 §5 rule 2: HandoffContext MUST reference an existing
+        // handoff_id, so the phase transition belongs inside this guard too
+        // (issue #119, same shape as issue #111) — a HandoffContext for an
+        // unknown handoff_id must not advance `phase` past `'OfferPending'`
+        // while a different, real handoff is still pending.
         if (handoff) {
           // Per RFC-MACP-0010 §2.1: context after accept is permitted as supplementary docs.
           // Only update status if not already accepted/declined.
@@ -53,8 +58,8 @@ export class HandoffProjection extends BaseProjection {
             handoff.status = 'context_sent';
           }
           handoff.contextContentType = record.contentType;
+          if (this.phase === 'OfferPending') this.phase = 'ContextSharing';
         }
-        if (this.phase === 'OfferPending') this.phase = 'ContextSharing';
         break;
       }
       case 'HandoffAccept': {

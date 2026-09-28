@@ -125,6 +125,28 @@ describe('ProposalProjection', () => {
     expect(projection.hasTerminalRejection()).toBe(false);
   });
 
+  // RFC-MACP-0008 §5 rule 3: Reject MUST reference an existing proposal_id. A
+  // terminal Reject for a never-proposed proposalId is invalid input (e.g. an
+  // unfiltered transcript) and must not mutate `phase` — even though
+  // `isTerminallyRejected`/`hasTerminalRejection` still see it (issue #119).
+  it('a terminal Reject for an unknown proposalId does not mutate phase', () => {
+    projection.applyEnvelope(makeEnvelope('Proposal', { proposalId: 'p1', title: 'X' }), registry);
+    projection.applyEnvelope(
+      makeEnvelope('Reject', { proposalId: 'ghost', terminal: true, reason: 'never proposed' }, 'bob'),
+      registry,
+    );
+
+    expect(projection.phase).toBe('Negotiating');
+    expect(projection.proposals.get('p1')?.status).toBe('open');
+    expect(projection.proposals.get('ghost')).toBeUndefined();
+    // `rejections` is an append-only audit log (unconditional push, matches
+    // the runtime) — it still records this Reject, and the query methods that
+    // read from it still report `true`, even though `phase` did not move.
+    // This split is intentional, not a residual gap.
+    expect(projection.isTerminallyRejected('ghost')).toBe(true);
+    expect(projection.hasTerminalRejection()).toBe(true);
+  });
+
   it('tracks withdrawals', () => {
     projection.applyEnvelope(makeEnvelope('Proposal', { proposalId: 'p1', title: 'X' }), registry);
     projection.applyEnvelope(makeEnvelope('Withdraw', { proposalId: 'p1', reason: 'changed mind' }), registry);

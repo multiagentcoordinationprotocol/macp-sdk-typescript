@@ -67,6 +67,23 @@ export class DecisionProjection extends BaseProjection {
       }
       case 'Vote': {
         const record = payload as { proposalId: string; vote: string; reason?: string };
+        // RFC-MACP-0007 §5 rule 2: "Evaluation, Objection, and Vote MUST
+        // reference an existing proposal_id." A conforming runtime never
+        // admits a Vote for an unknown proposal_id into accepted history, but
+        // per the accepted-only input contract (`BaseProjection.applyEnvelope`)
+        // this guards the same class of unfiltered-transcript input that
+        // `HandoffAccept`/`HandoffDecline` already guard against (issue #119,
+        // mirrors issue #111's task.ts fix). Evaluation/Objection need no
+        // matching guard: they only append to audit arrays (see
+        // `docs/api/projections.md` "List accumulators and logical
+        // duplicates"), so an unknown-proposalId record there fabricates no
+        // Map state and moves no phase. Vote is different: without this
+        // guard, `this.votes.get(...) ?? new Map()` below would fabricate a
+        // new `votes` entry for an unknown proposalId, inflating
+        // `voteTotals()`/`majorityWinner()`'s denominators even though no
+        // known proposal exists.
+        if (!this.proposals.has(record.proposalId)) break;
+
         const bySender = this.votes.get(record.proposalId) ?? new Map<string, DecisionVoteRecord>();
         const kept = bySender.get(envelope.sender);
         if (kept !== undefined) {
