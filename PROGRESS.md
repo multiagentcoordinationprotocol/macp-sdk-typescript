@@ -2771,3 +2771,29 @@ smaller-blast-radius follow-up, not part of this plan.
 
 What's next: nothing outstanding on this plan. Issue #121 is available as a
 future task if wanted.
+
+### Unplanned follow-up: issue #125 (parity re-vendor, 1.1.0 -> 1.1.1) - DONE, 2026-09-28
+
+User asked me to also pick this up since it was blocking #121/PR #127's CI (`verify-parity`
+byte-diffs the spec repo's live default branch, no version pin to wait on -- went red for
+an unrelated, out-of-band spec-repo PATCH bump, not a regression from #121's diff).
+Same shape as issue #117 earlier in this session: `make sync-parity`, bump
+`contract.test.ts`'s version tripwire (`'1.1.0'` -> `'1.1.1'`), update `SOURCE.md`'s
+provenance citation (spec commit `99756f8`, PR #154). Confirmed the only real diff in
+`contract.json` is the `contract_version` line plus `projection_anomaly.source` gaining
+more explanatory text -- no pinned value changed, and neither is asserted by
+`contract.test.ts`'s `kinds`/`fields` checks. Deliberately did NOT expand `SOURCE.md`'s
+"Open items" section to mirror two newer bullets now in the live spec README (a
+"declined, not open" one, and a static-type-width one with no dedicated issue in this
+repo) -- out of scope for this narrow PATCH-bump fix, and existing bullets remain
+factually accurate, just less exhaustive. No CHANGELOG entry, matching #117's precedent
+(a non-behavioral vendored-fixture sync). Verifier: fresh Opus, round 1 PASS (2 cosmetic
+nits, both closed before shipping: a date-convention inconsistency in the test comment,
+and this PROGRESS.md entry itself, which the verifier correctly flagged as missing
+relative to every prior `tests/parity/` commit). Files touched: `tests/parity/{contract.json,
+contract.test.ts,SOURCE.md}`.
+
+Note: this entry ships on its own branch (`fix/issue-125-parity-resync-1.1.1`), based
+directly off `main`, independent of #121's still-open PR #127. The `## New plan:
+issue-121-fix.md` / `### Phase 1 (#121 ...)` sections above belong to that separate PR
+and are committed there, not duplicated here.

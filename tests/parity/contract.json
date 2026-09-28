@@ -1,6 +1,6 @@
 {
   "$comment": "This file is NON-NORMATIVE: it projects values whose actual normative homes (where one exists) are named per-section via that section's `source` field. This manifest MUST NOT itself be cited as a normative source -- cite the named RFC/registry/proto file instead. See schemas/parity/README.md for full context, the applies_to/source semantics, and the versioning rules.",
-  "contract_version": "1.1.0",
+  "contract_version": "1.1.1",
   "sections": {
     "protocol": {
       "applies_to": [
@@ -95,7 +95,7 @@
         "macp-sdk-python",
         "macp-sdk-typescript"
       ],
-      "source": "convention -- no RFC/registry home; macp-sdk-python/src/macp_sdk/base_projection.py and macp-sdk-typescript/src/projections/base.ts agree on kind strings, field set, and field order (Python's `kind` is typed as plain `str`, TypeScript's as a closed 2-value union -- the same runtime values, a narrower static contract in TS; noted here, not treated as drift)",
+      "source": "convention -- no RFC/registry home; macp-sdk-python/src/macp_sdk/base_projection.py and macp-sdk-typescript/src/projections/base.ts agree on kind strings, field set, and field order (Python's `kind` is typed as plain `str`, TypeScript's as a closed 2-value union -- the same runtime values, a narrower static contract in TS; noted here, not treated as drift). The `kinds` list is convention-sourced, so this manifest MIRRORS the two SDKs' agreement rather than originating it: a new kind lands here only after both SDKs agree on it, as a MINOR bump -- see the convention-sourced-list rule in schemas/parity/README.md. The open question of whether a discarded competing TaskAccept or an already-settled Handoff message should also record an anomaly is the SDKs' to settle (it is an observability record, not an acceptance decision -- RFC-MACP-0009 Section 5 and RFC-MACP-0010 Section 5 already require rejecting those messages)",
       "kinds": [
         "duplicate_vote",
         "duplicate_ballot"
