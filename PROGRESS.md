@@ -3260,3 +3260,10 @@ ambiguous during implementation.
 
 pushed feat/issue-138-phase2-record-renames 3d2b6f3
 PR #142 opened: https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/pull/142
+CI green (build-and-test Node 22/24, integration, verify-fixtures).
+merged #142: squash-merged into `main` as `84008e1`. Neither PR body used a `Closes #138`
+keyword, so issue #138 did not auto-close -- closed manually with a comment naming both
+merged PRs and commits. Issue #138 CLOSED. Plan `plans/issue-138-naming-renames.md`
+complete -- both phases shipped, released together in `0.12.0` (both commits typed
+`feat(projections):`). Follow-up removal work tracked in #140, scoped to the `0.13.0`
+release cycle; not started this session pending direction on that plan.
