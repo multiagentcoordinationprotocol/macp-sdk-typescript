@@ -3204,3 +3204,4 @@ from a `fix`), ship via `/ship` as its own PR, then continue with Phase 2 (the t
 `TaskCompletionRecord`/`TaskFailureRecord` type-alias renames).
 
 pushed feat/issue-138-phase1-is-completed-rename d0e2bb6
+PR #141 opened: https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/pull/141
