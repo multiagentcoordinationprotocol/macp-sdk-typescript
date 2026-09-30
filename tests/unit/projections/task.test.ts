@@ -1,5 +1,17 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { TaskProjection } from '../../../src/projections/task';
+import type {
+  TaskCompleteRecord,
+  TaskCompletionRecord,
+  TaskFailRecord,
+  TaskFailureRecord,
+} from '../../../src/projections/task';
+import type {
+  TaskCompleteRecord as IndexTaskCompleteRecord,
+  TaskCompletionRecord as IndexTaskCompletionRecord,
+  TaskFailRecord as IndexTaskFailRecord,
+  TaskFailureRecord as IndexTaskFailureRecord,
+} from '../../../src/index';
 import { ProtoRegistry } from '../../../src/proto-registry';
 import { buildEnvelope } from '../../../src/envelope';
 import { MODE_TASK } from '../../../src/constants';
@@ -431,5 +443,71 @@ describe('TaskProjection', () => {
       registry,
     );
     expect(projection.latestProgress()).toBe(0.7);
+  });
+
+  // Type-only renames (TaskCompletionRecord -> TaskCompleteRecord, TaskFailureRecord ->
+  // TaskFailRecord) have no runtime behavior. No CI gate type-checks this file
+  // (tsconfig.json's `include` is src/**/*.ts only, and vitest.config.ts configures no
+  // `typecheck` block), so the type annotations below document consumer intent but are
+  // NOT themselves a compile-time proof. The two things that actually prove the aliases
+  // are well-formed and exported are `npm run check` (type-checks src/projections/task.ts,
+  // where both aliases are declared) and, after `npm run build`, a real consumer-style
+  // resolution of all four names through the package's declared `exports["."].types`
+  // entry point (`dist/index.d.ts`) and its `export *` chain into
+  // `dist/projections/task.d.ts` — declaration emit here is per-module, not bundled, so
+  // the names don't appear as a flat string in `dist/index.d.ts` itself.
+  describe('deprecated record type aliases', () => {
+    it('types the projection arrays under their new names', () => {
+      projection.applyEnvelope(makeEnvelope('TaskRequest', { taskId: 't1', title: 'X', instructions: 'do' }), registry);
+      projection.applyEnvelope(makeEnvelope('TaskAccept', { taskId: 't1', assignee: 'w' }, 'w'), registry);
+      projection.applyEnvelope(
+        makeEnvelope('TaskComplete', { taskId: 't1', assignee: 'w', summary: 'done' }, 'w'),
+        registry,
+      );
+      projection.applyEnvelope(
+        makeEnvelope('TaskFail', { taskId: 'never-requested', assignee: 'w', reason: 'n/a' }, 'w'),
+        registry,
+      );
+
+      const c: TaskCompleteRecord[] = projection.completions;
+      const f: TaskFailRecord[] = projection.failures;
+      expect(c).toHaveLength(1);
+      expect(c[0]?.taskId).toBe('t1');
+      expect(f).toHaveLength(1);
+      expect(f[0]?.taskId).toBe('never-requested');
+    });
+
+    it('keeps the deprecated aliases assignable both directions', () => {
+      projection.applyEnvelope(makeEnvelope('TaskRequest', { taskId: 't1', title: 'X', instructions: 'do' }), registry);
+      projection.applyEnvelope(makeEnvelope('TaskAccept', { taskId: 't1', assignee: 'w' }, 'w'), registry);
+      projection.applyEnvelope(
+        makeEnvelope('TaskComplete', { taskId: 't1', assignee: 'w', summary: 'done' }, 'w'),
+        registry,
+      );
+      projection.applyEnvelope(
+        makeEnvelope('TaskFail', { taskId: 't1', assignee: 'w', reason: 'boom', retryable: true }, 'w'),
+        registry,
+      );
+      const completionRecord = projection.completions[0]!;
+      const failureRecord = projection.failures[0]!;
+
+      const viaOldCompletion: TaskCompletionRecord = completionRecord;
+      const viaNewCompletion: TaskCompleteRecord = viaOldCompletion;
+      expect(viaNewCompletion).toBe(completionRecord);
+
+      const viaOldFailure: TaskFailureRecord = failureRecord;
+      const viaNewFailure: TaskFailRecord = viaOldFailure;
+      expect(viaNewFailure).toBe(failureRecord);
+    });
+
+    it('reaches the public barrel through the export * wildcard chain', () => {
+      const completion: IndexTaskCompletionRecord = { taskId: 't1', assignee: 'w', sender: 'w' };
+      const complete: IndexTaskCompleteRecord = completion;
+      const failure: IndexTaskFailureRecord = { taskId: 't1', assignee: 'w', retryable: false, sender: 'w' };
+      const fail: IndexTaskFailRecord = failure;
+
+      expect(complete).toEqual(completion);
+      expect(fail).toEqual(failure);
+    });
   });
 });

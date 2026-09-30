@@ -216,12 +216,22 @@ project uses [Semantic Versioning](https://semver.org/).
   `isDeclined`); `isComplete` was the outlier, and `macp-sdk-python` has
   always spelled this `is_completed`. The old name remains available — see
   `### Deprecated` below.
+- **`TaskCompletionRecord` renamed to `TaskCompleteRecord`, and
+  `TaskFailureRecord` renamed to `TaskFailRecord`** (issue #138, cross-SDK
+  naming decision at multiagentcoordinationprotocol#135). Both now mirror
+  their triggering `TaskComplete`/`TaskFail` message types the way their
+  sibling `TaskUpdateRecord` already mirrors `TaskUpdate`, and match
+  `macp-sdk-python` and `macp-runtime`'s own names for the same records. The
+  old names remain available — see `### Deprecated` below.
 
 ### Deprecated
 
 - **`TaskProjection.isComplete(taskId)`** remains available as a
   `@deprecated` alias for `isCompleted(taskId)`; use `isCompleted()` instead.
   Scheduled for removal in 0.13.0.
+- **`TaskCompletionRecord`/`TaskFailureRecord`** remain available as
+  `@deprecated` type aliases for `TaskCompleteRecord`/`TaskFailRecord`
+  respectively. Scheduled for removal in 0.13.0.
 
 ### Fixed
 

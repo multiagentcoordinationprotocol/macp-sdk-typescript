@@ -382,8 +382,12 @@ copies of the same dedup/transcript/rollback logic; see
 |----------|------|
 | `tasks` | `Map<string, TaskRecord>` |
 | `updates` | `TaskUpdateRecord[]` |
-| `completions` | `TaskCompletionRecord[]` |
-| `failures` | `TaskFailureRecord[]` |
+| `completions` | `TaskCompleteRecord[]` |
+| `failures` | `TaskFailRecord[]` |
+
+`TaskCompletionRecord`/`TaskFailureRecord` remain available as `@deprecated` type aliases
+for `TaskCompleteRecord`/`TaskFailRecord` respectively (multiagentcoordinationprotocol#135,
+issue #138), scheduled for removal in 0.13.0.
 
 | Method | Returns | Description |
 |--------|---------|-------------|

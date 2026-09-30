@@ -138,8 +138,8 @@ await session.failTask({
 |----------|------|-------------|
 | `tasks` | `Map<string, TaskRecord>` | Tasks with status and progress |
 | `updates` | `TaskUpdateRecord[]` | All progress updates |
-| `completions` | `TaskCompletionRecord[]` | Completion records |
-| `failures` | `TaskFailureRecord[]` | Failure records |
+| `completions` | `TaskCompleteRecord[]` | Completion records |
+| `failures` | `TaskFailRecord[]` | Failure records |
 | `transcript` | `Envelope[]` | All accepted envelopes |
 | `phase` | `'Pending' \| 'Requested' \| 'InProgress' \| 'Completed' \| 'Failed' \| 'Committed'` | Current phase |
 | `commitment` | `Record<string, unknown> \| undefined` | Commitment payload if resolved |
