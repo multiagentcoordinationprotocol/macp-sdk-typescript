@@ -389,7 +389,7 @@ copies of the same dedup/transcript/rollback logic; see
 |--------|---------|-------------|
 | `getTask(taskId)` | `TaskRecord \| undefined` | Full task record — see [Task assignee lifecycle](#task-assignee-lifecycle) for how `assignee` is set and cleared |
 | `progressOf(taskId)` | `number` | Current progress (0 before any update, 1 once complete) |
-| `isComplete(taskId)` | `boolean` | TaskComplete received |
+| `isCompleted(taskId)` | `boolean` | TaskComplete received. Renamed from `isComplete` for cross-SDK naming parity (multiagentcoordinationprotocol#135, issue #138); the old name remains available as a `@deprecated` alias, scheduled for removal in 0.13.0 |
 | `isFailed(taskId)` | `boolean` | TaskFail received |
 | `isRetryable(taskId)` | `boolean` | Failed with `retryable: true` |
 | `isAccepted(taskId)` | `boolean` | Status is accepted or in_progress |

@@ -52,7 +52,7 @@ async function main(): Promise<void> {
     auth: Auth.devAgent('worker'),
   });
 
-  console.log('complete?', session.projection.isComplete('t1'));
+  console.log('complete?', session.projection.isCompleted('t1'));
 
   await session.commit({
     action: 'task.completed',

@@ -161,7 +161,7 @@ await session.failTask({
 session.projection.getTask('t1');         // full TaskRecord
 session.projection.progressOf('t1');      // 0.0 - 1.0
 session.projection.isAccepted('t1');      // true while status is accepted/in_progress
-session.projection.isComplete('t1');      // true after TaskComplete
+session.projection.isCompleted('t1');     // true after TaskComplete
 session.projection.isFailed('t1');        // true after TaskFail
 session.projection.isRetryable('t1');     // true if failure was retryable
 session.projection.activeTasks();         // tasks in requested/accepted/in_progress

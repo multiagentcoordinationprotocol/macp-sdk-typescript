@@ -3037,3 +3037,171 @@ PR #136 opened: https://github.com/multiagentcoordinationprotocol/macp-sdk-types
 CI green (build-and-test Node 22/24, integration, verify-fixtures).
 merged #136: squash-merged into `main` as `8ef1ab1`. Issue #135 CLOSED. make verify-parity
 confirmed green post-merge.
+
+## New plan: issue-138-naming-renames.md (started 2026-09-29)
+
+Three renames from spec #135's cross-SDK naming decision, all on this SDK's side. Plan
+written, not yet reviewed or implemented. Two phases (reasoning recorded in the plan's
+"Phases" section: a *release window* is a release, not a PR -- release-please batches every
+pre-release merge into one minor -- so "land all three together" does not force one PR; the
+split falls on the runtime-vs-compile-time line):
+- Phase 1: `TaskProjection.isComplete` -> `isCompleted` (`src/projections/task.ts:231`),
+  old name kept as a `@deprecated` one-line delegating method. 7 non-definition call
+  sites move.
+- Phase 2: `TaskCompletionRecord` -> `TaskCompleteRecord` (`:26`), `TaskFailureRecord` ->
+  `TaskFailRecord` (`:33`), old names kept as `@deprecated` type aliases.
+
+Issue claims re-verified; three corrections recorded in the plan's Context:
+(a) the issue calls `isComplete` a "runtime property … needs a deprecated **getter**
+shim" -- it is a **method taking a `taskId`** (`:231`), so a getter would not compile
+against any of the 7 call sites; (b) "remove at next major" is unactionable --
+`package.json` is `0.11.0` with `release-please-config.json`'s `bump-minor-pre-major:
+true`, so breaking changes ship as minors and no `1.0.0` is scheduled; resolved to
+`0.13.0`, named explicitly in all three JSDoc blocks, per this repo's own two precedents
+(`sendContext` 0.2.3 -> 0.3.0, CHANGELOG `:846`/`:789`; `_watch*` aliases -> 0.5.0,
+`:652-656`); (c) the runtime citations the issue gives are **exact** -- `macp-runtime`
+`crates/macp-modes/src/mode/task.rs:74` is `pub struct TaskCompleteRecord`, `:86` is
+`pub struct TaskFailRecord`. Python corroborates independently and has no alias of its own
+to mirror: `macp-sdk-python/src/macp_sdk/task.py:46,54,231` already spell
+`TaskCompleteRecord`/`TaskFailRecord`/`is_completed`, and `grep is_complete\b` over its
+`src/` + `tests/` returns nothing.
+
+`tests/unit/public-api-snapshot.json` needs **no** change -- settled, not left open as the
+issue had it. `tests/unit/public-api.test.ts:15` is `Object.keys(sdk)` over `src/index`
+(not `dist/index.js`, contrary to CLAUDE.md's summary of the guard), i.e. top-level
+runtime values only: `isComplete` is a `TaskProjection.prototype` member, and both `Record`
+names are erased `interface` declarations. Confirmed against the committed snapshot's
+content -- it carries no `*Record` entry of any kind (not `TaskRecord`, not
+`TaskUpdateRecord`) and no class members. Byte-identity of that file is an acceptance
+criterion in both phases; a phase that edits it did something wrong.
+
+Also verified no-ops: `tests/parity/contract.json` (`contract_version` 1.2.0, full
+recursive walk finds none of the six spellings; spec-repo-owned and gated by
+`make verify-parity`), `tests/conformance/` fixtures, `src/types.ts`, `src/task.ts`
+(`TaskSession`), `src/agent/`, `docs/guides/architecture.md` (mentions `TaskProjection`,
+none of the three symbols).
+
+Two shim-shape decisions grounded in verified lint behaviour rather than taste:
+`@typescript-eslint/no-deprecated` is **absent** from
+`tseslint.configs.recommended.rules` (checked against the installed plugin), so tests that
+keep calling the deprecated names to prove the shims work are lint-safe -- and
+`package.json`'s `lint` script is `eslint src/` only anyway. Conversely
+`no-empty-object-type` **is** `error` in recommended, so
+`interface TaskCompletionRecord extends TaskCompleteRecord {}` would fail `npm run lint`
+-- that is the concrete reason Phase 2 uses `export type` aliases, not empty extending
+interfaces. Phase 1 deliberately ships **no** runtime `console.warn` (unlike
+`sendContext`'s one-shot warn, CHANGELOG `:846-848`), following the closer `_watch*`
+pure-delegation precedent: a local projection read in a hot `Participant` loop is not a
+mis-shaped-outbound-message risk, and `eslint.config.mjs` sets `no-console: 'warn'` for
+`src/**`.
+
+### Repo map (issue-138-naming-renames.md)
+
+- `src/projections/task.ts` -- the **only** source file the plan edits. `TaskRecord`
+  (`:6`, out of scope -- under reconsideration as spec #165), `TaskUpdateRecord` (`:18`,
+  the naming precedent the issue cites, confirmed accurate), `TaskCompletionRecord`
+  (`:26`) and `TaskFailureRecord` (`:33`) renamed in Phase 2, `TaskProjection` (`:42`)
+  with `completions`/`failures` (`:46-47`), `applyMode`'s `TaskComplete`/`TaskFail` cases
+  (`:195`, `:206`) which construct those records and must **not** need editing,
+  `isComplete` (`:231`) renamed in Phase 1 next to its `isFailed` (`:235`) /
+  `isAccepted` (`:252`) past-participle siblings.
+- `src/projections/base.ts` -- `BaseProjection`, extended by `TaskProjection`; owns the
+  real getters (`hasAnomalies` `:244`, `isCommitted` `:248`, `isPositiveOutcome` `:252`)
+  that the issue's "getter" wording likely came from. Not edited.
+- `src/projections.ts` -- 6-line wildcard barrel, hop 1 of the chain carrying the new
+  names + aliases to the public surface. Not edited; coverage-excluded.
+- `src/index.ts` -- public barrel, `:30` `export * from './projections'`, hop 2. Not
+  edited; coverage-excluded.
+- `tests/unit/projections/task.test.ts` -- `:318` is the `isComplete` assertion Phase 1
+  moves; both phases add their shim tests here.
+- `tests/unit/sessions/task.test.ts` -- `:148` (test title) + `:155` (assertion), Phase 1.
+- `tests/unit/public-api.test.ts` / `public-api-snapshot.json` -- runtime value surface
+  only; snapshot byte-identical in both phases (see above).
+- `tests/parity/{contract.json,contract.test.ts}`, `tests/conformance/` -- untouched, both
+  CI fixture gates unaffected.
+- `examples/task-smoke.ts` -- `:55` calls `isComplete`, moved in Phase 1. Type-checked by
+  `npm run check:examples` (`tsconfig.examples.json`, `rootDir: "."`) but **not** linted
+  (`eslint.config.mjs` `ignores` includes `examples/`). Note `tsc` neither errors nor
+  warns on `@deprecated` usage, so leaving it would not have failed `npm run check` --
+  moved deliberately, so the repo's own code models the new name.
+- `README.md:161` -- `isComplete` in the Task Mode snippet, Phase 1. No record-name refs.
+- `docs/api/projections.md` -- `:385-386` record type rows (Phase 2), `:392` the
+  `isComplete` method row (Phase 1).
+- `docs/modes/task.md` -- `:141-142` record type rows (Phase 2), `:164` Query Helpers
+  `isComplete` line (Phase 1).
+- `CHANGELOG.md` -- hand-maintained `[Unreleased]` above release-please's generated
+  releases. `### Deprecated` is established here (`:846`, `:894`), both prior uses being
+  rename-with-alias entries -- reuse that voice. `### Removed` (`:648`, `:745`) is where
+  the eventual 0.13.0 shim removal lands. No `### ⚠ BREAKING CHANGES` in either phase.
+- `eslint.config.mjs` -- see the lint findings above.
+- `vitest.config.ts` -- `thresholds` 94/84/91/92 (lines/branches/functions/statements),
+  matching CLAUDE.md. `src/projections/task.ts` is **not** in `coverage.exclude`, so
+  Phase 1's delegator is a measured function (3.47pp of functions headroom at the
+  Phase-5 measurement 96.04/89.61/94.47/96.96, so it would not breach the gate even
+  untested -- it is tested because it's the point of the phase). Phase 2's type aliases
+  emit no JS -> zero coverage delta. File must be byte-identical out of both phases; do
+  **not** recalibrate floors.
+- `tsconfig.json` -- `declaration: true` is why the `@deprecated` blocks reach
+  `dist/*.d.ts` and therefore consumers' editors; `include: ["src/**/*.ts"]` is why
+  `tests/` is outside the compile graph.
+- `package.json` (`0.11.0`, `exports["."].types` -> `dist/index.d.ts`,
+  `sideEffects: false`, `prepublishOnly` release gate), `release-please-config.json` +
+  `.release-please-manifest.json` (`bump-minor-pre-major: true` -- the reason "next
+  major" is unactionable and `0.13.0` is the named target), `.prettierrc`
+  (`printWidth: 120`), `.gitignore` (still lists `plans/` and `CLAUDE.md`, re-confirmed).
+- Context only, never in a `Files` list: `macp-sdk-python/src/macp_sdk/task.py:46,54,231`
+  and `macp-runtime/crates/macp-modes/src/mode/task.rs:74,86`.
+
+Plan reviewed (round 1: REVISE, fixes applied in place -- release-mechanics and
+doc-citation corrections; 12 gaps closed, phase count and shim design held. Second round
+not warranted). PR strategy: 2 PRs, one per phase, per this repo's established
+one-phase-per-PR precedent and the plan's own explicit rejection of a combined
+verification gate. Risk tiers: both phases `simple` by boundary-crossing (no I/O/network/
+process, single source file, fully `git revert`-able) -- deliberately **not** batched
+despite that, since the plan's Phases section already rejected merging them under one
+gate. Both phases execute + verify + PR individually, in the order written.
+
+### Phase 1 (#138 -- `TaskProjection.isComplete` -> `isCompleted`) - DONE, 2026-09-30
+
+Verifier: fresh Opus, single round, PASS -- all 11 acceptance criteria confirmed (10 by
+direct citation/command re-run; #11, the `feat(projections):` commit type, deferred to
+commit time since the verify pass ran pre-commit -- confirmed below). Verifier's mutation
+probe: pasting `isCompleted`'s old body back into `isComplete` (instead of delegating)
+would still pass the "cannot diverge" test (both names would still agree) but fails the
+`vi.spyOn(projection, 'isCompleted')` delegation-proof test -- the intended kill.
+
+One correction to the plan surfaced during implementation, not a gap in the diff:
+`CHANGELOG.md` actually carries **three** `## [Unreleased]` headings on `main` (`:18`
+live, plus two stale ones -- `:440` and a second, even older one near `## [0.6.0]` at
+`:551` pre-edit), not two as the plan's Context and round-1 review both stated. Immaterial
+to correctness: only the live `:18` block was ever a target, and both stale blocks
+(shifted to `:453`/`:564` by this phase's 13-line insertion) are confirmed byte-unchanged
+by both the executor and the verifier. Noted in the plan file's own Phase 1 Status line
+per this workflow's "the plan is a doc too" rule.
+
+Fixed: `src/projections/task.ts`'s `isComplete(taskId)` renamed to `isCompleted(taskId)`;
+old name kept as a one-line `@deprecated` delegating method (`return
+this.isCompleted(taskId);`), JSDoc naming `0.13.0` as the removal target. All 7
+non-definition call sites moved to the new name (`tests/unit/projections/task.test.ts`,
+`tests/unit/sessions/task.test.ts`, `examples/task-smoke.ts`, `README.md`,
+`docs/api/projections.md`, `docs/modes/task.md` -- the last two with hand-verified
+comment-column realignment, since neither is covered by `format:check`). New
+`describe('deprecated isComplete alias')` block (5 tests: shim-works, fresh-projection
+false, wrong-taskId false, cannot-diverge, delegation-proof via `vi.spyOn`).
+`CHANGELOG.md`'s live `[Unreleased]` block (`:18`) gained one `### Changed` bullet and a
+newly-created `### Deprecated` heading (this file's first) with one bullet. Files touched:
+`src/projections/task.ts`, `tests/unit/projections/task.test.ts`,
+`tests/unit/sessions/task.test.ts`, `examples/task-smoke.ts`, `README.md`,
+`docs/api/projections.md`, `docs/modes/task.md`, `CHANGELOG.md`. Full suite 1216
+passed/20 skipped (up from 1211); coverage 96.05/89.61/94.48/96.96 vs. 94/84/91/92
+floors (`vitest.config.ts` untouched); check/lint/format/build/verify-fixtures/
+verify-parity all green; `tests/unit/public-api-snapshot.json` and
+`tests/parity/contract.json` both byte-identical to `main` (confirmed: no diff hunk).
+
+What's next: commit as `feat(projections):` (hard requirement -- the `0.13.0` removal
+strings are arithmetic over `release-please` cutting a minor from a `feat`, not a patch
+from a `fix`), ship via `/ship` as its own PR, then continue with Phase 2 (the two
+`TaskCompletionRecord`/`TaskFailureRecord` type-alias renames).
+
+pushed feat/issue-138-phase1-is-completed-rename d0e2bb6
+PR #141 opened: https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/pull/141

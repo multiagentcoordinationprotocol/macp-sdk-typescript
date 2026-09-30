@@ -158,7 +158,7 @@ await session.commit({ action: 'task.completed', authorityScope: 'lead', reason:
 
 // Projection queries
 session.projection.progressOf('t1');   // 1.0
-session.projection.isComplete('t1');   // true
+session.projection.isCompleted('t1');  // true
 session.projection.activeTasks();      // []
 ```
 

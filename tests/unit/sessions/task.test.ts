@@ -145,14 +145,14 @@ describe('TaskSession — projection roundtrip', () => {
     expect(session.projection.getTask('t1')?.status).toBe('in_progress');
   });
 
-  it('completeTask() flips isComplete()', async () => {
+  it('completeTask() flips isCompleted()', async () => {
     const client = makeClient();
     const session = new TaskSession(client);
     vi.spyOn(client, 'send').mockResolvedValue({ ok: true });
 
     await session.requestTask({ taskId: 't1', title: 'review', instructions: 'x' });
     await session.completeTask({ taskId: 't1', assignee: 'bob', summary: 'done' });
-    expect(session.projection.isComplete('t1')).toBe(true);
+    expect(session.projection.isCompleted('t1')).toBe(true);
   });
 
   it('failTask() flips isFailed() and records the failure', async () => {
