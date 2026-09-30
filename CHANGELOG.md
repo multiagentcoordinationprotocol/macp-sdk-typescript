@@ -4,6 +4,17 @@ All notable changes to `macp-sdk-typescript` are documented here. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the
 project uses [Semantic Versioning](https://semver.org/).
 
+## [0.13.0](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/compare/v0.12.0...v0.13.0) (2026-09-30)
+
+
+### ⚠ BREAKING CHANGES
+
+* **projections:** TaskProjection.isComplete(taskId) has been removed; use isCompleted(taskId) instead (identical signature and semantics). The TaskCompletionRecord and TaskFailureRecord type aliases have been removed; use TaskCompleteRecord and TaskFailRecord respectively (identical shape). A TypeScript consumer still importing the old type names gets a compile-time TS2724; a plain-JS (or `as any`-cast) caller still invoking isComplete() gets a runtime TypeError.
+
+### Features
+
+* **projections:** remove isComplete/TaskCompletionRecord/TaskFailureRecord shims ([#143](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/issues/143)) ([06ec632](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/commit/06ec632d6b6ffcfea0937083c3614fdc952d06a5))
+
 ## [0.12.0](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/compare/v0.11.0...v0.12.0) (2026-09-30)
 
 
