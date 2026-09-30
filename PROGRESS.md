@@ -3352,3 +3352,5 @@ What's next: ship via `/ship` as its own PR (this plan's only phase). On merge, 
 already a minor from two `feat` commits; this commit is `feat!`, still a minor
 pre-1.0 under `bump-minor-pre-major: true`, and the `!`/footer is what populates the
 `### ⚠ BREAKING CHANGES` section rather than the version bump itself).
+
+pushed feat/issue-140-remove-shims 5d7f249
