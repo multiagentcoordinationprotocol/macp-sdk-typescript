@@ -3205,3 +3205,55 @@ from a `fix`), ship via `/ship` as its own PR, then continue with Phase 2 (the t
 
 pushed feat/issue-138-phase1-is-completed-rename d0e2bb6
 PR #141 opened: https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/pull/141
+CI green (build-and-test Node 22/24, integration, verify-fixtures).
+merged #141: squash-merged into `main` as `3239ae6`. Phase 1 confirmed live.
+
+### Phase 2 (#138 -- `TaskCompletionRecord`/`TaskFailureRecord` -> `TaskCompleteRecord`/
+`TaskFailRecord`) - DONE, 2026-09-30
+
+Verifier: fresh Opus, single round, PASS -- all 13 acceptance criteria confirmed (12
+directly; #13 was PENDING at verify time, correctly not treated as a phase failure since
+it's a closeout action, and filed immediately after as
+[#140](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/issues/140)
+"Remove isComplete / TaskCompletionRecord / TaskFailureRecord deprecation shims (#138
+follow-up)").
+
+One correction to the plan's acceptance criterion 10 surfaced during implementation:
+`dist/index.d.ts` does not literally contain the four type names as a flat grep target --
+this repo's declaration emit is per-module (no bundler), so `dist/index.d.ts` only has
+`export * from './projections'`, chaining through `dist/projections.d.ts` into
+`dist/projections/task.d.ts`, where the names actually live. The verifier independently
+traced the chain (confirmed no ambiguous `dist/projections/index.d.ts`) and additionally
+proved it the way a real consumer would -- compiling an import from the package name
+itself through `exports["."].types`, all four names resolving cleanly, with a `TS2305`
+negative control on a bogus name proving the check was live, not vacuous. Recorded in the
+plan file's own Phase 2 Status line.
+
+Fixed: `src/projections/task.ts`'s `TaskCompletionRecord`/`TaskFailureRecord` interfaces
+renamed to `TaskCompleteRecord`/`TaskFailRecord` (mirroring their triggering
+`TaskComplete`/`TaskFail` message types the way sibling `TaskUpdateRecord` already
+mirrors `TaskUpdate`, and matching `macp-sdk-python`/`macp-runtime`'s own names); both old
+names kept as `export type` aliases (not empty-extending interfaces --
+`@typescript-eslint/no-empty-object-type` is `error` in this repo's lint config) with
+`@deprecated` JSDoc naming `0.13.0`. `readonly completions`/`readonly failures` retargeted
+to the new interface names. New `describe('deprecated record type aliases')` block (3
+tests: arrays typed under new names with real runtime assertions, both aliases assignable
+in both directions with `toBe` identity checks, and a barrel-reachability test importing
+the aliased names from `src/index` -- the file's leading comment states plainly that no CI
+gate type-checks `tests/`, so this documents consumer intent rather than being an
+enforced guard). `CHANGELOG.md`'s live `[Unreleased]` block gained one `### Changed`
+bullet and one `### Deprecated` bullet (appended to the heading Phase 1 created -- no new
+heading). Files touched: `src/projections/task.ts`,
+`tests/unit/projections/task.test.ts`, `docs/api/projections.md`, `docs/modes/task.md`,
+`CHANGELOG.md`. Full suite 1219 passed/20 skipped (up from 1216); coverage
+96.05/89.61/94.48/96.96 vs. 94/84/91/92 floors, byte-identical to Phase 1's measurement
+(type aliases emit no JS, as predicted); check/lint/format/build/verify-fixtures/
+verify-parity all green; `tests/unit/public-api-snapshot.json` and
+`tests/parity/contract.json` both byte-identical to Phase 1's commit.
+
+What's next: commit as `feat(projections):` on branch `feat/issue-138-phase2-record-renames`
+(cherry-picked from the original `e7d79fd` onto post-Phase-1 `main`), ship via `/ship` as
+its own PR. Both `plans/issue-138-naming-renames.md` phases are now `Status: DONE`; issue
+#138 itself closes when this PR merges. `ASSUMPTIONS.md` -- no new entries; every judgment
+call in this plan was already decided and recorded in the plan file itself, none left
+ambiguous during implementation.

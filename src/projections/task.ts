@@ -23,14 +23,23 @@ export interface TaskUpdateRecord {
   sender: string;
 }
 
-export interface TaskCompletionRecord {
+export interface TaskCompleteRecord {
   taskId: string;
   assignee: string;
   summary?: string;
   sender: string;
 }
 
-export interface TaskFailureRecord {
+/**
+ * @deprecated Use {@link TaskCompleteRecord}. Renamed for cross-SDK naming
+ * parity (multiagentcoordinationprotocol#135, issue #138) — the record now
+ * mirrors its triggering `TaskComplete` message type the way its sibling
+ * {@link TaskUpdateRecord} already mirrors `TaskUpdate`, and matches
+ * `macp-sdk-python`'s `TaskCompleteRecord`. Scheduled for removal in 0.13.0.
+ */
+export type TaskCompletionRecord = TaskCompleteRecord;
+
+export interface TaskFailRecord {
   taskId: string;
   assignee: string;
   errorCode?: string;
@@ -39,12 +48,21 @@ export interface TaskFailureRecord {
   sender: string;
 }
 
+/**
+ * @deprecated Use {@link TaskFailRecord}. Renamed for cross-SDK naming
+ * parity (multiagentcoordinationprotocol#135, issue #138) — the record now
+ * mirrors its triggering `TaskFail` message type the way its sibling
+ * {@link TaskUpdateRecord} already mirrors `TaskUpdate`, and matches
+ * `macp-sdk-python`'s `TaskFailRecord`. Scheduled for removal in 0.13.0.
+ */
+export type TaskFailureRecord = TaskFailRecord;
+
 export class TaskProjection extends BaseProjection {
   protected readonly mode = MODE_TASK;
   readonly tasks = new Map<string, TaskRecord>();
   readonly updates: TaskUpdateRecord[] = [];
-  readonly completions: TaskCompletionRecord[] = [];
-  readonly failures: TaskFailureRecord[] = [];
+  readonly completions: TaskCompleteRecord[] = [];
+  readonly failures: TaskFailRecord[] = [];
   phase: 'Pending' | 'Requested' | 'InProgress' | 'Completed' | 'Failed' | 'Committed' = 'Pending';
 
   /**
