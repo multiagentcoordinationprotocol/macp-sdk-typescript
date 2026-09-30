@@ -3354,3 +3354,4 @@ pre-1.0 under `bump-minor-pre-major: true`, and the `!`/footer is what populates
 `### ⚠ BREAKING CHANGES` section rather than the version bump itself).
 
 pushed feat/issue-140-remove-shims 5d7f249
+PR #143 opened: https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/pull/143
