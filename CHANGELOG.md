@@ -249,24 +249,25 @@ project uses [Semantic Versioning](https://semver.org/).
   multiagentcoordinationprotocol#135). Every other `is*` predicate in this
   SDK is past-participle (`isFailed`, `isAccepted`, `isTerminallyRejected`,
   `isDeclined`); `isComplete` was the outlier, and `macp-sdk-python` has
-  always spelled this `is_completed`. The old name remains available — see
-  `### Deprecated` below.
+  always spelled this `is_completed`. The old name was kept as a deprecated
+  alias for one minor, then removed — see `### Removed` below.
 - **`TaskCompletionRecord` renamed to `TaskCompleteRecord`, and
   `TaskFailureRecord` renamed to `TaskFailRecord`** (issue #138, cross-SDK
   naming decision at multiagentcoordinationprotocol#135). Both now mirror
   their triggering `TaskComplete`/`TaskFail` message types the way their
   sibling `TaskUpdateRecord` already mirrors `TaskUpdate`, and match
   `macp-sdk-python` and `macp-runtime`'s own names for the same records. The
-  old names remain available — see `### Deprecated` below.
+  old names were kept as deprecated aliases for one minor, then removed —
+  see `### Removed` below.
 
-### Deprecated
+### Removed
 
-- **`TaskProjection.isComplete(taskId)`** remains available as a
-  `@deprecated` alias for `isCompleted(taskId)`; use `isCompleted()` instead.
-  Scheduled for removal in 0.13.0.
-- **`TaskCompletionRecord`/`TaskFailureRecord`** remain available as
-  `@deprecated` type aliases for `TaskCompleteRecord`/`TaskFailRecord`
-  respectively. Scheduled for removal in 0.13.0.
+- **`TaskProjection.isComplete(taskId)`** (issue #138/#140, breaking): the
+  deprecated alias (added in `0.12.0`) has been removed. Use
+  `isCompleted(taskId)`.
+- **`TaskCompletionRecord`/`TaskFailureRecord`** (issue #138/#140, breaking):
+  the deprecated type aliases (added in `0.12.0`) have been removed. Use
+  `TaskCompleteRecord`/`TaskFailRecord` respectively.
 
 ### Fixed
 

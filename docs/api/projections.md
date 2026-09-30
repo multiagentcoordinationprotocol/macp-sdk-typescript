@@ -385,15 +385,17 @@ copies of the same dedup/transcript/rollback logic; see
 | `completions` | `TaskCompleteRecord[]` |
 | `failures` | `TaskFailRecord[]` |
 
-`TaskCompletionRecord`/`TaskFailureRecord` remain available as `@deprecated` type aliases
-for `TaskCompleteRecord`/`TaskFailRecord` respectively (multiagentcoordinationprotocol#135,
-issue #138), scheduled for removal in 0.13.0.
+> **Migrating from 0.12.x**: `TaskProjection.isComplete(taskId)` and the
+> `TaskCompletionRecord`/`TaskFailureRecord` type aliases were deprecated in `0.12.0` and
+> **removed in `0.13.0`**. Use `isCompleted(taskId)` and `TaskCompleteRecord`/
+> `TaskFailRecord` instead — the signatures and semantics are identical. See the `0.13.0`
+> "Removed" entry in [`CHANGELOG.md`](../../CHANGELOG.md).
 
 | Method | Returns | Description |
 |--------|---------|-------------|
 | `getTask(taskId)` | `TaskRecord \| undefined` | Full task record — see [Task assignee lifecycle](#task-assignee-lifecycle) for how `assignee` is set and cleared |
 | `progressOf(taskId)` | `number` | Current progress (0 before any update, 1 once complete) |
-| `isCompleted(taskId)` | `boolean` | TaskComplete received. Renamed from `isComplete` for cross-SDK naming parity (multiagentcoordinationprotocol#135, issue #138); the old name remains available as a `@deprecated` alias, scheduled for removal in 0.13.0 |
+| `isCompleted(taskId)` | `boolean` | TaskComplete received |
 | `isFailed(taskId)` | `boolean` | TaskFail received |
 | `isRetryable(taskId)` | `boolean` | Failed with `retryable: true` |
 | `isAccepted(taskId)` | `boolean` | Status is accepted or in_progress |
