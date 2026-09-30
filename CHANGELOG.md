@@ -4,6 +4,41 @@ All notable changes to `macp-sdk-typescript` are documented here. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the
 project uses [Semantic Versioning](https://semver.org/).
 
+## [0.12.0](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/compare/v0.11.0...v0.12.0) (2026-09-30)
+
+
+### ⚠ BREAKING CHANGES
+
+* **auth:** Auth.devAgent sets expectedSender to enforce sender identity client-side ([#133](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/issues/133))
+
+### Features
+
+* **parity:** add isCanonicalCommitmentHash + anomaly constant exports ([bbde8d2](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/commit/bbde8d2f72b6fa2d1dc9024bafa587a21243d051))
+* **projections:** rename TaskCompletionRecord/TaskFailureRecord ([#142](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/issues/142)) ([84008e1](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/commit/84008e1700304814fe17093ae35c9046aab553ea))
+* **projections:** rename TaskProjection.isComplete to isCompleted ([#141](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/issues/141)) ([3239ae6](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/commit/3239ae63df50b25064b51bdee93d397af2ed904e))
+
+
+### Bug Fixes
+
+* **agent:** Participant terminal-on-cancel, teardown on every run() exit, tri-state isStopped, guarded rollback pop ([#113](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/issues/113)) ([e1a7de4](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/commit/e1a7de486c9ce6d23c249811a98ba99a15814a9b))
+* **agent:** retry a transient NOT_FOUND on subscribe ([#100](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/issues/100)) ([#101](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/issues/101)) ([ffb0251](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/commit/ffb02514aaaeb9351bf465c00e808833536d3568))
+* **auth:** Auth.devAgent sets expectedSender to enforce sender identity client-side ([#133](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/issues/133)) ([cc0f344](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/commit/cc0f344f2cbb4cf4d59e17fbe4d043cc6f9eebac))
+* **client:** map stream inline errors and registry gRPC statuses to MacpAckError ([#118](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/issues/118)) ([28d4c52](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/commit/28d4c527c324469848ce90a9199b7318970dd071))
+* **commitment-hash:** supersedes: null now hashes as absent, matching macp-sdk-python ([#114](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/issues/114)) ([6e15b9f](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/commit/6e15b9fbc2fc61699970ed30276fd2e249152f08))
+* **index:** drop _resetLoggingForTests from public surface; correct pagination/ListRoots docs ([#112](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/issues/112)) ([99c2f4a](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/commit/99c2f4a67c5200a60f3d7facfbec0ab0dc08eb85))
+* **parity:** re-vendor contract.json for contract_version 1.1.1 ([#129](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/issues/129)) ([459e795](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/commit/459e7959a5eabaa32008b8750bbf33c972e151a3)), closes [#125](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/issues/125)
+* **parity:** re-vendor contract.json for contract_version 1.2.0 ([#136](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/issues/136)) ([8ef1ab1](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/commit/8ef1ab1861e8e871cf3284ee3e125fceba7e2691)), closes [#135](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/issues/135)
+* **projections:** gate TaskComplete/TaskFail phase transitions on task existence ([#120](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/issues/120)) ([41f9010](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/commit/41f90109df032c8072052232cd4501d2bbda0fed)), closes [#111](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/issues/111)
+* **projections:** gate three more phase transitions on entity existence ([#123](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/issues/123)) ([866490a](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/commit/866490a332353049064596371dd1e05b4598062f)), closes [#119](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/issues/119)
+* **projections:** guard QuorumProjection.setBallot on request existence ([#127](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/issues/127)) ([e3b75aa](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/commit/e3b75aa265e019610cfd7b0d0446a38a93437d01)), closes [#121](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/issues/121)
+* **projections:** unfreeze 5 of 6 ProjectionAnomalyKind sites ([#126](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/issues/126), [#128](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/issues/128)) ([#134](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/issues/134)) ([a99668c](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/commit/a99668cf8977309c91c0390f5c0967ad80c2786b))
+* **proto-registry:** stop coercing legacy-JSON Contribute value ([#124](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/issues/124)) ([#130](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/issues/130)) ([02bbe90](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/commit/02bbe90c48824e82e0436d315dd0582d057ffec2))
+* **proto-registry:** stop misdecoding canonical Contribute payloads as JSON ([#110](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/issues/110)) ([26dddb6](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/commit/26dddb61eb7ff163c23ecbd6e96c2abedfab150c))
+* **sessions,agent,auth:** thread auth through start(), default identities, validate strategy output ([#116](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/issues/116)) ([4c633e0](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/commit/4c633e02f11bc5f6a8995346b9b4cdc0213003c0))
+* **strategies:** exclude REVIEW evaluations from majorityVoter ratio ([#124](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/issues/124)) ([#131](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/issues/131)) ([b52c7f2](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/commit/b52c7f2744bd5841a023461a4009c411a9514b75))
+* **validation:** enforce no-fall-through session-id rule, reject NaN confidence, normalize decision.ts wire case ([#115](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/issues/115)) ([df1c6a2](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/commit/df1c6a2c966f2f5f88937b3b2fcc2a160edbd987))
+* **validation:** stop rejecting empty/omitted intent, instructions, action, summary ([#124](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/issues/124)) ([#132](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/issues/132)) ([aa157ee](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/commit/aa157eeff8d284c1cc727c7cb0d73a86f41ab35b))
+
 ## [0.11.0](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/compare/v0.10.0...v0.11.0) (2026-09-22)
 
 
