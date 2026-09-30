@@ -3257,3 +3257,6 @@ its own PR. Both `plans/issue-138-naming-renames.md` phases are now `Status: DON
 #138 itself closes when this PR merges. `ASSUMPTIONS.md` -- no new entries; every judgment
 call in this plan was already decided and recorded in the plan file itself, none left
 ambiguous during implementation.
+
+pushed feat/issue-138-phase2-record-renames 3d2b6f3
+PR #142 opened: https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/pull/142
