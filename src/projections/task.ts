@@ -228,8 +228,18 @@ export class TaskProjection extends BaseProjection {
     return this.tasks.get(taskId);
   }
 
-  isComplete(taskId: string): boolean {
+  isCompleted(taskId: string): boolean {
     return this.tasks.get(taskId)?.status === 'completed';
+  }
+
+  /**
+   * @deprecated Use {@link isCompleted}. Renamed for cross-SDK naming parity
+   * (multiagentcoordinationprotocol#135, issue #138) — every other `is*`
+   * predicate in this SDK is past-participle, and `macp-sdk-python` has
+   * always spelled this `is_completed`. Scheduled for removal in 0.13.0.
+   */
+  isComplete(taskId: string): boolean {
+    return this.isCompleted(taskId);
   }
 
   isFailed(taskId: string): boolean {

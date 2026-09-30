@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { TaskProjection } from '../../../src/projections/task';
 import { ProtoRegistry } from '../../../src/proto-registry';
 import { buildEnvelope } from '../../../src/envelope';
@@ -315,10 +315,61 @@ describe('TaskProjection', () => {
       registry,
     );
 
-    expect(projection.isComplete('t1')).toBe(true);
+    expect(projection.isCompleted('t1')).toBe(true);
     expect(projection.progressOf('t1')).toBe(1);
     expect(projection.phase).toBe('Completed');
     expect(projection.completions).toHaveLength(1);
+  });
+
+  describe('deprecated isComplete alias', () => {
+    it('returns true after the same TaskRequest/TaskAccept/TaskComplete sequence as isCompleted', () => {
+      projection.applyEnvelope(makeEnvelope('TaskRequest', { taskId: 't1', title: 'X', instructions: 'do' }), registry);
+      projection.applyEnvelope(makeEnvelope('TaskAccept', { taskId: 't1', assignee: 'w' }, 'w'), registry);
+      projection.applyEnvelope(
+        makeEnvelope('TaskComplete', { taskId: 't1', assignee: 'w', summary: 'done' }, 'w'),
+        registry,
+      );
+
+      expect(projection.isComplete('t1')).toBe(true);
+    });
+
+    it('returns false on a fresh projection with no tasks at all', () => {
+      expect(projection.isComplete('t1')).toBe(false);
+    });
+
+    it('returns false for an unknown taskId even when a different task is completed', () => {
+      projection.applyEnvelope(makeEnvelope('TaskRequest', { taskId: 't1', title: 'X', instructions: 'do' }), registry);
+      projection.applyEnvelope(makeEnvelope('TaskAccept', { taskId: 't1', assignee: 'w' }, 'w'), registry);
+      projection.applyEnvelope(
+        makeEnvelope('TaskComplete', { taskId: 't1', assignee: 'w', summary: 'done' }, 'w'),
+        registry,
+      );
+
+      expect(projection.isComplete('unknown')).toBe(false);
+    });
+
+    it('cannot diverge from isCompleted at any point in the task lifecycle', () => {
+      expect(projection.isComplete('t1')).toBe(projection.isCompleted('t1'));
+      expect(projection.isComplete('t1')).toBe(false);
+
+      projection.applyEnvelope(makeEnvelope('TaskRequest', { taskId: 't1', title: 'X', instructions: 'do' }), registry);
+      projection.applyEnvelope(makeEnvelope('TaskAccept', { taskId: 't1', assignee: 'w' }, 'w'), registry);
+      expect(projection.isComplete('t1')).toBe(projection.isCompleted('t1'));
+      expect(projection.isComplete('t1')).toBe(false);
+
+      projection.applyEnvelope(
+        makeEnvelope('TaskComplete', { taskId: 't1', assignee: 'w', summary: 'done' }, 'w'),
+        registry,
+      );
+      expect(projection.isComplete('t1')).toBe(projection.isCompleted('t1'));
+      expect(projection.isComplete('t1')).toBe(true);
+    });
+
+    it('delegates to isCompleted rather than duplicating its logic', () => {
+      const spy = vi.spyOn(projection, 'isCompleted');
+      projection.isComplete('t1');
+      expect(spy).toHaveBeenCalledWith('t1');
+    });
   });
 
   it('tracks task failure', () => {

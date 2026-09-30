@@ -209,6 +209,19 @@ project uses [Semantic Versioning](https://semver.org/).
   `POLICY_DENIED` is not in `DEFAULT_RETRY_POLICY.retryableCodes` — strictly
   more correct (neither condition is retryable) and no longer masks the real
   error behind a generic "retries exhausted."
+- **`TaskProjection.isComplete(taskId)` renamed to `isCompleted(taskId)`**
+  (issue #138, cross-SDK naming decision at
+  multiagentcoordinationprotocol#135). Every other `is*` predicate in this
+  SDK is past-participle (`isFailed`, `isAccepted`, `isTerminallyRejected`,
+  `isDeclined`); `isComplete` was the outlier, and `macp-sdk-python` has
+  always spelled this `is_completed`. The old name remains available — see
+  `### Deprecated` below.
+
+### Deprecated
+
+- **`TaskProjection.isComplete(taskId)`** remains available as a
+  `@deprecated` alias for `isCompleted(taskId)`; use `isCompleted()` instead.
+  Scheduled for removal in 0.13.0.
 
 ### Fixed
 
