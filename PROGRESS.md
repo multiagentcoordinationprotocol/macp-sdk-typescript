@@ -3365,3 +3365,29 @@ watch -- this repo publishes an npm package on GitHub Release creation, not a ru
 service; merging to `main` only triggers `release-please` to open/update its own release
 PR next (not yet inspected this session -- a future `0.13.0` publish decision, separate
 from this task, not made here).
+
+## Release: v0.13.0 (cuts from #140's breaking removal)
+
+PR #144 (`chore(main): release 0.13.0`), release-please-generated: cut cleanly from
+commit `06ec632`'s `feat(projections)!:` type, producing a correctly-populated
+`### ⚠ BREAKING CHANGES` section in `CHANGELOG.md`'s new `## [0.13.0]` heading, sourced
+verbatim from that commit's `BREAKING CHANGE:` footer (confirmed by reading the PR diff
+directly before merging). Only release-please-owned files touched (manifest, CHANGELOG,
+`package.json`/`package-lock.json`, `src/version.ts`) -- no unexpected file changes.
+
+`mergeStateStatus: BEHIND` again on merge attempt (same quirk as PR #102): `main` had
+advanced by one commit (`d8ba02f`, a docs-only PROGRESS.md push) that the bot branch
+didn't have, and the release-please workflow's own re-run against that commit (confirmed
+green via `gh run list --workflow=release-please.yml`) didn't clear the PR's reported
+`BEHIND` status even after completing. All four real CI checks (build-and-test 22/24,
+verify-fixtures, integration) were green throughout, and the one missing commit had zero
+file overlap with the PR's diff. Merged with `gh pr merge 144 --squash --admin` as
+`97160fd`, same justified bypass as PR #102.
+
+`Publish` workflow (run `36779644799`) succeeded on the first attempt this time --
+no retry needed, unlike `0.12.0`'s `IDENTITY_TOKEN_READ_ERROR`. `npm view
+macp-sdk-typescript dist-tags` confirms `0.13.0` is `latest` on the public registry.
+
+Issue #140's full lifecycle is now closed end-to-end: shims removed (PR #143, merged
+`06ec632`), breaking release cut and published (`v0.13.0`, `97160fd`). No further action
+pending on this plan.
