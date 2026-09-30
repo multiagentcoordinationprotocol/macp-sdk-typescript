@@ -3355,3 +3355,13 @@ pre-1.0 under `bump-minor-pre-major: true`, and the `!`/footer is what populates
 
 pushed feat/issue-140-remove-shims 5d7f249
 PR #143 opened: https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/pull/143
+merged #143: squash-merged into `main` as `06ec632`. Squash title/footer preserved
+correctly (`feat(projections)!:` type intact, full `BREAKING CHANGE:` footer intact --
+confirmed by reading the squash commit directly, not assumed from the PR body). Issue
+#140 auto-closed (`state: CLOSED`, `stateReason: COMPLETED` -- the explicit "Closes #140"
+in the PR body worked, unlike #138's PRs which lacked it). Plan
+`plans/issue-140-remove-shims.md` complete, single phase, `Status: DONE`. No deploy to
+watch -- this repo publishes an npm package on GitHub Release creation, not a running
+service; merging to `main` only triggers `release-please` to open/update its own release
+PR next (not yet inspected this session -- a future `0.13.0` publish decision, separate
+from this task, not made here).
