@@ -3267,3 +3267,91 @@ merged PRs and commits. Issue #138 CLOSED. Plan `plans/issue-138-naming-renames.
 complete -- both phases shipped, released together in `0.12.0` (both commits typed
 `feat(projections):`). Follow-up removal work tracked in #140, scoped to the `0.13.0`
 release cycle; not started this session pending direction on that plan.
+
+## Plan: issue-140-remove-shims.md (#140 -- remove the #138 deprecation shims)
+
+Preconditions resolved before planning began: PR #102 (release-please) merged to `main`
+as `02f701e`, cutting `CHANGELOG.md`'s `## [0.12.0]` section; the `Publish` workflow's
+first run failed npm's `--provenance` step with `IDENTITY_TOKEN_READ_ERROR` (a transient
+GitHub OIDC hiccup -- every prior release 0.4.1-0.11.0 published clean on this identical
+workflow), fixed with `gh run rerun 36774418840 --failed`, which succeeded and signed
+provenance to Sigstore's transparency log. `npm view macp-sdk-typescript version`/
+`dist-tags` confirmed `0.12.0` live on the public registry (polled directly against the
+registry API, not just local `npm view` cache) before any #140 planning started.
+
+### Phase 1 (#140 -- remove `isComplete`/`TaskCompletionRecord`/`TaskFailureRecord`) - DONE, 2026-09-30
+
+Verifier: fresh Opus, single round, PASS -- all 20 acceptance criteria confirmed, full
+command suite (`check`/`lint`/`format:check`/`test`/`test:coverage`/`build`/
+`verify-fixtures`/`verify-parity`) independently re-run rather than trusted from the
+commit message. Plan review (round 1, before implementation) also ran once: REVISE with
+two must-fix findings (AC6's import-cleanup instructions were self-contradictory and
+would have deleted a live, non-deprecated regression test as collateral damage; AC20's
+zero-exclusion repo-wide grep was mutually unsatisfiable with AC11/AC12's requirement
+that `CHANGELOG.md` keep naming the removed symbols) plus one minor citation fix --
+applied to the plan directly, no second review round needed (both fixes were narrow and
+self-verified against already-read file content).
+
+Two further corrections surfaced during implementation itself (both recorded inline in
+the plan's Phase 1 Status line and AC12/AC20): the `### Changed` bullets' trailing "see
+`### Deprecated` below" pointers became dangling references the moment `### Deprecated`
+was deleted in the same diff -- retargeted to "see `### Removed` below" with corrected
+tense; and AC20's scoped grep needed to explicitly exclude the intentional past-tense
+migration blockquote this same phase adds to `docs/api/projections.md` (which, matching
+the `_watch*`/`sendContext` doc precedent, is *supposed* to keep naming the removed
+symbols permanently).
+
+Fixed: `TaskProjection.isComplete` method removed (JSDoc + delegating body);
+`TaskCompletionRecord`/`TaskFailureRecord` type aliases removed (JSDoc + declarations).
+`isCompleted`, `TaskCompleteRecord`, `TaskFailRecord` untouched. Test file: both
+deprecated-only describe blocks removed, except one live sub-test
+(`'types the projection arrays under their new names'`) relocated to a renamed
+top-level `it` rather than deleted as collateral damage -- it exercises the *permanent*
+record types via a real `applyEnvelope` sequence, not the deprecated aliases. Now-unused
+`vi` import and the `Index*`-aliased barrel-import block both dropped cleanly (confirmed
+no orphaned imports; `npm run lint` only covers `src/`, so this needed a direct check,
+not just trusting lint). `docs/api/projections.md` gained a past-tense migration
+blockquote (mirroring `docs/api/client.md:384-385`'s `_watch*` precedent) and lost its
+forward-looking deprecation paragraph and inline table-cell mention. `CHANGELOG.md`'s
+live `[Unreleased]` block: `### Deprecated` heading removed, `### Removed` heading added
+in the established bold-name/`(breaking)`/description precedent style, `### Changed`
+bullets' cross-references retargeted (substance unchanged). `package.json`,
+`.release-please-manifest.json`, `src/version.ts`, and every version-numbered `##
+[x.y.z]` heading confirmed byte-identical to `origin/main` (release-please's exclusive
+territory, untouched). Verifier additionally swept the whole SDK for structural-typing
+exposure (`ProjectionLike` in `src/agent/types.ts` and `tests/conformance/`) to rule out
+a duck-typed dependency on the removed names outside `task.ts` -- none found. Files
+touched: `src/projections/task.ts`, `tests/unit/projections/task.test.ts`,
+`docs/api/projections.md`, `CHANGELOG.md`. Full suite 1212 passed/20 skipped (down from
+1219 -- net -7: the `deprecated isComplete alias` block held 5 tests, not the 4 this
+plan's own prose initially miscounted, all removed; the `deprecated record type aliases`
+block held 3, 2 removed and 1 relocated intact, so the relocation is a wash on the total.
+5 + 2 = 7); coverage
+96.04/89.61/94.47/96.96 vs. 94/84/91/92 floors (no recalibration needed, comfortably
+above floor as predicted). Commit `93cc42b` on `feat/issue-140-remove-shims`, typed
+`feat(projections)!:` with a `BREAKING CHANGE:` footer naming both removed surfaces and
+the migration path.
+
+Finalization pass (§4): treated the phase verification above as satisfying it directly,
+rather than spawning a second near-duplicate fresh-Opus pass -- this is the plan's only
+phase (no inter-phase seams to test), and the phase verifier already re-ran the full
+suite independently, swept the whole SDK for structural-typing risk beyond the single
+touched file, and checked tracked-file consistency (plan `Status: DONE` confirmed,
+`PROGRESS.md` correctly noted as pending). A second fresh agent re-reading the identical
+4-file diff would have added confirmation, not coverage. Recorded here as a deliberate,
+reversible call (Autonomy ladder: not critical), not a skipped step.
+
+`ASSUMPTIONS.md` -- no new entries; every judgment call in this plan (single-phase
+structure, `### Deprecated`-bullet removal, `feat(projections)!:` commit type, both
+implementation-time corrections above) was decided and recorded directly in the plan
+file itself, none left ambiguous or escalated.
+
+What's next: ship via `/ship` as its own PR (this plan's only phase). On merge, issue
+#140 closes (commit carries `Closes #140`). The next `release-please` cut becomes
+`0.13.0` per the arithmetic this plan's Context section confirmed (0.11.0 -> 0.12.0 was
+already a minor from two `feat` commits; this commit is `feat!`, still a minor
+pre-1.0 under `bump-minor-pre-major: true`, and the `!`/footer is what populates the
+`### ⚠ BREAKING CHANGES` section rather than the version bump itself).
+
+pushed feat/issue-140-remove-shims 5d7f249
+PR #143 opened: https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/pull/143

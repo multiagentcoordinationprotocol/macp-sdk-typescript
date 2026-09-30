@@ -30,15 +30,6 @@ export interface TaskCompleteRecord {
   sender: string;
 }
 
-/**
- * @deprecated Use {@link TaskCompleteRecord}. Renamed for cross-SDK naming
- * parity (multiagentcoordinationprotocol#135, issue #138) — the record now
- * mirrors its triggering `TaskComplete` message type the way its sibling
- * {@link TaskUpdateRecord} already mirrors `TaskUpdate`, and matches
- * `macp-sdk-python`'s `TaskCompleteRecord`. Scheduled for removal in 0.13.0.
- */
-export type TaskCompletionRecord = TaskCompleteRecord;
-
 export interface TaskFailRecord {
   taskId: string;
   assignee: string;
@@ -47,15 +38,6 @@ export interface TaskFailRecord {
   retryable: boolean;
   sender: string;
 }
-
-/**
- * @deprecated Use {@link TaskFailRecord}. Renamed for cross-SDK naming
- * parity (multiagentcoordinationprotocol#135, issue #138) — the record now
- * mirrors its triggering `TaskFail` message type the way its sibling
- * {@link TaskUpdateRecord} already mirrors `TaskUpdate`, and matches
- * `macp-sdk-python`'s `TaskFailRecord`. Scheduled for removal in 0.13.0.
- */
-export type TaskFailureRecord = TaskFailRecord;
 
 export class TaskProjection extends BaseProjection {
   protected readonly mode = MODE_TASK;
@@ -248,16 +230,6 @@ export class TaskProjection extends BaseProjection {
 
   isCompleted(taskId: string): boolean {
     return this.tasks.get(taskId)?.status === 'completed';
-  }
-
-  /**
-   * @deprecated Use {@link isCompleted}. Renamed for cross-SDK naming parity
-   * (multiagentcoordinationprotocol#135, issue #138) — every other `is*`
-   * predicate in this SDK is past-participle, and `macp-sdk-python` has
-   * always spelled this `is_completed`. Scheduled for removal in 0.13.0.
-   */
-  isComplete(taskId: string): boolean {
-    return this.isCompleted(taskId);
   }
 
   isFailed(taskId: string): boolean {
