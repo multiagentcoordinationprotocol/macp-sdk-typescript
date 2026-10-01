@@ -3447,3 +3447,4 @@ returns 2 matches inside the new rationale comment's own prose, not the type dec
 precedent-backed; not a gap.
 
 pushed feat/issue-146-proposal-status-narrow e90cfda
+PR #147 opened: https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/pull/147
