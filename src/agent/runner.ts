@@ -3,6 +3,7 @@ import * as path from 'node:path';
 import { Auth } from '../auth';
 import { MacpClient } from '../client';
 import { DEFAULT_POLICY_VERSION } from '../constants';
+import { logger } from '../logging';
 import { Participant, type ParticipantConfig, type InitiatorConfig } from './participant';
 
 export interface BootstrapPayload {
@@ -34,11 +35,16 @@ export interface BootstrapPayload {
       // to an upstream context (e.g. parent run / scenario). Empty / omitted
       // means "no upstream context".
       context_id?: string;
-      // Extension metadata map (RFC-MACP-0008). Values arrive as arbitrary
-      // JSON-serialisable structures in the bootstrap file — the runner
-      // serialises each one to UTF-8 JSON bytes before handing it to the
-      // mode `start()`, since the envelope carries `Record<string, Buffer>`.
-      extensions?: Record<string, unknown>;
+      // Extension metadata map (RFC-MACP-0008). Wire-level `extensions` is a
+      // protobuf `map<string, bytes>`; RFC-MACP-0001 §10.3 requires `bytes`
+      // fields to serialize as base64 strings in JSON, so a value here is
+      // normally a base64 string (decoded strictly, with a raw-UTF-8
+      // fallback for a non-base64 string — see `encodeExtensions`). A
+      // `Buffer`/`Uint8Array` value is also accepted and passed through
+      // unchanged, for in-process TS callers that already hold raw bytes —
+      // this can never occur via a JSON bootstrap *file* (JSON has no byte
+      // type), only via a hand-constructed `InitiatorConfig`.
+      extensions?: Record<string, string | Buffer | Uint8Array>;
       roots?: Array<{ uri: string; name?: string }>;
     };
     kickoff?: {
@@ -137,24 +143,75 @@ export function fromBootstrap(bootstrapPath?: string): Participant {
   return new Participant(config);
 }
 
+// Matches a syntactically valid base64 string (correct alphabet, correct
+// padding) — a cheap stand-in for Python's `base64.b64decode(value,
+// validate=True)` so a plainly non-base64 string (e.g. "pack:example-001")
+// is rejected up front rather than silently mis-decoded by Node's lenient
+// `Buffer.from(str, 'base64')`, which ignores invalid characters instead of
+// raising. Matches the empty string too (decodes to an empty buffer either
+// way, so which branch handles it is immaterial).
+const BASE64_PATTERN = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
+
+function tryDecodeBase64(value: string): Buffer | undefined {
+  if (!BASE64_PATTERN.test(value)) return undefined;
+  return Buffer.from(value, 'base64');
+}
+
+function describeExtensionsValueType(value: unknown): string {
+  if (value === null) return 'null';
+  if (Array.isArray(value)) return 'array';
+  return typeof value;
+}
+
 /**
- * Serialise a JSON-native extensions map (as delivered in the bootstrap
- * payload) into the `Record<string, Buffer>` form the SessionStart envelope
- * expects. Each value is encoded as UTF-8 JSON so arbitrary structures
- * round-trip through the protobuf `bytes` field. `Buffer` / `Uint8Array`
- * values are passed through untouched so callers that already hold raw bytes
- * don't pay a double-encode.
+ * Coerce a bootstrap `session_start.extensions` map into the
+ * `Record<string, Buffer>` form the SessionStart envelope expects
+ * (`map<string, bytes>` on the wire).
+ *
+ * Per RFC-MACP-0001 §10.3, a protobuf `bytes` field's canonical JSON
+ * representation is a base64 string, so a `string` value is base64-decoded
+ * first (strict shape check via `BASE64_PATTERN`, not Node's lenient
+ * decoder); a string that isn't valid base64 falls back to raw UTF-8 bytes.
+ * This base64-first heuristic — and the resulting ambiguity for a plain
+ * string that happens to also be valid base64 — mirrors
+ * `macp-sdk-python`'s `_decode_extensions` on purpose, to stay
+ * byte-for-byte interoperable; it is a known, tracked wart, not fixed here.
+ * `Buffer`/`Uint8Array` values pass through unchanged, for TS-only
+ * in-process callers that already hold raw bytes (never reachable via a
+ * JSON bootstrap file). Anything else — including the `extensions`
+ * container itself being a non-object (string/number/boolean/array) —
+ * throws, naming the offending key and/or type, so a malformed bootstrap
+ * fails loudly at construction instead of silently corrupting wire bytes a
+ * peer can't decode (issue #139).
  */
-function encodeExtensions(extensions: Record<string, unknown> | undefined): Record<string, Buffer> | undefined {
-  if (!extensions) return undefined;
+export function encodeExtensions(
+  extensions: Record<string, string | Buffer | Uint8Array> | undefined,
+): Record<string, Buffer> | undefined {
+  if (extensions === undefined || extensions === null) return undefined;
+  if (typeof extensions !== 'object' || Array.isArray(extensions)) {
+    throw new Error(
+      `bootstrap session_start.extensions must be an object, got ${describeExtensionsValueType(extensions)}`,
+    );
+  }
   const out: Record<string, Buffer> = {};
   for (const [key, value] of Object.entries(extensions)) {
     if (Buffer.isBuffer(value)) {
       out[key] = value;
     } else if (value instanceof Uint8Array) {
       out[key] = Buffer.from(value);
+    } else if (typeof value === 'string') {
+      const decoded = tryDecodeBase64(value);
+      if (decoded !== undefined) {
+        logger.debug(`[fromBootstrap] extensions["${key}"] decoded as base64`);
+        out[key] = decoded;
+      } else {
+        logger.debug(`[fromBootstrap] extensions["${key}"] is not valid base64; falling back to raw UTF-8`);
+        out[key] = Buffer.from(value, 'utf8');
+      }
     } else {
-      out[key] = Buffer.from(JSON.stringify(value), 'utf8');
+      throw new Error(
+        `bootstrap extensions["${key}"] must be a base64-encoded string (or Buffer/Uint8Array), got ${describeExtensionsValueType(value)}`,
+      );
     }
   }
   return out;

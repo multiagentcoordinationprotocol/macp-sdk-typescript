@@ -2,8 +2,9 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
-import { fromBootstrap, type BootstrapPayload } from '../../../src/agent/runner';
+import { fromBootstrap, encodeExtensions, type BootstrapPayload } from '../../../src/agent/runner';
 import { MODE_DECISION, MODE_TASK } from '../../../src/constants';
+import { _resetLoggingForTests, configureLogging, type LogSink } from '../../../src/logging';
 
 function validPayload(overrides?: Partial<BootstrapPayload>): BootstrapPayload {
   return {
@@ -218,7 +219,10 @@ describe('fromBootstrap', () => {
               ttl_ms: 15_000,
               context_id: 'ctx-upstream-99',
               extensions: {
-                'aitp.tct': { token: 't-abc', issuer: 'iss-1' },
+                // base64 of '{"token":"t-abc","issuer":"iss-1"}' (RFC-MACP-0001 §10.3:
+                // a protobuf `bytes` field serializes as base64 in JSON).
+                'aitp.tct': 'eyJ0b2tlbiI6InQtYWJjIiwiaXNzdWVyIjoiaXNzLTEifQ==',
+                // Not valid base64 (contains ':' and '-') — falls back to raw UTF-8.
                 'ctxm.ref': 'pack:example-001',
               },
             },
@@ -245,14 +249,15 @@ describe('fromBootstrap', () => {
       const arg = startSpy.mock.calls[0]![0];
       expect(arg.contextId).toBe('ctx-upstream-99');
       expect(arg.extensions).toBeDefined();
-      // JSON-native bootstrap values are UTF-8 JSON-encoded into bytes so
-      // the envelope's Record<string, Buffer> contract is satisfied.
+      // A base64-string bootstrap value is base64-decoded into raw bytes
+      // (issue #139 — RFC-MACP-0001 §10.3's canonical `bytes` JSON shape).
       expect(arg.extensions!['aitp.tct']).toBeInstanceOf(Buffer);
       expect(JSON.parse(arg.extensions!['aitp.tct']!.toString('utf8'))).toEqual({
         token: 't-abc',
         issuer: 'iss-1',
       });
-      expect(arg.extensions!['ctxm.ref']!.toString('utf8')).toBe('"pack:example-001"');
+      // A non-base64 string falls back to raw UTF-8 bytes, unquoted.
+      expect(arg.extensions!['ctxm.ref']!.toString('utf8')).toBe('pack:example-001');
 
       startSpy.mockRestore();
     });
@@ -340,5 +345,97 @@ describe('fromBootstrap', () => {
       const cfg = (participant as unknown as { cancelCallbackConfig?: unknown }).cancelCallbackConfig;
       expect(cfg).toBeUndefined();
     });
+  });
+});
+
+// issue #139: encodeExtensions() is exported specifically so these cases —
+// especially Buffer/Uint8Array passthrough (AC3) — are reachable at all.
+// `fromBootstrap`'s only route in is a JSON bootstrap *file*, and a
+// Buffer/Uint8Array value cannot survive a JSON.stringify/JSON.parse round
+// trip, so that branch has no other test surface.
+describe('encodeExtensions', () => {
+  beforeEach(() => {
+    _resetLoggingForTests();
+  });
+
+  afterEach(() => {
+    _resetLoggingForTests();
+  });
+
+  it("base64-decodes the spec repo's own canonical example value (AC1)", () => {
+    // multiagentcoordinationprotocol/examples/discovery/agent_bootstrap.json's
+    // "x-tracing" field — hardcoded expected value, not re-derived here.
+    const result = encodeExtensions({
+      'x-tracing':
+        'eyJ0cmFjZXBhcmVudCI6IjAwLTRiZjkyZjM1NzdiMzRkYTZhM2NlOTI5ZDBlMGU0NzM2LTAwZjA2N2FhMGJhOTAyYjctMDEifQ==',
+    });
+    expect(result!['x-tracing']!.toString('utf8')).toBe(
+      '{"traceparent":"00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"}',
+    );
+  });
+
+  it('falls back to raw UTF-8 for a non-base64 string, not JSON-stringified, not thrown (AC2)', () => {
+    const result = encodeExtensions({ 'ctxm.ref': 'pack:example-001' });
+    expect(result!['ctxm.ref']).toEqual(Buffer.from('pack:example-001', 'utf8'));
+  });
+
+  it('passes a Buffer value through unchanged (AC3)', () => {
+    const raw = Buffer.from([1, 2, 3, 4]);
+    const result = encodeExtensions({ key: raw });
+    expect(result!.key).toBe(raw);
+  });
+
+  it('passes a Uint8Array value through unchanged, as an equal Buffer (AC3)', () => {
+    const raw = new Uint8Array([5, 6, 7]);
+    const result = encodeExtensions({ key: raw });
+    expect(result!.key).toEqual(Buffer.from(raw));
+  });
+
+  it('returns undefined for an absent extensions map', () => {
+    expect(encodeExtensions(undefined)).toBeUndefined();
+  });
+
+  describe('throws for a per-value type that is neither a base64 string, a Buffer, nor a Uint8Array (AC4)', () => {
+    it.each([
+      ['number', 42],
+      ['boolean', true],
+      ['object', { nested: true }],
+      ['array', [1, 2, 3]],
+      ['null', null],
+    ])('%s', (_label, value) => {
+      expect(() => encodeExtensions({ bad: value } as never)).toThrow(/extensions\["bad"\]/);
+    });
+  });
+
+  describe('throws when the extensions container itself is not a plain object (AC4a)', () => {
+    it.each([
+      ['string', 'not-an-object'],
+      ['number', 42],
+      ['boolean', true],
+      ['array', [1, 2, 3]],
+    ])('%s', (_label, value) => {
+      expect(() => encodeExtensions(value as never)).toThrow(/extensions.*must be an object/);
+    });
+  });
+
+  it('logs at debug level when a value decodes as base64 (AC8)', () => {
+    const sink: LogSink = vi.fn();
+    configureLogging({ level: 'debug', sink });
+
+    encodeExtensions({ 'x-tracing': 'eyJhIjoxfQ==' });
+
+    expect(sink).toHaveBeenCalledWith('debug', expect.arrayContaining([expect.stringMatching(/decoded as base64/)]));
+  });
+
+  it('logs at debug level when a value falls back to raw UTF-8 (AC8)', () => {
+    const sink: LogSink = vi.fn();
+    configureLogging({ level: 'debug', sink });
+
+    encodeExtensions({ 'ctxm.ref': 'pack:example-001' });
+
+    expect(sink).toHaveBeenCalledWith(
+      'debug',
+      expect.arrayContaining([expect.stringMatching(/falling back to raw UTF-8/)]),
+    );
   });
 });

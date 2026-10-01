@@ -132,7 +132,7 @@ const p2 = agent.fromBootstrap();
 | `participants` | no | Optional participant roster, passed through to `ParticipantConfig`. |
 | `initiator.session_start.context_id` | no | Upstream context identifier ([RFC-MACP-0007 (Decision Mode)](https://github.com/multiagentcoordinationprotocol/multiagentcoordinationprotocol/blob/main/rfcs/RFC-MACP-0007-decision-mode.md)). Forwarded to the mode-session `start()` as `contextId`. |
 | `initiator.session_start.max_suspend_ms` | no | Per-session max-suspend cap in ms (proto ≥ 0.1.5). `0`/absent = runtime default. |
-| `initiator.session_start.extensions` | no | Map of extension metadata ([RFC-MACP-0008 (Proposal Mode)](https://github.com/multiagentcoordinationprotocol/multiagentcoordinationprotocol/blob/main/rfcs/RFC-MACP-0008-proposal-mode.md)). JSON-native values are UTF-8 JSON-encoded by the runner to satisfy the envelope's `Record<string, Buffer>` contract; pre-encoded `Buffer` / `Uint8Array` values pass through unchanged. |
+| `initiator.session_start.extensions` | no | Map of extension metadata ([RFC-MACP-0008 (Proposal Mode)](https://github.com/multiagentcoordinationprotocol/multiagentcoordinationprotocol/blob/main/rfcs/RFC-MACP-0008-proposal-mode.md)). Wire-level `extensions` is a protobuf `map<string, bytes>`; per [RFC-MACP-0001 §10.3](https://github.com/multiagentcoordinationprotocol/multiagentcoordinationprotocol/blob/main/rfcs/RFC-MACP-0001-core.md), each value must be a base64-encoded string — the runner base64-decodes it (falling back to raw UTF-8 for a non-base64 string); a `Buffer`/`Uint8Array` value passes through unchanged for in-process callers. A number, boolean, plain object, array, or `null` value throws, as does a non-object `extensions` map itself. |
 
 ### Example: initiator with context + extensions
 
@@ -150,7 +150,7 @@ const p2 = agent.fromBootstrap();
       "ttl_ms": 30000,
       "context_id": "ctx-run-42",
       "extensions": {
-        "aitp.tct": { "token": "t-abc", "issuer": "iss-1" }
+        "aitp.tct": "eyJ0b2tlbiI6InQtYWJjIiwiaXNzdWVyIjoiaXNzLTEifQ=="
       }
     },
     "kickoff": {
@@ -160,6 +160,8 @@ const p2 = agent.fromBootstrap();
   }
 }
 ```
+
+The `aitp.tct` value above is the base64 encoding of `{"token":"t-abc","issuer":"iss-1"}` — `encodeExtensions()` base64-decodes it back to those raw bytes before they go on the wire as the protobuf `bytes` value.
 
 `Participant.run()` emits `SessionStart` with both fields on the wire before dispatching the kickoff. Non-initiator agents receive them via the replay path described in the transport section below.
 

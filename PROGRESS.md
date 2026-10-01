@@ -3448,3 +3448,60 @@ precedent-backed; not a gap.
 
 pushed feat/issue-146-proposal-status-narrow e90cfda
 PR #147 opened: https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/pull/147
+CI green (build-and-test Node 22/24, integration, verify-fixtures all pass)
+merged #147 (squash c5142d7c1ccd37b128549e512e9d5c6436899e30), branch deleted
+
+### Phase 2 (#139) — DONE, 2026-10-01
+
+Branch `feat/issue-139-encode-extensions-base64` (created from updated `main` post-#147
+merge, per the plan's sequential-PR strategy). Files: `src/agent/runner.ts`
+(`encodeExtensions` exported and rewritten — base64-decode-with-UTF8-fallback for
+strings, unchanged `Buffer`/`Uint8Array` passthrough, throw naming key+type on any other
+per-value shape, throw naming the received type if the `extensions` container itself
+isn't a plain object; `BootstrapPayload.initiator.session_start.extensions` narrowed to
+`Record<string, string | Buffer | Uint8Array>`; both comment blocks at `:37-44`/`:168-186`
+updated; debug-level logging added distinguishing base64-decode vs. raw-UTF-8-fallback),
+`docs/guides/agent-framework.md` (field-table row and example corrected to the base64
+shape), `tests/unit/agent/runner.test.ts` (existing integration-level fixture/assertions
+updated; new `describe('encodeExtensions', ...)` block added — AC1 canonical-example
+round trip, AC2 UTF-8 fallback, AC3 Buffer/Uint8Array passthrough × 2, AC4 five per-value
+throw cases, AC4a four container-shape throw cases, AC8 two debug-log-branch cases; 16 new
+tests, 38 total in the file), `CHANGELOG.md` (one `### ⚠ BREAKING CHANGES` bullet naming
+the reversal of the `0.2.3` (SDK-TS-1) entry at `:902-908`, one `### Added` bullet for the
+new export, live `[Unreleased]` block only).
+
+Verification:
+- `npm run check` (tsc + examples): clean.
+- `npm run lint`: clean. `npm run format:check`: clean (prettier auto-fixed one quote-style
+  nit in the new test file before this check).
+- `npm run build`: clean.
+- Full suite: 1228 passed / 20 skipped / 42 files (was 1212/20/42 before Phase 2 — +16 new
+  `encodeExtensions` tests; the existing integration test's assertions were updated, not
+  added). Coverage 96.2/89.91/94.49/97.11 vs floors 94/84/91/92;
+  `src/agent/runner.ts` itself now at 100% statements/100% lines.
+- AC1 and AC5 independently re-confirmed by direct execution, not just by code reading:
+  AC1 — `encodeExtensions()` on the spec repo's own canonical `x-tracing` value
+  (`multiagentcoordinationprotocol/examples/discovery/agent_bootstrap.json`) decodes to
+  exactly `{"traceparent":"00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"}`.
+  AC5 — scratch-`tsconfig`/`tsc -p` probe (not a bare `tsc probe.ts`, which hits `TS5112`
+  on this repo's root `tsconfig.json`): a numeric `extensions` value fails `TS2322`
+  against the narrowed `BootstrapPayload` type; the corrected (string/Buffer) shape
+  compiles clean.
+- `tests/unit/public-api-snapshot.json` and `tests/parity/contract.json` both confirmed
+  untouched (`git diff --stat` on both: no changes) — matches the plan's prediction, since
+  `"agent"` was already a listed top-level key and this is a type-only/nested-export
+  change invisible to the runtime-values snapshot.
+- Two cross-repo GitHub issues filed (unrestricted — tracked asks, not writes), per AC10/
+  AC11: `macp-sdk-python#121` (base64-first heuristic ambiguity) and
+  `macp-playground#107` (its bootstrap builder mirrors this SDK's old wide type).
+
+Verifier: fresh Opus, solo (per `Risk: complex`), round 1, **PASS** — all 11 acceptance
+criteria plus AC4a independently re-run, including its own from-scratch scratch-`tsconfig`
+compile probe (AC5) and its own base64 decode of the spec repo's canonical example (AC1).
+Two non-blocking notes, neither a gap: (1) no test calls `encodeExtensions(null)` directly
+(only `undefined`) — the `null`-as-absent behavior was confirmed correct by reading the
+code against Python's `_decode_extensions`, just not pinned by its own unit test; not one
+of AC4a's 4 required cases, left as-is; (2) this file's own draft said "14 new tests" where
+the actual count is 16 — corrected above in this same commit.
+
+Next: commit this phase, then `/ship` it as its own PR.
