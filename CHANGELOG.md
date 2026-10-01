@@ -4,6 +4,19 @@ All notable changes to `macp-sdk-typescript` are documented here. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the
 project uses [Semantic Versioning](https://semver.org/).
 
+## [0.14.0](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/compare/v0.13.0...v0.14.0) (2026-10-01)
+
+
+### ⚠ BREAKING CHANGES
+
+* **agent:** encodeExtensions() (src/agent/runner.ts) no longer JSON-stringifies a session_start.extensions value. A string value is now base64-decoded (falling back to raw UTF-8 if it isn't valid base64); a number, boolean, plain object, array, or null value now throws instead of being silently JSON-encoded, as does a present-but-non-object extensions map itself. Buffer/Uint8Array values are unaffected. This reverses the UTF-8-JSON-encoding behavior documented in the 0.2.3 (SDK-TS-1) CHANGELOG entry, which silently put wire bytes on the connection that a conforming peer cannot decode.
+* **projections:** ProposalRecord.status's type no longer accepts 'accepted'. A TypeScript consumer comparing status === 'accepted' or switching on it now gets a compile-time TS2367/TS2678/TS2322 instead of silently-dead code; a plain-JS (or `as any`-cast) caller sees no behavior change, since the comparison always evaluated false.
+
+### Bug Fixes
+
+* **agent:** encodeExtensions() base64-decodes extensions values ([#149](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/issues/149)) ([72c6ea4](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/commit/72c6ea484e1dd5e75dbfc0bd12cbed787eeeacbd))
+* **projections:** ProposalRecord.status no longer accepts 'accepted' ([#147](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/issues/147)) ([c5142d7](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/commit/c5142d7c1ccd37b128549e512e9d5c6436899e30))
+
 ## [0.13.0](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/compare/v0.12.0...v0.13.0) (2026-09-30)
 
 
