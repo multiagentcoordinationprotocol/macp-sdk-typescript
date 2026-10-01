@@ -91,26 +91,27 @@ await session.abstain({
 ### Ballot Cardinality
 
 Per [RFC-MACP-0011](https://github.com/multiagentcoordinationprotocol/multiagentcoordinationprotocol/blob/main/rfcs/RFC-MACP-0011-quorum-mode.md)
-§5 rule 3, each eligible participant may cast **at most one ballot across
-`Approve`, `Reject`, and `Abstain`** for a given `requestId`. Casting a ballot
-at all is optional (`MAY`) — but the cap of one is enforced under §5's opening
-sentence, "Implementations MUST enforce the following:", which puts the `MUST`
-on the implementation rather than the participant directly (contrast
-[RFC-MACP-0007](https://github.com/multiagentcoordinationprotocol/multiagentcoordinationprotocol/blob/main/rfcs/RFC-MACP-0007-decision-mode.md)
-§5 item 3, which states the same-strength obligation directly on the
-participant for `Vote`). A conforming runtime **rejects** a second ballot from
-the same sender for the same request, regardless of type — a `Reject` after an
-earlier `Abstain` is a duplicate ballot, not a change of vote.
+§5 rule 3, each eligible participant MUST cast **at most one ballot across
+`Approve`, `Reject`, and `Abstain`** for a given `requestId` — casting a
+ballot at all is still optional (`MAY`), but the cap of one, once a
+participant does ballot, is a direct obligation on the participant as of the
+rule-3 hardening in spec PR
+[multiagentcoordinationprotocol#85](https://github.com/multiagentcoordinationprotocol/multiagentcoordinationprotocol/pull/85)
+(previously only the implementation's enforcement duty was explicit, per
+§5's opening sentence, "Implementations MUST enforce the following:"). A
+conforming runtime **rejects** a second ballot from the same sender for the
+same request, regardless of type — a `Reject` after an earlier `Abstain` is
+a duplicate ballot, not a change of vote.
 
-RFC-MACP-0011 §5 rule 3 caps *how many* ballots a sender may have; it does not
-say *which of two* stands if a second one is somehow observed — that is
-outside what the rule states. This SDK's projection keeps the sender's
-**first** accepted ballot and discards any later one, in parity with
-RFC-MACP-0007 §5 item 3's explicit first-stands rule for `Vote` and with
-`macp-runtime`'s behavior (it enforces first-wins identically in all three
-ballot arms). That first-wins choice is an inference from parity and observed
-runtime behavior, not a direct RFC-MACP-0011 citation — a spec clarification
-will be requested upstream to close this gap.
+RFC-MACP-0011 §5 rule 3 now states directly that "the first accepted ballot
+stands" — resolved by the same rule-3 hardening (spec PR #85) referenced
+above. This SDK's projection keeps the sender's **first** accepted ballot
+and discards any later one, which is now a direct rule-3 citation; before
+PR #85, this behavior was an inference from parity with RFC-MACP-0007 §5
+item 3's explicit first-stands rule for `Vote` plus `macp-runtime`'s
+observed behavior (it enforces first-wins identically in all three ballot
+arms), since the rule at the time capped *how many* ballots without stating
+*which* stands.
 
 A discarded duplicate is recorded in
 [`anomalies`](../api/projections.md#anomalies) as a `duplicate_ballot`, naming

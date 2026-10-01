@@ -76,21 +76,24 @@ export class QuorumProjection extends BaseProjection {
     const senderMap = this.ballots.get(requestId) ?? new Map<string, BallotRecord>();
     const kept = senderMap.get(envelope.sender);
     if (kept !== undefined) {
-      // RFC-MACP-0011 §5 rule 3 (`:67`): participation is MAY (a participant need
-      // not cast a ballot), but the cap of one ballot per participant ACROSS
-      // Approve, Reject, and Abstain is enforced under §5's opening sentence,
-      // "Implementations MUST enforce the following:" (`:63`). Do NOT phrase this
-      // as "a participant MUST cast at most one ballot" — RFC-0011 puts the MUST
-      // on the implementation, not the participant (contrast RFC-MACP-0007 §5.3,
-      // which puts it directly on the participant; same obligation, different
-      // addressee). A later ballot of a *different* type is still a duplicate,
-      // not a change of vote, so this guard is keyed on the sender ALONE within
-      // the request — never on sender + vote. macp-runtime enforces this
-      // identically in all three arms (quorum.rs:164/184/204).
-      // Keeping the sender's FIRST ballot (rather than the last) is not stated
-      // by RFC-0011 either; it is parity with RFC-MACP-0007 §5 item 3's
-      // explicit first-stands rule for `Vote`, plus macp-runtime's enforced
-      // first-wins behaviour.
+      // RFC-MACP-0011 §5 rule 3 (`:69`, hardened by spec PR
+      // multiagentcoordinationprotocol#85): "Each eligible participant MUST
+      // cast at most one ballot per request_id... A runtime MUST reject a
+      // second ballot from the same sender for the same request_id,
+      // regardless of the type of either ballot; the first accepted ballot
+      // stands." Participation itself is still MAY (a participant need not
+      // ballot at all) — only the one-per-participant cap and first-wins
+      // outcome are MUST. A later ballot of a *different* type is still a
+      // duplicate, not a change of vote, so this guard is keyed on the
+      // sender ALONE within the request — never on sender + vote.
+      // macp-runtime enforces this identically in all three arms
+      // (quorum.rs:164/184/204).
+      //
+      // Keeping the sender's FIRST ballot is now a direct rule-3 citation
+      // (above), not an inference — before PR #85 hardened the rule, this
+      // comment relied on parity with RFC-MACP-0007 §5 item 3's first-stands
+      // rule for `Vote` plus macp-runtime's observed behavior, since RFC-0011
+      // capped *how many* ballots without yet stating *which* stands.
       this.recordAnomaly({
         kind: 'duplicate_ballot',
         mode: envelope.mode,

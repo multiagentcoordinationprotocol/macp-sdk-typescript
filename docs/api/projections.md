@@ -243,9 +243,10 @@ discarded:
   (`duplicate_vote`, RFC-MACP-0007 §5.3) — **the first stands.**
 - A second distinct ballot across `Approve`/`Reject`/`Abstain` from this
   sender for this request (`duplicate_ballot`, RFC-MACP-0011 §5 rule 3) —
-  **the first stands.** (RFC-MACP-0011 §5 rule 3 caps *how many* ballots and
-  is silent on *which of two* stands; first-ballot-wins here is parity with
-  RFC-MACP-0007 §5.3 plus runtime-enforced behaviour.)
+  **the first stands.** (RFC-MACP-0011 §5 rule 3 states "the first accepted
+  ballot stands" directly, since the rule-3 hardening in spec PR
+  multiagentcoordinationprotocol#85; first-ballot-wins here was parity with
+  RFC-MACP-0007 §5.3 plus runtime-enforced behaviour before that hardening.)
 - A `TaskAccept` for a task this projection has a `TaskRequest` on file for,
   arriving after some task already holds the session's one assignee slot
   (`duplicate_task_accept`, RFC-MACP-0009 §5 rules 3/3a) — the slot holder is
@@ -490,7 +491,7 @@ otherwise be wrong — Proposal's last-accept-wins — it is already modelled.
 | Property | Type |
 |----------|------|
 | `requests` | `Map<string, ApprovalRequestRecord>` |
-| `ballots` | `Map<string, Map<string, BallotRecord>>` — requestId → sender → the sender's **first** accepted ballot (`Approve`/`Reject`/`Abstain`) for that request. A later ballot of any type from the same sender for the same request is discarded and recorded in [`anomalies`](#anomalies) instead of overwriting the entry. [RFC-MACP-0011](https://github.com/multiagentcoordinationprotocol/multiagentcoordinationprotocol/blob/main/rfcs/RFC-MACP-0011-quorum-mode.md) §5 rule 3 caps *how many* ballots a sender may cast; it is silent on *which* stands — first-wins here is an inference from parity with RFC-MACP-0007 §5 item 3 plus runtime-enforced behaviour, not a direct RFC-0011 citation; see [Anomalies](#anomalies). |
+| `ballots` | `Map<string, Map<string, BallotRecord>>` — requestId → sender → the sender's **first** accepted ballot (`Approve`/`Reject`/`Abstain`) for that request. A later ballot of any type from the same sender for the same request is discarded and recorded in [`anomalies`](#anomalies) instead of overwriting the entry. [RFC-MACP-0011](https://github.com/multiagentcoordinationprotocol/multiagentcoordinationprotocol/blob/main/rfcs/RFC-MACP-0011-quorum-mode.md) §5 rule 3 states this first-wins behavior directly ("the first accepted ballot stands"), since the rule-3 hardening in spec PR multiagentcoordinationprotocol#85 — first-wins here was an inference from parity with RFC-MACP-0007 §5 item 3 plus runtime-enforced behaviour before that hardening; see [Anomalies](#anomalies). |
 
 | Method | Returns | Description |
 |--------|---------|-------------|

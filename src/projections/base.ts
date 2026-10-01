@@ -17,9 +17,12 @@ export type ProjectionAnomalyKind = 'duplicate_vote' | 'duplicate_ballot' | 'dup
  * this proposal (RFC-MACP-0007 §5.3), or a second distinct ballot across
  * `Approve`/`Reject`/`Abstain` from this sender for this request
  * (RFC-MACP-0011 §5 rule 3), was observed and discarded — the first stands.
- * (RFC-MACP-0011 §5 rule 3 caps *how many* ballots and is silent on *which of
- * two* stands; first-ballot-wins here is parity with RFC-MACP-0007 §5.3 plus
- * runtime-enforced behaviour.)
+ * (RFC-MACP-0011 §5 rule 3 states "the first accepted ballot stands"
+ * directly, since the rule-3 hardening in spec PR
+ * multiagentcoordinationprotocol#85 — before that, this SDK's
+ * first-ballot-wins behaviour was an inference from parity with
+ * RFC-MACP-0007 §5.3 plus runtime-enforced behaviour, not a direct
+ * RFC-0011 citation.)
  *
  * **Deliberately narrow claim — do not overclaim "this transcript violates
  * the spec".** A projection cannot tell a genuinely non-conforming source
