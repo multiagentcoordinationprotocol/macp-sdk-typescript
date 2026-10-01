@@ -131,6 +131,15 @@ project uses [Semantic Versioning](https://semver.org/).
   still only fails server-side). A caller that genuinely needs one
   credential reused across multiple senders should use
   `Auth.bearer(token, senderHint)` (the legacy two-arg form) instead.
+* **projections:** `ProposalRecord.status`'s type no longer accepts
+  `'accepted'` (issue #146). No code path has ever assigned it — acceptance
+  is tracked separately via `accepts`/`isAccepted()`, since it's a
+  per-sender, supersedable relation (RFC-MACP-0008 §5 rule 5), not a
+  per-proposal fact a scalar field could hold. A TypeScript consumer
+  comparing `status === 'accepted'` or switching on it now gets a
+  compile-time `TS2367`/`TS2678`/`TS2322` instead of silently-dead code; a
+  plain-JS (or `as any`-cast) caller sees no behavior change, since the
+  comparison always evaluated `false`.
 
 ### Features
 
@@ -466,6 +475,11 @@ project uses [Semantic Versioning](https://semver.org/).
   site — `taskId`, `title`, `requestId`, `proposalId`, `option`, `handoffId`,
   `targetParticipant`, `modeVersion`, `configurationVersion` — is unaffected
   and still rejects an empty value.
+- **`ProposalRecord.status`'s declared type no longer lies about
+  `'accepted'`** (issue #146). The union included `'accepted'` since this
+  type was first written, but nothing has ever assigned it — see the
+  `### ⚠ BREAKING CHANGES` entry above for why, and why that correction is a
+  breaking (not purely additive) change.
 
 ### Documentation
 
