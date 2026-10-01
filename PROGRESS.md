@@ -3435,3 +3435,15 @@ frozen-field-set guard) nothing external pins this union; the rationale comment 
 proportionate permanent artifact.
 
 Next: commit this phase, then `/ship` it as its own PR before starting Phase 2.
+
+### Phase 1 (#146) — ship pass, 2026-10-01
+
+`/ship` gate: full suite re-run green (1212 passed / 20 skipped / 42 files; coverage
+96.04/89.61/94.47/96.96 vs floors 94/84/91/92), `npm run check`/`lint`/`format:check` all
+clean. Fresh-Opus ship-gate verifier (independent of the `/implement`-phase verifier
+above): **PASS**. One cosmetic nit reconfirmed (AC3's literal `grep -n "'accepted'"`
+returns 2 matches inside the new rationale comment's own prose, not the type declaration)
+— same divergence the Phase 1 implementation verifier already judged intentional and
+precedent-backed; not a gap.
+
+pushed feat/issue-146-proposal-status-narrow e90cfda
