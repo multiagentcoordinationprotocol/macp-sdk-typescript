@@ -3391,3 +3391,60 @@ macp-sdk-typescript dist-tags` confirms `0.13.0` is `latest` on the public regis
 Issue #140's full lifecycle is now closed end-to-end: shims removed (PR #143, merged
 `06ec632`), breaking release cut and published (`v0.13.0`, `97160fd`). No further action
 pending on this plan.
+
+## Plan: issue-139-146-fixes.md
+
+Repo map: see the plan file's own "Repo map" section — not rebuilt here, per Token &
+context discipline.
+
+**PR strategy:** two sequential PRs, not parallel. Phase 1 (#146) and Phase 2 (#139) are
+independent in code (different subsystems, no ordering dependency) but share one file —
+`CHANGELOG.md`'s live `[Unreleased]` block, where both add a `### ⚠ BREAKING CHANGES`
+bullet. Ship Phase 1 first, merge it, then branch Phase 2 from the updated `main` so its
+own CHANGELOG edit needs only a trivial rebase instead of a manual conflict resolution.
+Decided during `/plan`'s review rounds, recorded here per `/implement` §0 convention.
+
+**Risk tiers:** both phases `Risk: complex` (each is a breaking change to a public API
+surface) — verified solo, never batched, per the plan's own tagging.
+
+### Phase 1 (#146) — DONE, 2026-10-01
+
+Branch `feat/issue-146-proposal-status-narrow`. Files: `src/projections/proposal.ts`
+(`ProposalRecord.status` narrowed to `'open' | 'rejected' | 'withdrawn'`, rationale
+comment added), `docs/modes/proposal.md` (dropped the dead `accepted` table row, fixed
+two adjacent stale `isAccepted`/`acceptedProposal` comments), `CHANGELOG.md` (one
+`### ⚠ BREAKING CHANGES` bullet, one `### Fixed` bullet, live `[Unreleased]` block only).
+
+Verifier: fresh Opus, round 1, **PASS** — all 10 acceptance criteria independently
+re-run (including the compile-fail probe via scratch `tsconfig`/`tsc -p`, proving
+`TS2322`/`TS2367`/`TS2678` on `'accepted'` and a clean compile on `'rejected'`; the
+dist-compile check against `dist/projections/proposal.d.ts`; a mechanical diff proving
+zero runtime behavior change — stripping comments from both versions leaves exactly one
+differing line, the type declaration itself). Full suite: 1212 passed / 20 skipped / 42
+files; coverage 96.96/89.61/94.47/96.04 vs floors 94/84/91/92. `tests/unit/public-api-snapshot.json`
+and `tests/parity/contract.json` both confirmed untouched.
+
+Four non-blocking verifier notes: one applied immediately (an adjacent stale doc comment
+sharing the same pattern, fixed in the same commit — see the plan's Phase 1 Status line);
+three left as-is with recorded reasoning (also in the plan's Status line) — none are gaps.
+
+AC5's compile-fail probe: implemented as a one-off verification step (confirmed above),
+not a permanent compile-fixture test — the plan left this choice to `/implement`'s
+judgment, and a permanent guard isn't warranted here since (unlike `CommitmentPayload`'s
+frozen-field-set guard) nothing external pins this union; the rationale comment is the
+proportionate permanent artifact.
+
+Next: commit this phase, then `/ship` it as its own PR before starting Phase 2.
+
+### Phase 1 (#146) — ship pass, 2026-10-01
+
+`/ship` gate: full suite re-run green (1212 passed / 20 skipped / 42 files; coverage
+96.04/89.61/94.47/96.96 vs floors 94/84/91/92), `npm run check`/`lint`/`format:check` all
+clean. Fresh-Opus ship-gate verifier (independent of the `/implement`-phase verifier
+above): **PASS**. One cosmetic nit reconfirmed (AC3's literal `grep -n "'accepted'"`
+returns 2 matches inside the new rationale comment's own prose, not the type declaration)
+— same divergence the Phase 1 implementation verifier already judged intentional and
+precedent-backed; not a gap.
+
+pushed feat/issue-146-proposal-status-narrow e90cfda
+PR #147 opened: https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/pull/147

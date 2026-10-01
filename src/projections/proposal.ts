@@ -10,7 +10,24 @@ export interface ProposalRecord {
   tags?: string[];
   sender: string;
   supersedes?: string;
-  status: 'open' | 'accepted' | 'rejected' | 'withdrawn';
+  /**
+   * Reachable values only (issue #146). An `Accept` is recorded on the
+   * projection's `accepts` list (and surfaced via `acceptedProposal()` /
+   * `isAccepted()`), never on this field — no code path assigns `'accepted'`
+   * here. A non-terminal `Reject` likewise leaves this `'open'`; only a
+   * terminal `Reject` sets `'rejected'`.
+   *
+   * That is by design, not an omission: acceptance is a per-sender,
+   * supersedable relation (RFC-MACP-0008 §5 rule 5), not a per-proposal
+   * fact, so a scalar field here cannot hold it — "alice accepts p2 while
+   * bob still accepts p1" is a legal state. This mirrors the runtime, whose
+   * `ProposalDisposition` is `{Live, Withdrawn}` with acceptance in a
+   * separate `accepts` map, and `macp-sdk-python`'s own `status: str`
+   * (documented the same way after its issue #112). `task.ts`/`handoff.ts`
+   * do set `'accepted'`-equivalent statuses because their acceptance is one
+   * actor claiming one slot — this mode's isn't. See `docs/modes/proposal.md`.
+   */
+  status: 'open' | 'rejected' | 'withdrawn';
 }
 
 export interface ProposalAcceptRecord {

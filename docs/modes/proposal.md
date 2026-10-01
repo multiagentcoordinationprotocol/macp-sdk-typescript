@@ -104,9 +104,14 @@ Each proposal tracks a `status` field:
 | Status | Meaning |
 |--------|---------|
 | `open` | Active, can be accepted/rejected/withdrawn |
-| `accepted` | Reserved in the type; the projection tracks accepts in `accepts[]` — use `isAccepted(id)` |
 | `rejected` | Terminally rejected (non-terminal rejects leave status `open`) |
 | `withdrawn` | Withdrawn by the proposer |
+
+There is no `'accepted'` status: acceptance is a per-sender, supersedable
+relation (RFC-MACP-0008 §5 rule 5), not a per-proposal fact — a scalar field
+can't hold "alice accepts p2 while bob still accepts p1". The projection
+tracks accepts separately in `accepts[]`/`latestAcceptBySender`; use
+`isAccepted(id)` (issue #146).
 
 Counter-proposals set `supersedes` to link back to the original.
 
@@ -116,10 +121,10 @@ Counter-proposals set `supersedes` to link back to the original.
 session.projection.activeProposals();           // proposals with status 'open'
 session.projection.liveProposals();             // Map of all non-withdrawn proposals
 session.projection.latestProposal();            // most recently submitted
-session.projection.isAccepted('p2');            // true if any Accept exists
+session.projection.isAccepted('p2');            // true if p2 is some sender's current (unsuperseded) Accept
 session.projection.isTerminallyRejected('p1');  // true if terminal Reject exists
 session.projection.hasTerminalRejection();      // true if any proposal was terminally rejected
-session.projection.acceptedProposal();          // proposalId if every Accept targets one proposal
+session.projection.acceptedProposal();          // proposalId if every sender's current Accept targets the same one
 session.projection.isCommitted;                 // true once a Commitment is applied
 session.projection.isPositiveOutcome;           // undefined until committed; then outcomePositive
 ```
