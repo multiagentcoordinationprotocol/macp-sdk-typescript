@@ -140,6 +140,21 @@ project uses [Semantic Versioning](https://semver.org/).
   compile-time `TS2367`/`TS2678`/`TS2322` instead of silently-dead code; a
   plain-JS (or `as any`-cast) caller sees no behavior change, since the
   comparison always evaluated `false`.
+* **agent:** `fromBootstrap()`'s `encodeExtensions()` now base64-decodes a
+  `session_start.extensions` string value (falling back to raw UTF-8 for a
+  non-base64 string), instead of `JSON.stringify`-ing it, per RFC-MACP-0001
+  §10.3 (a protobuf `bytes` field's canonical JSON representation is
+  base64) — the wire-level `extensions` map is `map<string, bytes>` (issue
+  #139). This reverses the UTF-8-JSON-encoding behavior documented at the
+  `0.2.3` entry above (SDK-TS-1): that release's choice silently put wire
+  bytes on the connection that a conforming peer (including this SDK's own
+  `macp-sdk-python` counterpart) cannot decode, even for the canonical
+  example value. A number, boolean, plain object, array, or `null`
+  extension value — previously silently JSON-encoded — now throws at
+  bootstrap construction instead, naming the offending key; so does a
+  present-but-non-object `extensions` map itself. `Buffer`/`Uint8Array`
+  values are unaffected (same passthrough as before, for TS-only
+  in-process callers — never reachable via a JSON bootstrap file).
 
 ### Features
 
@@ -200,6 +215,12 @@ project uses [Semantic Versioning](https://semver.org/).
   sites. `DecisionProjection`'s late-`Vote`-after-`Commitment` site remains
   the one still-open, undecided case (per #128's own explicit scoping) —
   unaffected by this change.
+- **`encodeExtensions()` is now exported from `macp-sdk-typescript/agent`**
+  (issue #139), so a caller constructing a bootstrap `extensions` map
+  programmatically can validate/encode a value the same way
+  `fromBootstrap()` does, and so it's directly unit-testable (a
+  `Buffer`/`Uint8Array` value can't round-trip through a JSON bootstrap
+  file otherwise).
 
 ### Changed
 
