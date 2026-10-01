@@ -3505,3 +3505,18 @@ of AC4a's 4 required cases, left as-is; (2) this file's own draft said "14 new t
 the actual count is 16 — corrected above in this same commit.
 
 Next: commit this phase, then `/ship` it as its own PR.
+
+### Phase 2 (#139) — ship pass, 2026-10-01
+
+Committed `a2db4c0` (one commit, `fix(agent)!: encodeExtensions() base64-decodes
+extensions values`). `/ship` gate: full suite re-run green on the committed tree (1228
+passed / 20 skipped / 42 files; coverage 96.2/89.91/94.49/97.11 vs floors 94/84/91/92),
+`npm run check`/`lint`/`format:check`/`build` all clean. Already up to date with
+`origin/main` (c5142d7) — no rebase needed. Fresh-Opus ship-gate verifier (independent of
+the `/implement`-phase verifier above): **PASS**, zero gaps.
+
+pushed feat/issue-139-encode-extensions-base64 a2db4c0
+PR #149 opened: https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/pull/149
+
+Note: release-please opened PR #148 (`chore(main): release 0.14.0`) automatically after
+#147 merged — untouched here, release-please-owned.
