@@ -45,6 +45,16 @@ project uses [Semantic Versioning](https://semver.org/).
   applyEnvelope`'s own direct `this.phase = 'Committed'` assignment for a
   `Commitment` envelope is deliberately left untouched — exact parity with
   Python's own `_set_phase()` docstring, which documents the same bypass.
+- **`buildDecisionPolicy` now rejects a `+Infinity` voting weight** (issue
+  #152; found by a cross-SDK parity audit against `macp-sdk-python`'s
+  `math.isfinite` guard, `src/macp_sdk/policy.py:186`). The per-weight
+  validation guard changed from `weight <= 0 || Number.isNaN(weight)` to
+  `weight <= 0 || !Number.isFinite(weight)` — `!Number.isFinite` is `true`
+  for `NaN`, `+Infinity`, and `-Infinity` alike, closing the `+Infinity` gap
+  the old `Number.isNaN`-only check missed (a `+Infinity` weight serializes
+  to JSON `null`, which is schema-invalid against
+  `decision-rules.schema.json`). `-Infinity`/`NaN` continue to throw,
+  unchanged.
 
 ## [0.14.0](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/compare/v0.13.0...v0.14.0) (2026-10-01)
 
