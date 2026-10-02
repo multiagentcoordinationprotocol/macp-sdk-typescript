@@ -3617,3 +3617,4 @@ final cumulative Opus verification pass both **PASS**, zero gaps (two cosmetic n
 fixed: plan file's own top-level Status line, and one commit's scope label).
 
 pushed feat/issue-150-154-fixes 2ee4bea
+PR #155 opened: https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/pull/155
