@@ -3576,3 +3576,40 @@ updated per AC8). Both closed — new `## [Unreleased]` → `### Fixed` bullet a
 `## [0.14.0]`; `docs/api/projections.md` got a generalized `setPhase` guarantee in the
 BaseProjection section plus the #153-specific sentence in Decision, plus pointer
 sentences on Proposal/Task/Handoff/Quorum's phase lines. Round 2: **PASS**, zero gaps.
+
+### Phase 2 DONE (2026-10-02) — TaskProjection.rejections audit record (#151)
+
+New `TaskRejectRecord` interface (`taskId, assignee, reason?, sender`) and
+`readonly rejections: TaskRejectRecord[] = []` on `TaskProjection`; the `TaskReject`
+case now pushes an unconditional audit record (sender from the envelope, no fallback for
+`assignee`, matching `TaskComplete`/`TaskFail`'s own convention over Python's fallback
+nuance). 4 new tests (empty-on-fresh, known-taskId, unknown-taskId, two-sequential) plus
+one existing test extended to also assert on `rejections`. Docs: `docs/api/projections.md`
+and `docs/modes/task.md` each got a new `rejections` row. CHANGELOG: new `### Added`
+bullet. Verification: fresh-Opus gate (batched with Phase 3, independent verdicts) —
+**PASS**, zero gaps.
+
+### Phase 3 DONE (2026-10-02) — buildDecisionPolicy rejects an Infinity weight (#152)
+
+Single-clause guard swap in `src/policy.ts`: `weight <= 0 || Number.isNaN(weight)` →
+`weight <= 0 || !Number.isFinite(weight)` — exact mirror of Python's `math.isfinite`
+guard; also corrected the stale comment above it. New tests for `+Infinity` (the actual
+gap) and `-Infinity` (no-regression pin) in `tests/unit/policy.test.ts`. No docs needed
+(confirmed via grep — no doc describes the guard's internal shape). CHANGELOG: new
+`### Fixed` bullet. Verification: fresh-Opus gate (batched with Phase 2, independent
+verdicts) — **PASS**, zero gaps.
+
+### Phase 4 DONE (2026-10-02) — watchers.ts MacpTransportError swap (#154)
+
+All 5 "stream ended before receiving a ..." sites in `src/watchers.ts` (`ModeRegistryWatcher`,
+`RootsWatcher`, `SignalWatcher`, `PolicyWatcher`, `SessionLifecycleWatcher`) now throw
+`MacpTransportError` instead of a bare `Error`, byte-identical messages, no `code` (locally
+raised). Tests: 3 existing assertions strengthened to check `instanceof
+MacpTransportError`/`MacpSdkError` plus `code: undefined` (`ModeRegistryWatcher`,
+`SignalWatcher`, `SessionLifecycleWatcher`); 2 brand-new tests added from scratch
+(`RootsWatcher`, `PolicyWatcher` had zero prior coverage of this path). No docs needed.
+CHANGELOG: new `### Fixed` bullet. Verification: fresh-Opus solo gate — **PASS**, zero
+gaps.
+
+All 4 phases of plans/issue-150-154-fixes.md are now DONE. Next: /implement's
+finalization pass, then /ship as one combined PR.

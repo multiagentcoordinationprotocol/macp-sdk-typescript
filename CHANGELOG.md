@@ -55,6 +55,16 @@ project uses [Semantic Versioning](https://semver.org/).
   to JSON `null`, which is schema-invalid against
   `decision-rules.schema.json`). `-Infinity`/`NaN` continue to throw,
   unchanged.
+- **`watchers.ts`'s 5 "stream ended before receiving a ..." sites now throw
+  `MacpTransportError` instead of a bare `Error`** (issue #154; parity with
+  `macp-sdk-python` PR #138). `ModeRegistryWatcher.nextChange()`,
+  `RootsWatcher.nextChange()`, `SignalWatcher.nextSignal()`,
+  `PolicyWatcher.nextChange()`, and `SessionLifecycleWatcher.nextChange()`
+  each threw a bare `Error` when their stream ended before yielding a value;
+  a caller's single `catch (e) { if (e instanceof MacpSdkError) ... }` now
+  covers a cleanly-ended watch stream alongside every other SDK failure.
+  Message strings are unchanged byte-for-byte; `error.code` remains
+  `undefined` on all 5 (locally raised, no gRPC status to attach).
 
 ## [0.14.0](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/compare/v0.13.0...v0.14.0) (2026-10-01)
 

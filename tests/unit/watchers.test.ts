@@ -17,6 +17,7 @@ import {
   isTerminalSessionLifecycleEvent,
 } from '../../src/watchers';
 import type { SessionLifecycleEvent } from '../../src/types';
+import { MacpSdkError, MacpTransportError } from '../../src/errors';
 
 /**
  * Fake gRPC readable stream: an EventEmitter with a .cancel() method.
@@ -113,13 +114,20 @@ describe('ModeRegistryWatcher', () => {
     expect(stream.cancel).toHaveBeenCalledTimes(1);
   });
 
-  it('nextChange throws if the stream ends before a change arrives', async () => {
+  // Issue #154: parity with macp-sdk-python PR #138 -- this is now a typed
+  // MacpTransportError (so `catch (e) { if (e instanceof MacpSdkError) }`
+  // covers a cleanly-ended watch stream), not a bare Error, with the same
+  // message and no .code (locally raised, no gRPC status to attach).
+  it('nextChange throws MacpTransportError if the stream ends before a change arrives', async () => {
     const stream = new FakeReadableStream();
     const watcher = new ModeRegistryWatcher(makeClientWith('watchModeRegistry', stream));
 
     const pending = watcher.nextChange();
     stream.emitEnd();
+    await expect(pending).rejects.toThrow(MacpTransportError);
     await expect(pending).rejects.toThrow('stream ended before receiving a change');
+    await expect(pending).rejects.toBeInstanceOf(MacpSdkError);
+    await expect(pending).rejects.toMatchObject({ code: undefined });
   });
 
   it('watch() drives the handler for each change', async () => {
@@ -163,6 +171,21 @@ describe('RootsWatcher', () => {
     stream.emitError(new Error('roots-transport'));
     await expect(pending).rejects.toThrow('roots-transport');
   });
+
+  // Issue #154: RootsWatcher had zero existing coverage of the stream-ended-
+  // empty throw path -- new test, modeled on ModeRegistryWatcher's sibling
+  // test above.
+  it('nextChange rejects with MacpTransportError when the stream ends empty', async () => {
+    const stream = new FakeReadableStream();
+    const watcher = new RootsWatcher(makeClientWith('watchRoots', stream));
+
+    const pending = watcher.nextChange();
+    stream.emitEnd();
+    await expect(pending).rejects.toThrow(MacpTransportError);
+    await expect(pending).rejects.toThrow('stream ended before receiving a change');
+    await expect(pending).rejects.toBeInstanceOf(MacpSdkError);
+    await expect(pending).rejects.toMatchObject({ code: undefined });
+  });
 });
 
 describe('SignalWatcher', () => {
@@ -190,13 +213,17 @@ describe('SignalWatcher', () => {
     expect(first.value).toMatchObject({ messageId: 'm2' });
   });
 
-  it('nextSignal rejects when the stream ends empty', async () => {
+  // Issue #154: same MacpTransportError swap as ModeRegistryWatcher above.
+  it('nextSignal rejects with MacpTransportError when the stream ends empty', async () => {
     const stream = new FakeReadableStream();
     const watcher = new SignalWatcher(makeClientWith('watchSignals', stream));
 
     const pending = watcher.nextSignal();
     stream.emitEnd();
+    await expect(pending).rejects.toThrow(MacpTransportError);
     await expect(pending).rejects.toThrow('stream ended before receiving a signal');
+    await expect(pending).rejects.toBeInstanceOf(MacpSdkError);
+    await expect(pending).rejects.toMatchObject({ code: undefined });
   });
 });
 
@@ -225,6 +252,21 @@ describe('PolicyWatcher', () => {
 
     stream.emitEnd();
     await pending;
+  });
+
+  // Issue #154: PolicyWatcher had zero existing coverage of the stream-ended-
+  // empty throw path -- new test, modeled on ModeRegistryWatcher's sibling
+  // test above.
+  it('nextChange rejects with MacpTransportError when the stream ends empty', async () => {
+    const stream = new FakeReadableStream();
+    const watcher = new PolicyWatcher(makeClientWith('watchPolicies', stream));
+
+    const pending = watcher.nextChange();
+    stream.emitEnd();
+    await expect(pending).rejects.toThrow(MacpTransportError);
+    await expect(pending).rejects.toThrow('stream ended before receiving a policy change');
+    await expect(pending).rejects.toBeInstanceOf(MacpSdkError);
+    await expect(pending).rejects.toMatchObject({ code: undefined });
   });
 });
 
@@ -268,13 +310,17 @@ describe('SessionLifecycleWatcher', () => {
     expect(first.value).toMatchObject({ eventType: 'EVENT_TYPE_RESOLVED', session: { sessionId: 's2' } });
   });
 
-  it('nextChange rejects when the stream ends empty', async () => {
+  // Issue #154: same MacpTransportError swap as ModeRegistryWatcher above.
+  it('nextChange rejects with MacpTransportError when the stream ends empty', async () => {
     const stream = new FakeReadableStream();
     const watcher = new SessionLifecycleWatcher(makeClientWith('watchSessions', stream));
 
     const pending = watcher.nextChange();
     stream.emitEnd();
+    await expect(pending).rejects.toThrow(MacpTransportError);
     await expect(pending).rejects.toThrow('stream ended before receiving a session lifecycle event');
+    await expect(pending).rejects.toBeInstanceOf(MacpSdkError);
+    await expect(pending).rejects.toMatchObject({ code: undefined });
   });
 
   it('wires the abort signal', async () => {
