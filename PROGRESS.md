@@ -3611,5 +3611,9 @@ MacpTransportError`/`MacpSdkError` plus `code: undefined` (`ModeRegistryWatcher`
 CHANGELOG: new `### Fixed` bullet. Verification: fresh-Opus solo gate — **PASS**, zero
 gaps.
 
-All 4 phases of plans/issue-150-154-fixes.md are now DONE. Next: /implement's
-finalization pass, then /ship as one combined PR.
+All 4 phases of plans/issue-150-154-fixes.md are now DONE. /implement's finalization
+pass (full suite/build/coverage re-run, docs sweep, integration-test-gap check) and the
+final cumulative Opus verification pass both **PASS**, zero gaps (two cosmetic nits
+fixed: plan file's own top-level Status line, and one commit's scope label).
+
+pushed feat/issue-150-154-fixes 2ee4bea
