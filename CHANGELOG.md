@@ -4,6 +4,68 @@ All notable changes to `macp-sdk-typescript` are documented here. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the
 project uses [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- **`TaskProjection.rejections: TaskRejectRecord[]`** (issue #151; a
+  cross-SDK parity audit against `macp-sdk-python`'s `TaskRejectRecord`,
+  `src/macp_sdk/task.py:53-58`). `TaskReject` now appends an unconditional
+  audit record — `taskId`, `assignee`, `reason?`, `sender` (from the
+  envelope, not the payload) — matching the convention already established
+  for `updates`/`completions`/`failures`. A `TaskReject` for an unknown
+  `taskId` still records a `rejections` entry (no crash, no silent drop) but
+  creates no `tasks` entry, unchanged from today. Deliberately does not fall
+  back `assignee` to the envelope sender the way Python's `p.assignee or
+  envelope.sender` does — this SDK's own sibling `TaskComplete`/`TaskFail`
+  handlers spread the payload's `assignee` as-is with no such fallback, and
+  intra-SDK consistency with that established pattern takes precedence here.
+
+### Fixed
+
+- **`BaseProjection` phase no longer regresses once `Committed`, and
+  `DecisionProjection` no longer lets a replayed `Proposal` rewind phase
+  from `Voting` back to `Evaluation` after voting has begun** (issue #150,
+  issue #153; found by a cross-SDK parity audit against `macp-sdk-python`'s
+  `_set_phase()`, `src/macp_sdk/base_projection.py:289-313`). All five
+  built-in mode projections now route every phase write through a new
+  shared, protected `setPhase()` choke point on `BaseProjection` that
+  no-ops once `phase === 'Committed'`, instead of assigning `this.phase`
+  directly at each of the (previously) 12 call sites across
+  `decision.ts`/`proposal.ts`/`task.ts`/`quorum.ts`/`handoff.ts` — only
+  `decision.ts`'s own Vote-branch guard protected this before. RFC-MACP-0007
+  §5 rule 6 separately requires a runtime to reject any
+  `Proposal`/`Evaluation`/`Objection` after the first accepted `Vote`;
+  `DecisionProjection`'s `Proposal` handler now guards on the pre-
+  `Evaluation` phase value (`if (this.phase === 'Proposal')
+  this.setPhase('Evaluation')`) so a replayed/retried `Proposal` (same
+  `proposalId`, a distinct `messageId` that still passes
+  `applyEnvelope`'s `message_id` dedup gate) can no longer rewind `phase`
+  back to `'Evaluation'` once voting has begun. `BaseProjection.
+  applyEnvelope`'s own direct `this.phase = 'Committed'` assignment for a
+  `Commitment` envelope is deliberately left untouched — exact parity with
+  Python's own `_set_phase()` docstring, which documents the same bypass.
+- **`buildDecisionPolicy` now rejects a `+Infinity` voting weight** (issue
+  #152; found by a cross-SDK parity audit against `macp-sdk-python`'s
+  `math.isfinite` guard, `src/macp_sdk/policy.py:186`). The per-weight
+  validation guard changed from `weight <= 0 || Number.isNaN(weight)` to
+  `weight <= 0 || !Number.isFinite(weight)` — `!Number.isFinite` is `true`
+  for `NaN`, `+Infinity`, and `-Infinity` alike, closing the `+Infinity` gap
+  the old `Number.isNaN`-only check missed (a `+Infinity` weight serializes
+  to JSON `null`, which is schema-invalid against
+  `decision-rules.schema.json`). `-Infinity`/`NaN` continue to throw,
+  unchanged.
+- **`watchers.ts`'s 5 "stream ended before receiving a ..." sites now throw
+  `MacpTransportError` instead of a bare `Error`** (issue #154; parity with
+  `macp-sdk-python` PR #138). `ModeRegistryWatcher.nextChange()`,
+  `RootsWatcher.nextChange()`, `SignalWatcher.nextSignal()`,
+  `PolicyWatcher.nextChange()`, and `SessionLifecycleWatcher.nextChange()`
+  each threw a bare `Error` when their stream ended before yielding a value;
+  a caller's single `catch (e) { if (e instanceof MacpSdkError) ... }` now
+  covers a cleanly-ended watch stream alongside every other SDK failure.
+  Message strings are unchanged byte-for-byte; `error.code` remains
+  `undefined` on all 5 (locally raised, no gRPC status to attach).
+
 ## [0.14.0](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/compare/v0.13.0...v0.14.0) (2026-10-01)
 
 

@@ -17,6 +17,20 @@ class SmokeProjection extends BaseProjection {
   }
 }
 
+/** Exposes the protected `setPhase` choke point directly, for Phase 1 of
+ * plans/issue-150-154-fixes.md (issues #150/#153) — a synthetic subclass
+ * distinct from `SmokeProjection` so these tests don't entangle with the
+ * dispatcher/session wiring tests that class already serves. */
+class PhaseExposingProjection extends BaseProjection {
+  protected readonly mode = EXT_MODE;
+  protected applyMode(): void {
+    // no-op: phase is driven directly via setPhaseForTest below, not via envelopes
+  }
+  setPhaseForTest(phase: string): void {
+    this.setPhase(phase);
+  }
+}
+
 class SmokeSession extends BaseSession<SmokeProjection> {
   protected readonly mode = EXT_MODE;
 
@@ -219,5 +233,22 @@ describe('BaseSession / BaseProjection extension point', () => {
       (projection as { commitment?: Record<string, unknown> }).commitment = commitment as Record<string, unknown>;
     }
     expect(projection.isPositiveOutcome).toBe(expected);
+  });
+
+  // Issues #150/#153, plans/issue-150-154-fixes.md Phase 1: `setPhase` is the
+  // shared choke point every mode subclass now routes phase writes through.
+  describe('BaseProjection.setPhase', () => {
+    it('assigns normally when not yet Committed', () => {
+      const projection = new PhaseExposingProjection();
+      projection.setPhaseForTest('Evaluation');
+      expect(projection.phase).toBe('Evaluation');
+    });
+
+    it('no-ops once phase is Committed, regardless of what is requested next', () => {
+      const projection = new PhaseExposingProjection();
+      projection.setPhaseForTest('Committed');
+      projection.setPhaseForTest('Evaluation');
+      expect(projection.phase).toBe('Committed');
+    });
   });
 });

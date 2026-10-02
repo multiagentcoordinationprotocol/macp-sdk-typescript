@@ -335,9 +335,22 @@ mode-specific message types. The five built-in projections below all extend
 copies of the same dedup/transcript/rollback logic; see
 `src/projections/base.ts`'s `applyEnvelope` for the shared implementation).
 
+Every phase write — in `BaseProjection` itself and in all five built-in
+subclasses — now goes through a shared, protected `setPhase()` choke point
+that no-ops once `phase === 'Committed'` (issue #150; ports
+`macp-sdk-python`'s `_set_phase()`,
+`src/macp_sdk/base_projection.py:289-313`). So `'Committed'` is terminal for
+`phase` on every projection, not only `DecisionProjection`: once reached,
+`phase` cannot regress even if a caller violates
+[the accepted-only input contract](#input-contract) and a phase-moving
+envelope is replayed afterward. The one deliberate bypass is
+`BaseProjection.applyEnvelope`'s own direct assignment to `'Committed'` for
+a `Commitment` envelope — exact parity with Python's own `_set_phase()`
+docstring, which documents the same exception.
+
 ## DecisionProjection
 
-**Phases**: `'Proposal'` → `'Evaluation'` → `'Voting'` → `'Committed'`. `'Committed'` is terminal for `phase`: once reached, a `Vote` cannot legally follow in accepted history ([RFC-MACP-0001](https://github.com/multiagentcoordinationprotocol/multiagentcoordinationprotocol/blob/main/rfcs/RFC-MACP-0001-core.md) §7.2/§7.3 session terminality), and if one is replayed anyway `phase` does not regress out of `'Committed'`.
+**Phases**: `'Proposal'` → `'Evaluation'` → `'Voting'` → `'Committed'`. `'Committed'` is terminal for `phase`: once reached, a `Vote` cannot legally follow in accepted history ([RFC-MACP-0001](https://github.com/multiagentcoordinationprotocol/multiagentcoordinationprotocol/blob/main/rfcs/RFC-MACP-0001-core.md) §7.2/§7.3 session terminality), and if one is replayed anyway `phase` does not regress out of `'Committed'`. Separately — [RFC-MACP-0007](https://github.com/multiagentcoordinationprotocol/multiagentcoordinationprotocol/blob/main/rfcs/RFC-MACP-0007-decision-mode.md) §5 rule 6: a runtime MUST reject any `Proposal`/`Evaluation`/`Objection` after the first accepted `Vote` — a replayed `Proposal` (same `proposal_id`, a distinct `message_id` that still passes the `message_id` dedup gate) can no longer rewind `phase` from `'Voting'` back to `'Evaluation'` once voting has begun (issue #153).
 
 | Property | Type |
 |----------|------|
@@ -357,7 +370,7 @@ copies of the same dedup/transcript/rollback logic; see
 
 ## ProposalProjection
 
-**Phases**: `'Negotiating'` → `'TerminalRejected'` / `'Committed'`
+**Phases**: `'Negotiating'` → `'TerminalRejected'` / `'Committed'`. `'Committed'` is terminal for `phase` here too — see [BaseProjection](#baseprojection-custom-modes).
 
 | Property | Type |
 |----------|------|
@@ -377,7 +390,7 @@ copies of the same dedup/transcript/rollback logic; see
 
 ## TaskProjection
 
-**Phases**: `'Pending'` → `'Requested'` → `'InProgress'` → `'Completed'` / `'Failed'` → `'Committed'`
+**Phases**: `'Pending'` → `'Requested'` → `'InProgress'` → `'Completed'` / `'Failed'` → `'Committed'`. `'Committed'` is terminal for `phase` here too — see [BaseProjection](#baseprojection-custom-modes).
 
 | Property | Type |
 |----------|------|
@@ -385,6 +398,7 @@ copies of the same dedup/transcript/rollback logic; see
 | `updates` | `TaskUpdateRecord[]` |
 | `completions` | `TaskCompleteRecord[]` |
 | `failures` | `TaskFailRecord[]` |
+| `rejections` | `TaskRejectRecord[]` — unconditional audit record of every `TaskReject`, same convention as `updates`/`completions`/`failures` above |
 
 > **Migrating from 0.12.x**: `TaskProjection.isComplete(taskId)` and the
 > `TaskCompletionRecord`/`TaskFailureRecord` type aliases were deprecated in `0.12.0` and
@@ -468,7 +482,7 @@ otherwise be wrong — Proposal's last-accept-wins — it is already modelled.
 
 ## HandoffProjection
 
-**Phases**: `'Pending'` → `'OfferPending'` → `'ContextSharing'` → `'Accepted'` / `'Declined'` → `'Committed'`
+**Phases**: `'Pending'` → `'OfferPending'` → `'ContextSharing'` → `'Accepted'` / `'Declined'` → `'Committed'`. `'Committed'` is terminal for `phase` here too — see [BaseProjection](#baseprojection-custom-modes).
 
 | Property | Type |
 |----------|------|
@@ -486,7 +500,7 @@ otherwise be wrong — Proposal's last-accept-wins — it is already modelled.
 
 ## QuorumProjection
 
-**Phases**: `'Pending'` → `'Voting'` → `'Committed'`
+**Phases**: `'Pending'` → `'Voting'` → `'Committed'`. `'Committed'` is terminal for `phase` here too — see [BaseProjection](#baseprojection-custom-modes).
 
 | Property | Type |
 |----------|------|

@@ -140,6 +140,7 @@ await session.failTask({
 | `updates` | `TaskUpdateRecord[]` | All progress updates |
 | `completions` | `TaskCompleteRecord[]` | Completion records |
 | `failures` | `TaskFailRecord[]` | Failure records |
+| `rejections` | `TaskRejectRecord[]` | Rejection records (audit trail; recorded unconditionally, even for an unknown `taskId`) |
 | `transcript` | `Envelope[]` | All accepted envelopes |
 | `phase` | `'Pending' \| 'Requested' \| 'InProgress' \| 'Completed' \| 'Failed' \| 'Committed'` | Current phase |
 | `commitment` | `Record<string, unknown> \| undefined` | Commitment payload if resolved |

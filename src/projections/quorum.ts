@@ -36,7 +36,7 @@ export class QuorumProjection extends BaseProjection {
           requiredApprovals: number;
         };
         this.requests.set(record.requestId, { ...record, sender: envelope.sender });
-        this.phase = 'Voting';
+        this.setPhase('Voting');
         break;
       }
       case 'Approve': {

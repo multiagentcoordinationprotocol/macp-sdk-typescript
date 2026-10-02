@@ -297,9 +297,13 @@ export function buildDecisionPolicy(
     }
     for (const [participant, weight] of Object.entries(weights)) {
       // weight <= 0 alone would let a NaN weight slip through (NaN <= 0 is
-      // false); the runtime guards this explicitly (registry.rs:596), mirrored
-      // here even though the Python reference does not check it separately.
-      if (weight <= 0 || Number.isNaN(weight)) {
+      // false); the runtime guards this explicitly (registry.rs:596).
+      // !Number.isFinite(weight) is true for NaN, +Infinity, and -Infinity
+      // alike -- the exact mirror of Python's own guard, policy.py:186:
+      // `if not math.isfinite(weight) or weight <= 0:` (issue #152; a
+      // +Infinity weight previously slipped past the old Number.isNaN-only
+      // check and serialized to JSON `null`, which is schema-invalid).
+      if (weight <= 0 || !Number.isFinite(weight)) {
         throw new MacpSessionError(
           `weights['${participant}'] must be > 0, got ${weight} -- a weight-0 observer is expressed by ` +
             'omission from the map, not by an explicit 0',

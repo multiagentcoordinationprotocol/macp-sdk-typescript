@@ -182,4 +182,31 @@ describe('ProposalProjection', () => {
     expect(projection.phase).toBe('Committed');
     expect(projection.commitment).toBeDefined();
   });
+
+  // Issue #150, plans/issue-150-154-fixes.md Phase 1: `setPhase` (base.ts) now
+  // guards every phase write, so a phase-moving envelope that (illegally, per
+  // the accepted-only contract) arrives after Commitment must not regress
+  // `phase` out of 'Committed'.
+  it('a terminal Reject arriving after Commitment leaves phase Committed, not TerminalRejected', () => {
+    projection.applyEnvelope(makeEnvelope('Proposal', { proposalId: 'p1', title: 'X' }), registry);
+    projection.applyEnvelope(
+      makeEnvelope('Commitment', {
+        commitmentId: 'c1',
+        action: 'proposal.accepted',
+        authorityScope: 'team',
+        reason: 'done',
+        modeVersion: '1.0.0',
+        configurationVersion: 'config.default',
+      }),
+      registry,
+    );
+    expect(projection.phase).toBe('Committed');
+
+    projection.applyEnvelope(
+      makeEnvelope('Reject', { proposalId: 'p1', terminal: true, reason: 'late' }, 'bob'),
+      registry,
+    );
+
+    expect(projection.phase).toBe('Committed');
+  });
 });

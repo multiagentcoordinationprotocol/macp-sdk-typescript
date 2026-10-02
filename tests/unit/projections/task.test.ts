@@ -80,6 +80,59 @@ describe('TaskProjection', () => {
     expect(projection.getTask('t1')?.status).toBe('rejected');
   });
 
+  // Issue #151: TaskProjection gains an audit record for TaskReject, matching
+  // the already-shipped TaskUpdate/TaskComplete/TaskFail convention.
+  describe('rejections audit record (issue #151)', () => {
+    it('starts empty on a fresh projection', () => {
+      expect(projection.rejections).toEqual([]);
+    });
+
+    it('a TaskReject for a known taskId appends exactly one TaskRejectRecord, with sender from the envelope and assignee/reason from the payload', () => {
+      projection.applyEnvelope(makeEnvelope('TaskRequest', { taskId: 't1', title: 'X', instructions: 'do' }), registry);
+      projection.applyEnvelope(
+        makeEnvelope('TaskReject', { taskId: 't1', assignee: 'worker', reason: 'too busy' }, 'worker'),
+        registry,
+      );
+
+      expect(projection.rejections).toHaveLength(1);
+      expect(projection.rejections[0]).toMatchObject({
+        taskId: 't1',
+        assignee: 'worker',
+        reason: 'too busy',
+        sender: 'worker',
+      });
+    });
+
+    it('a TaskReject for an unknown taskId still appends a record, but creates no task entry and mutates nothing', () => {
+      projection.applyEnvelope(
+        makeEnvelope('TaskReject', { taskId: 'ghost', assignee: 'worker', reason: 'n/a' }, 'worker'),
+        registry,
+      );
+
+      expect(projection.rejections).toHaveLength(1);
+      expect(projection.rejections[0]).toMatchObject({ taskId: 'ghost', assignee: 'worker', sender: 'worker' });
+      expect(projection.getTask('ghost')).toBeUndefined();
+      expect(projection.tasks.size).toBe(0);
+    });
+
+    it('two sequential TaskRejects from different senders produce two distinct entries, in application order', () => {
+      projection.applyEnvelope(makeEnvelope('TaskRequest', { taskId: 't1', title: 'A', instructions: 'do' }), registry);
+      projection.applyEnvelope(makeEnvelope('TaskRequest', { taskId: 't2', title: 'B', instructions: 'do' }), registry);
+      projection.applyEnvelope(
+        makeEnvelope('TaskReject', { taskId: 't1', assignee: 'worker-a', reason: 'busy' }, 'worker-a'),
+        registry,
+      );
+      projection.applyEnvelope(
+        makeEnvelope('TaskReject', { taskId: 't2', assignee: 'worker-b', reason: 'overloaded' }, 'worker-b'),
+        registry,
+      );
+
+      expect(projection.rejections).toHaveLength(2);
+      expect(projection.rejections[0]).toMatchObject({ taskId: 't1', sender: 'worker-a' });
+      expect(projection.rejections[1]).toMatchObject({ taskId: 't2', sender: 'worker-b' });
+    });
+  });
+
   // Issue #71 — RFC-MACP-0009 §5 rule 3 (`:69`): "Only one assignee may become
   // active for the Session in base v1." The guard is per-SESSION, not
   // per-`task_id`, so two TaskRequests in one transcript share one slot.
@@ -216,6 +269,10 @@ describe('TaskProjection', () => {
 
       expect(projection.getTask('t1')?.assignee).toBeUndefined();
       expect(projection.getTask('t1')?.status).toBe('rejected');
+      // Issue #151 (AC6): the slot-freeing logic above is unchanged by the
+      // new audit record landing alongside it.
+      expect(projection.rejections).toHaveLength(1);
+      expect(projection.rejections[0]).toMatchObject({ taskId: 't1', assignee: 'worker-a', sender: 'worker-a' });
 
       projection.applyEnvelope(
         makeEnvelope('TaskAccept', { taskId: 't1', assignee: 'worker-b' }, 'worker-b'),
@@ -401,5 +458,56 @@ describe('TaskProjection', () => {
       registry,
     );
     expect(projection.latestProgress()).toBe(0.7);
+  });
+
+  // Issue #150, plans/issue-150-154-fixes.md Phase 1: `setPhase` (base.ts) now
+  // guards every phase write. task.ts has four independent setPhase call
+  // sites (TaskRequest/TaskAccept/TaskComplete/TaskFail) that each regressed
+  // phase independently before this fix — covering two of the four here
+  // (TaskComplete and a second TaskRequest) per the plan.
+  describe('phase does not regress out of Committed (issue #150)', () => {
+    it('a TaskComplete arriving after Commitment leaves phase Committed, not Completed', () => {
+      projection.applyEnvelope(makeEnvelope('TaskRequest', { taskId: 't1', title: 'X', instructions: 'do' }), registry);
+      projection.applyEnvelope(makeEnvelope('TaskAccept', { taskId: 't1', assignee: 'w' }, 'w'), registry);
+      projection.applyEnvelope(
+        makeEnvelope('Commitment', {
+          commitmentId: 'c1',
+          action: 'task.closed',
+          authorityScope: 'session',
+          reason: 'done',
+          modeVersion: '1.0.0',
+          configurationVersion: 'config.default',
+        }),
+        registry,
+      );
+      expect(projection.phase).toBe('Committed');
+
+      projection.applyEnvelope(
+        makeEnvelope('TaskComplete', { taskId: 't1', assignee: 'w', summary: 'done' }, 'w'),
+        registry,
+      );
+
+      expect(projection.phase).toBe('Committed');
+    });
+
+    it('a second TaskRequest arriving after Commitment leaves phase Committed, not Requested', () => {
+      projection.applyEnvelope(makeEnvelope('TaskRequest', { taskId: 't1', title: 'X', instructions: 'do' }), registry);
+      projection.applyEnvelope(
+        makeEnvelope('Commitment', {
+          commitmentId: 'c1',
+          action: 'task.closed',
+          authorityScope: 'session',
+          reason: 'done',
+          modeVersion: '1.0.0',
+          configurationVersion: 'config.default',
+        }),
+        registry,
+      );
+      expect(projection.phase).toBe('Committed');
+
+      projection.applyEnvelope(makeEnvelope('TaskRequest', { taskId: 't2', title: 'Y', instructions: 'do' }), registry);
+
+      expect(projection.phase).toBe('Committed');
+    });
   });
 });

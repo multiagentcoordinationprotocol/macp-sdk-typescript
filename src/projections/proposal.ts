@@ -132,7 +132,7 @@ export class ProposalProjection extends BaseProjection {
           const proposal = this.proposals.get(record.proposalId);
           if (proposal) {
             proposal.status = 'rejected';
-            this.phase = 'TerminalRejected';
+            this.setPhase('TerminalRejected');
           }
         }
         break;

@@ -309,8 +309,27 @@ describe('policy builders', () => {
 
     it('throws on a NaN weight, naming omission as the correct way to express weight 0', () => {
       // weight <= 0 alone would let NaN slip through (NaN <= 0 is false);
-      // this pins the separate Number.isNaN guard (registry.rs:596 parity).
+      // this pins the merged !Number.isFinite guard (registry.rs:596 parity,
+      // and the exact mirror of Python's policy.py:186 `math.isfinite` check).
       const build = () => buildDecisionPolicy('p', 'd', { voting: { weights: { a: NaN } } });
+      expect(build).toThrow(MacpSessionError);
+      expect(build).toThrow(/omission from the map/);
+    });
+
+    // Issue #152: a +Infinity weight previously slipped past the old
+    // Number.isNaN-only check (Infinity <= 0 is false, Number.isNaN(Infinity)
+    // is false) and would have serialized to JSON `null`, which is
+    // schema-invalid against decision-rules.schema.json.
+    it('throws on a +Infinity weight', () => {
+      const build = () => buildDecisionPolicy('p', 'd', { voting: { weights: { a: Infinity } } });
+      expect(build).toThrow(MacpSessionError);
+      expect(build).toThrow(/omission from the map/);
+    });
+
+    // -Infinity was already caught by `weight <= 0` before this fix; pinned
+    // here as an explicit no-regression check alongside the +Infinity case.
+    it('throws on a -Infinity weight (no regression)', () => {
+      const build = () => buildDecisionPolicy('p', 'd', { voting: { weights: { a: -Infinity } } });
       expect(build).toThrow(MacpSessionError);
       expect(build).toThrow(/omission from the map/);
     });

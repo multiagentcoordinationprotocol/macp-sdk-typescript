@@ -39,12 +39,20 @@ export interface TaskFailRecord {
   sender: string;
 }
 
+export interface TaskRejectRecord {
+  taskId: string;
+  assignee: string;
+  reason?: string;
+  sender: string;
+}
+
 export class TaskProjection extends BaseProjection {
   protected readonly mode = MODE_TASK;
   readonly tasks = new Map<string, TaskRecord>();
   readonly updates: TaskUpdateRecord[] = [];
   readonly completions: TaskCompleteRecord[] = [];
   readonly failures: TaskFailRecord[] = [];
+  readonly rejections: TaskRejectRecord[] = [];
   phase: 'Pending' | 'Requested' | 'InProgress' | 'Completed' | 'Failed' | 'Committed' = 'Pending';
 
   /**
@@ -90,7 +98,7 @@ export class TaskProjection extends BaseProjection {
           progress: 0,
           sender: envelope.sender,
         });
-        this.phase = 'Requested';
+        this.setPhase('Requested');
         break;
       }
       case 'TaskAccept': {
@@ -134,7 +142,7 @@ export class TaskProjection extends BaseProjection {
             task.assignee = record.assignee;
             task.status = 'accepted';
             this.activeAssignment = { sender: envelope.sender, taskId: record.taskId };
-            this.phase = 'InProgress';
+            this.setPhase('InProgress');
           } else {
             this.recordAnomaly({
               kind: 'duplicate_task_accept',
@@ -151,7 +159,17 @@ export class TaskProjection extends BaseProjection {
         break;
       }
       case 'TaskReject': {
-        const record = payload as { taskId: string };
+        const record = payload as { taskId: string; assignee: string; reason?: string };
+        // Issue #151: unconditional audit record, matching this file's own
+        // TaskUpdate/TaskComplete/TaskFail convention (and Python's
+        // identical unconditional `self.rejections.append(...)`,
+        // task.py:186-196) — `sender` comes from the envelope, never the
+        // payload, matching the three sibling records. Deliberately does
+        // NOT fall back `assignee` to `envelope.sender` the way Python's
+        // `p.assignee or envelope.sender` does: TaskComplete/TaskFail below
+        // spread the payload's `assignee` as-is with no such fallback, and
+        // intra-SDK consistency wins over replicating Python's nuance here.
+        this.rejections.push({ ...record, sender: envelope.sender });
         const task = this.tasks.get(record.taskId);
         if (task) task.status = 'rejected';
         // RFC-MACP-0009 §5 rule 3c (`:72`): "When policy sets
@@ -199,7 +217,7 @@ export class TaskProjection extends BaseProjection {
         if (task) {
           task.status = 'completed';
           task.progress = 1;
-          this.phase = 'Completed';
+          this.setPhase('Completed');
         }
         break;
       }
@@ -215,7 +233,7 @@ export class TaskProjection extends BaseProjection {
         const task = this.tasks.get(record.taskId);
         if (task) {
           task.status = 'failed';
-          this.phase = 'Failed';
+          this.setPhase('Failed');
         }
         break;
       }

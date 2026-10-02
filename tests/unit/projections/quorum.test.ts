@@ -565,4 +565,36 @@ describe('QuorumProjection', () => {
     );
     expect(projection.commitmentReady('r1')).toBe(false);
   });
+
+  // Issue #150, plans/issue-150-154-fixes.md Phase 1: quorum.ts's one
+  // phase-moving call site (ApprovalRequest -> Voting, quorum.ts:39) now
+  // routes through `setPhase` (base.ts). The ballot-after-Commitment test
+  // above exercises a different code path (setBallot never touches phase) --
+  // this one exercises the actual regressed site: a second ApprovalRequest
+  // arriving after Commitment must not regress phase back to Voting.
+  it('a second ApprovalRequest arriving after Commitment leaves phase Committed, not Voting', () => {
+    projection.applyEnvelope(
+      makeEnvelope('ApprovalRequest', { requestId: 'r1', action: 'x', summary: 'y', requiredApprovals: 1 }),
+      registry,
+    );
+    projection.applyEnvelope(
+      makeEnvelope('Commitment', {
+        commitmentId: 'c1',
+        action: 'quorum.approved',
+        authorityScope: 'team',
+        reason: 'approved',
+        modeVersion: '1.0.0',
+        configurationVersion: 'config.default',
+      }),
+      registry,
+    );
+    expect(projection.phase).toBe('Committed');
+
+    projection.applyEnvelope(
+      makeEnvelope('ApprovalRequest', { requestId: 'r2', action: 'x', summary: 'y', requiredApprovals: 1 }),
+      registry,
+    );
+
+    expect(projection.phase).toBe('Committed');
+  });
 });

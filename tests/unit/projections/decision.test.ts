@@ -189,6 +189,32 @@ describe('DecisionProjection', () => {
     expect(projection.phase).not.toBe('Voting');
   });
 
+  // Issue #153, RFC-MACP-0007 §5 rule 6: a runtime MUST reject any Proposal/
+  // Evaluation/Objection after the first accepted Vote. `buildEnvelope` mints
+  // a fresh messageId per call (`src/envelope.ts:237`), so this replay still
+  // passes `applyEnvelope`'s message_id dedup gate as a distinct, non-deduped
+  // envelope — the old unconditional `this.phase = 'Evaluation'` would have
+  // rewound phase from 'Voting' back to 'Evaluation' here.
+  it('a replayed Proposal (same proposalId, distinct messageId) after voting has begun does not rewind phase from Voting back to Evaluation', () => {
+    projection.applyEnvelope(makeEnvelope('Proposal', { proposalId: 'p1', option: 'a' }), registry);
+    expect(projection.phase).toBe('Evaluation');
+    projection.applyEnvelope(makeEnvelope('Vote', { proposalId: 'p1', vote: 'approve' }, 'alice'), registry);
+    expect(projection.phase).toBe('Voting');
+
+    const replay = makeEnvelope('Proposal', { proposalId: 'p1', option: 'a' });
+    projection.applyEnvelope(replay, registry);
+
+    expect(projection.phase).toBe('Voting');
+  });
+
+  // The guard above only blocks a Proposal arriving once voting has begun —
+  // the legitimate first Proposal -> Evaluation transition must be unaffected.
+  it('the legitimate first Proposal still transitions phase from Proposal to Evaluation', () => {
+    expect(projection.phase).toBe('Proposal');
+    projection.applyEnvelope(makeEnvelope('Proposal', { proposalId: 'p1', option: 'a' }), registry);
+    expect(projection.phase).toBe('Evaluation');
+  });
+
   it('ignores envelopes for other modes', () => {
     const envelope = buildEnvelope({
       mode: 'macp.mode.proposal.v1',

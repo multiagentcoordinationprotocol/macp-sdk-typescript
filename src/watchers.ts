@@ -143,7 +143,7 @@ export class ModeRegistryWatcher {
     const gen = this.changes();
     const result = await gen.next();
     await gen.return(undefined as never);
-    if (result.done) throw new Error('stream ended before receiving a change');
+    if (result.done) throw new MacpTransportError('stream ended before receiving a change');
     return result.value;
   }
 }
@@ -175,7 +175,7 @@ export class RootsWatcher {
     const gen = this.changes();
     const result = await gen.next();
     await gen.return(undefined as never);
-    if (result.done) throw new Error('stream ended before receiving a change');
+    if (result.done) throw new MacpTransportError('stream ended before receiving a change');
     return result.value;
   }
 }
@@ -220,7 +220,7 @@ export class SignalWatcher {
     const gen = this.signals();
     const result = await gen.next();
     await gen.return(undefined as never);
-    if (result.done) throw new Error('stream ended before receiving a signal');
+    if (result.done) throw new MacpTransportError('stream ended before receiving a signal');
     return result.value;
   }
 }
@@ -257,7 +257,7 @@ export class PolicyWatcher {
     const gen = this.changes();
     const result = await gen.next();
     await gen.return(undefined as never);
-    if (result.done) throw new Error('stream ended before receiving a policy change');
+    if (result.done) throw new MacpTransportError('stream ended before receiving a policy change');
     return result.value;
   }
 }
@@ -298,7 +298,7 @@ export class SessionLifecycleWatcher {
     const gen = this.changes();
     const result = await gen.next();
     await gen.return(undefined as never);
-    if (result.done) throw new Error('stream ended before receiving a session lifecycle event');
+    if (result.done) throw new MacpTransportError('stream ended before receiving a session lifecycle event');
     return result.value;
   }
 }
