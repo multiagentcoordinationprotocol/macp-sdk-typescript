@@ -39,12 +39,20 @@ export interface TaskFailRecord {
   sender: string;
 }
 
+export interface TaskRejectRecord {
+  taskId: string;
+  assignee: string;
+  reason?: string;
+  sender: string;
+}
+
 export class TaskProjection extends BaseProjection {
   protected readonly mode = MODE_TASK;
   readonly tasks = new Map<string, TaskRecord>();
   readonly updates: TaskUpdateRecord[] = [];
   readonly completions: TaskCompleteRecord[] = [];
   readonly failures: TaskFailRecord[] = [];
+  readonly rejections: TaskRejectRecord[] = [];
   phase: 'Pending' | 'Requested' | 'InProgress' | 'Completed' | 'Failed' | 'Committed' = 'Pending';
 
   /**
@@ -151,7 +159,17 @@ export class TaskProjection extends BaseProjection {
         break;
       }
       case 'TaskReject': {
-        const record = payload as { taskId: string };
+        const record = payload as { taskId: string; assignee: string; reason?: string };
+        // Issue #151: unconditional audit record, matching this file's own
+        // TaskUpdate/TaskComplete/TaskFail convention (and Python's
+        // identical unconditional `self.rejections.append(...)`,
+        // task.py:186-196) — `sender` comes from the envelope, never the
+        // payload, matching the three sibling records. Deliberately does
+        // NOT fall back `assignee` to `envelope.sender` the way Python's
+        // `p.assignee or envelope.sender` does: TaskComplete/TaskFail below
+        // spread the payload's `assignee` as-is with no such fallback, and
+        // intra-SDK consistency wins over replicating Python's nuance here.
+        this.rejections.push({ ...record, sender: envelope.sender });
         const task = this.tasks.get(record.taskId);
         if (task) task.status = 'rejected';
         // RFC-MACP-0009 §5 rule 3c (`:72`): "When policy sets

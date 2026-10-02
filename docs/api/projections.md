@@ -398,6 +398,7 @@ docstring, which documents the same exception.
 | `updates` | `TaskUpdateRecord[]` |
 | `completions` | `TaskCompleteRecord[]` |
 | `failures` | `TaskFailRecord[]` |
+| `rejections` | `TaskRejectRecord[]` — unconditional audit record of every `TaskReject`, same convention as `updates`/`completions`/`failures` above |
 
 > **Migrating from 0.12.x**: `TaskProjection.isComplete(taskId)` and the
 > `TaskCompletionRecord`/`TaskFailureRecord` type aliases were deprecated in `0.12.0` and

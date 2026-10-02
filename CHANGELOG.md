@@ -6,6 +6,21 @@ project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **`TaskProjection.rejections: TaskRejectRecord[]`** (issue #151; a
+  cross-SDK parity audit against `macp-sdk-python`'s `TaskRejectRecord`,
+  `src/macp_sdk/task.py:53-58`). `TaskReject` now appends an unconditional
+  audit record — `taskId`, `assignee`, `reason?`, `sender` (from the
+  envelope, not the payload) — matching the convention already established
+  for `updates`/`completions`/`failures`. A `TaskReject` for an unknown
+  `taskId` still records a `rejections` entry (no crash, no silent drop) but
+  creates no `tasks` entry, unchanged from today. Deliberately does not fall
+  back `assignee` to the envelope sender the way Python's `p.assignee or
+  envelope.sender` does — this SDK's own sibling `TaskComplete`/`TaskFail`
+  handlers spread the payload's `assignee` as-is with no such fallback, and
+  intra-SDK consistency with that established pattern takes precedence here.
+
 ### Fixed
 
 - **`BaseProjection` phase no longer regresses once `Committed`, and
