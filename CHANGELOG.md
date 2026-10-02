@@ -4,6 +4,33 @@ All notable changes to `macp-sdk-typescript` are documented here. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the
 project uses [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+
+- **`BaseProjection` phase no longer regresses once `Committed`, and
+  `DecisionProjection` no longer lets a replayed `Proposal` rewind phase
+  from `Voting` back to `Evaluation` after voting has begun** (issue #150,
+  issue #153; found by a cross-SDK parity audit against `macp-sdk-python`'s
+  `_set_phase()`, `src/macp_sdk/base_projection.py:289-313`). All five
+  built-in mode projections now route every phase write through a new
+  shared, protected `setPhase()` choke point on `BaseProjection` that
+  no-ops once `phase === 'Committed'`, instead of assigning `this.phase`
+  directly at each of the (previously) 12 call sites across
+  `decision.ts`/`proposal.ts`/`task.ts`/`quorum.ts`/`handoff.ts` — only
+  `decision.ts`'s own Vote-branch guard protected this before. RFC-MACP-0007
+  §5 rule 6 separately requires a runtime to reject any
+  `Proposal`/`Evaluation`/`Objection` after the first accepted `Vote`;
+  `DecisionProjection`'s `Proposal` handler now guards on the pre-
+  `Evaluation` phase value (`if (this.phase === 'Proposal')
+  this.setPhase('Evaluation')`) so a replayed/retried `Proposal` (same
+  `proposalId`, a distinct `messageId` that still passes
+  `applyEnvelope`'s `message_id` dedup gate) can no longer rewind `phase`
+  back to `'Evaluation'` once voting has begun. `BaseProjection.
+  applyEnvelope`'s own direct `this.phase = 'Committed'` assignment for a
+  `Commitment` envelope is deliberately left untouched — exact parity with
+  Python's own `_set_phase()` docstring, which documents the same bypass.
+
 ## [0.14.0](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/compare/v0.13.0...v0.14.0) (2026-10-01)
 
 

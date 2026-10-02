@@ -40,7 +40,7 @@ export class HandoffProjection extends BaseProjection {
           sender: envelope.sender,
           status: 'offered',
         });
-        this.phase = 'OfferPending';
+        this.setPhase('OfferPending');
         break;
       }
       case 'HandoffContext': {
@@ -58,7 +58,7 @@ export class HandoffProjection extends BaseProjection {
             handoff.status = 'context_sent';
           }
           handoff.contextContentType = record.contentType;
-          if (this.phase === 'OfferPending') this.phase = 'ContextSharing';
+          if (this.phase === 'OfferPending') this.setPhase('ContextSharing');
         }
         break;
       }
@@ -90,7 +90,7 @@ export class HandoffProjection extends BaseProjection {
           // (proto-registry), so this is always a real boolean once proto 0.1.6
           // is loaded — `true` marks a runtime synthetic implicit accept.
           handoff.implicit = record.implicit ?? false;
-          this.phase = 'Accepted';
+          this.setPhase('Accepted');
         } else {
           this.recordAnomaly({
             kind: 'settled_handoff',
@@ -124,7 +124,7 @@ export class HandoffProjection extends BaseProjection {
         if (handoff.status === 'offered' || handoff.status === 'context_sent') {
           handoff.status = 'declined';
           handoff.declinedBy = record.declinedBy;
-          this.phase = 'Declined';
+          this.setPhase('Declined');
         } else {
           this.recordAnomaly({
             kind: 'settled_handoff',

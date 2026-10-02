@@ -52,7 +52,14 @@ export class DecisionProjection extends BaseProjection {
           rationale: record.rationale,
           sender: envelope.sender,
         });
-        this.phase = 'Evaluation';
+        // RFC-MACP-0007 §5 rule 6: a runtime MUST reject any Proposal/
+        // Evaluation/Objection after the first accepted Vote. A replayed/
+        // retried Proposal (same proposalId, a distinct messageId that still
+        // passes applyEnvelope's message_id dedup gate) must therefore not
+        // rewind `phase` from 'Voting' back to 'Evaluation' (issue #153).
+        // Guarding on the initial phase value — mirrors macp-sdk-python's
+        // identical `if self.phase == "Proposal": self._set_phase(...)`.
+        if (this.phase === 'Proposal') this.setPhase('Evaluation');
         break;
       }
       case 'Evaluation': {
@@ -110,20 +117,19 @@ export class DecisionProjection extends BaseProjection {
         // runtime rejects any session-scoped message once the session is
         // non-OPEN, so a `Vote` cannot legally follow a `Commitment` in
         // accepted history. If one reaches here anyway (the caller violated
-        // the accepted-only contract — see `applyEnvelope`'s docblock), do
-        // not regress `phase` out of `'Committed'`. Note "phase" itself is
-        // not a normative MACP term (it appears once, in passing, at
-        // RFC-MACP-0012 `:211`); this guard is justified by session
-        // terminality, not by a phase specification. An anomaly would be
-        // recorded here too, but unlike five of the six sites that were
-        // "frozen pending cross-SDK agreement" (issue #126/#128, now
-        // resolved for `duplicate_task_accept`/`settled_handoff` — see
-        // `base.ts`), this one is a session-terminality phase-regression
-        // guard, not a settlement discard, and remains genuinely undecided
-        // per #128's own explicit scoping. No behavior change here.
-        if (this.phase !== 'Committed') {
-          this.phase = 'Voting';
-        }
+        // the accepted-only contract — see `applyEnvelope`'s docblock),
+        // `setPhase` (see `base.ts`) is what keeps `phase` from regressing
+        // out of `'Committed'`. Note "phase" itself is not a normative MACP
+        // term (it appears once, in passing, at RFC-MACP-0012 `:211`); this
+        // guard is justified by session terminality, not by a phase
+        // specification. An anomaly would be recorded here too, but unlike
+        // five of the six sites that were "frozen pending cross-SDK
+        // agreement" (issue #126/#128, now resolved for
+        // `duplicate_task_accept`/`settled_handoff` — see `base.ts`), this
+        // one is a session-terminality phase-regression guard, not a
+        // settlement discard, and remains genuinely undecided per #128's own
+        // explicit scoping. No behavior change here.
+        this.setPhase('Voting');
         break;
       }
       default:

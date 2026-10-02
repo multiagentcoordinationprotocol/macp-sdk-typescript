@@ -359,4 +359,36 @@ describe('HandoffProjection', () => {
     expect(projection.getHandoff('h1')?.status).toBe('accepted');
     expect(projection.getHandoff('h1')?.contextContentType).toBe('text/plain');
   });
+
+  // Issue #150, plans/issue-150-154-fixes.md Phase 1: handoff.ts has four
+  // setPhase call sites (HandoffOffer/HandoffContext/HandoffAccept/
+  // HandoffDecline), none per-record guarded against a post-Commitment
+  // replay. A SECOND, distinct handoffId's HandoffOffer is used here (not a
+  // replay of h1) specifically to exercise the `:43` HandoffOffer site --
+  // it's the one site not already gated by a per-record settle-once check.
+  it('a second HandoffOffer arriving after Commitment leaves phase Committed, not OfferPending', () => {
+    projection.applyEnvelope(
+      makeEnvelope('HandoffOffer', { handoffId: 'h1', targetParticipant: 'bob', scope: 'frontend' }),
+      registry,
+    );
+    projection.applyEnvelope(
+      makeEnvelope('Commitment', {
+        commitmentId: 'c1',
+        action: 'handoff.accepted',
+        authorityScope: 'team',
+        reason: 'transferred',
+        modeVersion: '1.0.0',
+        configurationVersion: 'config.default',
+      }),
+      registry,
+    );
+    expect(projection.phase).toBe('Committed');
+
+    projection.applyEnvelope(
+      makeEnvelope('HandoffOffer', { handoffId: 'h2', targetParticipant: 'carol', scope: 'backend' }),
+      registry,
+    );
+
+    expect(projection.phase).toBe('Committed');
+  });
 });

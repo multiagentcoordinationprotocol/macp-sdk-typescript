@@ -3520,3 +3520,59 @@ PR #149 opened: https://github.com/multiagentcoordinationprotocol/macp-sdk-types
 
 Note: release-please opened PR #148 (`chore(main): release 0.14.0`) automatically after
 #147 merged — untouched here, release-please-owned.
+
+## Plan: issue-150-154-fixes.md (2026-10-02)
+
+Written from a cross-SDK comparative audit against `macp-sdk-python` (5 open issues:
+#150 BaseProjection phase-regression guard, #151 TaskReject audit record, #152 Infinity
+weight validation, #153 DecisionProjection phase rewind, #154 watchers.ts error class).
+PR strategy: one combined PR, four phases (all independent, non-breaking, same
+CHANGELOG `[Unreleased]` block). Risk tiers: Phase 1 complex (touches `BaseProjection` +
+all 5 mode projections), Phases 2-4 simple.
+
+**Repo map** (scoped to this plan's touched surface — see `plans/issue-150-154-fixes.md`
+Context section for full issue-by-issue grounding):
+- `src/projections/base.ts` — `BaseProjection` abstract base: `applyEnvelope` (dedup +
+  rollback + Commitment handling), `applyMode` (abstract), `recordAnomaly`. Phase 1 adds
+  `setPhase` here (new protected choke point, parity with python's `_set_phase`,
+  `base_projection.py:289-313`).
+- `src/projections/{decision,proposal,task,quorum,handoff}.ts` — the 5 mode projections.
+  Phase 1 touches all five (10 confirmed unguarded `this.phase = ...` sites plus
+  decision.ts's 2 sites); Phase 2 touches only `task.ts`, a disjoint region (the
+  `TaskReject` case, which has no phase assignment in either SDK).
+- `src/policy.ts:294-309` — `buildDecisionPolicy`'s weight-validation loop; Phase 3's
+  single-clause guard fix lives here.
+- `src/watchers.ts` — 5 watcher classes' `next*()` methods; Phase 4's error-class swap
+  touches only their empty-stream fallback throw (lines 146/178/223/260/301).
+- `src/errors.ts` — `MacpSdkError`/`MacpTransportError` hierarchy, read-only reference
+  for Phase 4.
+- `docs/api/projections.md`, `docs/modes/task.md` — updated by Phases 1 and 2.
+- `macp-sdk-python/src/macp_sdk/{base_projection,task,policy}.py` — read-only parity
+  reference, never written (no cross-repo write needed for this plan).
+
+### Phase 1 DONE (2026-10-02) — BaseProjection.setPhase() choke point (#150, #153)
+
+Branch `feat/issue-150-154-fixes`. Added `protected setPhase(phase: string): void` to
+`BaseProjection` (base.ts, after `recordAnomaly`) — no-ops once `phase === 'Committed'`,
+exact parity with Python's `_set_phase`. Converted all 12 call sites (10 across
+proposal.ts/task.ts(x4)/quorum.ts/handoff.ts(x4), plus decision.ts's 2) to route through
+it; `decision.ts`'s Proposal branch additionally gained the #153 call-site guard
+(`if (this.phase === 'Proposal') this.setPhase('Evaluation')`). `grep -rn "this\.phase = "
+src/projections/` returns exactly `base.ts:352` (deliberate Commitment-handling bypass)
+and `base.ts:409` (setPhase's own body) — matches plan's AC2 exactly.
+
+New tests: `base-session.test.ts` (new `PhaseExposingProjection` synthetic subclass —
+`SmokeProjection` couldn't drive `setPhase`), `decision.test.ts` (2: #153
+regression-blocked + legitimate-transition-unblocked), `proposal/task/quorum/handoff
+.test.ts` (1-2 each: Committed-regression guard; task.ts covers TaskComplete + a second
+TaskRequest; handoff.ts uses a second, distinct handoffId to hit the `:43` site
+specifically). Full suite: 1237 passed / 20 skipped (was 1228/20 baseline, +9 new).
+`npm run check`/`lint`/`format:check` all clean.
+
+Verification: fresh-Opus solo gate (Phase 1 is `Risk: complex`), round 1 **GAPS** (2
+items — CHANGELOG.md had no live `[Unreleased]` section at all, since v0.14.0 had
+released since planning and consumed the old one; `docs/api/projections.md` wasn't
+updated per AC8). Both closed — new `## [Unreleased]` → `### Fixed` bullet added above
+`## [0.14.0]`; `docs/api/projections.md` got a generalized `setPhase` guarantee in the
+BaseProjection section plus the #153-specific sentence in Decision, plus pointer
+sentences on Proposal/Task/Handoff/Quorum's phase lines. Round 2: **PASS**, zero gaps.

@@ -90,7 +90,7 @@ export class TaskProjection extends BaseProjection {
           progress: 0,
           sender: envelope.sender,
         });
-        this.phase = 'Requested';
+        this.setPhase('Requested');
         break;
       }
       case 'TaskAccept': {
@@ -134,7 +134,7 @@ export class TaskProjection extends BaseProjection {
             task.assignee = record.assignee;
             task.status = 'accepted';
             this.activeAssignment = { sender: envelope.sender, taskId: record.taskId };
-            this.phase = 'InProgress';
+            this.setPhase('InProgress');
           } else {
             this.recordAnomaly({
               kind: 'duplicate_task_accept',
@@ -199,7 +199,7 @@ export class TaskProjection extends BaseProjection {
         if (task) {
           task.status = 'completed';
           task.progress = 1;
-          this.phase = 'Completed';
+          this.setPhase('Completed');
         }
         break;
       }
@@ -215,7 +215,7 @@ export class TaskProjection extends BaseProjection {
         const task = this.tasks.get(record.taskId);
         if (task) {
           task.status = 'failed';
-          this.phase = 'Failed';
+          this.setPhase('Failed');
         }
         break;
       }

@@ -390,4 +390,22 @@ export abstract class BaseProjection {
     this.anomalies.push(anomaly);
     logger.warn('projection anomaly', anomaly);
   }
+
+  /**
+   * Assign `this.phase`, guarding against regression out of the terminal
+   * `'Committed'` state — parity with macp-sdk-python's `_set_phase`
+   * (`base_projection.py:289-313`). `applyEnvelope` sets `this.phase =
+   * 'Committed'` directly on a `Commitment` envelope and returns before
+   * `applyMode` is ever called (see `applyEnvelope` above), so this method is
+   * never asked to move *into* `'Committed'` — only ever *out of* it, which is
+   * exactly the case it exists to reject. Every subclass `applyMode`
+   * implementation must call this instead of assigning `this.phase` directly;
+   * the one exception is each subclass's own field initializer, which sets
+   * the starting phase before any message has been applied and can never
+   * observe `'Committed'`.
+   */
+  protected setPhase(phase: string): void {
+    if (this.phase === 'Committed') return;
+    this.phase = phase;
+  }
 }
