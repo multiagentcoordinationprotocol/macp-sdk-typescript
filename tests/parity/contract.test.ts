@@ -46,6 +46,7 @@ import {
   ANOMALY_SETTLED_HANDOFF,
   PROJECTION_ANOMALY_FIELD_ORDER,
 } from '../../src/projections/base';
+import { PROPOSAL_STATUS_VALUES } from '../../src/projections/proposal';
 import { ProtoRegistry } from '../../src/proto-registry';
 import { DEFAULT_RETRY_POLICY } from '../../src/retry';
 import contract from './contract.json';
@@ -57,7 +58,7 @@ function snakeToLowerCamel(name: string): string {
 }
 
 describe('parity contract (tests/parity/contract.json)', () => {
-  it('pins contract_version 1.2.0 — a version bump means re-reading this whole file', () => {
+  it('pins contract_version 1.3.0 — a version bump means re-reading this whole file', () => {
     // Not a manifest-content assertion: a tripwire so a future contract_version
     // bump (MINOR or MAJOR, per the manifest's own versioning rule) forces a
     // human to re-review every section below, not just whichever one changed.
@@ -86,7 +87,18 @@ describe('parity contract (tests/parity/contract.json)', () => {
     // `kinds`/`fields` assertions below, both updated to match. No other
     // section changed; re-reviewed every section below against the bump
     // regardless.
-    expect(contract.contract_version).toBe('1.2.0');
+    // Bumped 1.2.0 -> 1.3.0 (spec-repo PR #179, merged 2026-10-03; re-synced
+    // here 2026-10-03, issue #156): MINOR — a new `proposal_disposition`
+    // section pinning Proposal mode's per-proposal disposition/status
+    // domain, previously unpinned (this SDK and `macp-sdk-python` each
+    // independently re-derived it; see `src/projections/proposal.ts:14-29`'s
+    // by-design comment, issue #146). `projection_status_values` and
+    // `acceptance_tracking` are now asserted in the new `proposal_disposition`
+    // describe block below; `mode_state_dispositions` is runtime-only (no
+    // SDK-side counterpart to assert against — see that section's own
+    // `source` field). No other section changed; re-reviewed every section
+    // below against the bump regardless.
+    expect(contract.contract_version).toBe('1.3.0');
   });
 
   describe('protocol', () => {
@@ -257,6 +269,25 @@ describe('parity contract (tests/parity/contract.json)', () => {
       const vector = contract.sections.contribute_payload.vectors[0];
       const encoded = Buffer.from(JSON.stringify({ value: vector.value }), 'utf8');
       expect(registry.decodeKnownPayload(MODE_MULTI_ROUND, 'Contribute', encoded)).toEqual({ value: vector.value });
+    });
+  });
+
+  describe('proposal_disposition', () => {
+    it("ProposalRecord's reachable status values match projection_status_values, in order (issue #156)", () => {
+      // PROPOSAL_STATUS_VALUES is itself compile-time frozen to
+      // ProposalRecord['status'] (see proposal.ts's _ProposalStatusIsFrozen),
+      // so this one runtime assertion transitively proves the type can never
+      // hold an acceptance-shaped value like 'accepted' without also failing
+      // `npm run check`.
+      expect([...PROPOSAL_STATUS_VALUES]).toEqual(contract.sections.proposal_disposition.projection_status_values);
+    });
+
+    it('acceptance_tracking is pinned as per_sender (behavior exercised in tests/unit/projections/proposal.test.ts)', () => {
+      // Not a manifest-content assertion by itself — the actual behavior
+      // (accepts tracked on accepts[]/latestAcceptBySender, never
+      // denormalized onto ProposalRecord.status) is exercised by
+      // proposal.test.ts's 'tracks accepts' test. This just pins the string.
+      expect(contract.sections.proposal_disposition.acceptance_tracking).toBe('per_sender');
     });
   });
 });

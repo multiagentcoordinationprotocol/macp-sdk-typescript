@@ -41,6 +41,7 @@
   "PAYLOAD_TOO_LARGE",
   "POLICY_DENIED",
   "PROJECTION_ANOMALY_FIELD_ORDER",
+  "PROPOSAL_STATUS_VALUES",
   "PolicyWatcher",
   "ProposalProjection",
   "ProposalSession",

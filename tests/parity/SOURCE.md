@@ -7,18 +7,23 @@ schemas/parity/contract.json
 ```
 
 from the spec repo (`multiagentcoordinationprotocol/multiagentcoordinationprotocol`),
-commit `99756f897cace4ae3f65ab3bdf7bdadcc6e4f13e` (spec-repo PR
-[#154](https://github.com/multiagentcoordinationprotocol/multiagentcoordinationprotocol/pull/154),
-a PATCH bump per the manifest's own versioning rule — annotation-only:
-`contract_version` plus `projection_anomaly.source` gaining more explanatory text, no
-pinned value changed), last re-synced 2026-09-28 as part of fixing this repo's issue
-#125, filed when `verify-parity`'s byte-diff against the spec repo's default branch
-went red for this drift (this gate has no version pin to wait on; it diffs live).
-Previously re-synced 2026-09-27 as part of fixing issue #107 (PR #118), at
-`contract_version` `1.1.0` (spec-repo PR #151, adding four `collision_*`
+commit `2989f644576e73a46d2efe6b682b74e0e4eadd54` (spec-repo PR
+[#179](https://github.com/multiagentcoordinationprotocol/multiagentcoordinationprotocol/pull/179),
+a MINOR bump per the manifest's own versioning rule — purely additive: a new
+`proposal_disposition` section pinning Proposal mode's per-proposal disposition/status
+domain (`mode_state_dispositions`, `projection_status_values`,
+`acceptance_tracking`), no existing section's content or `applies_to` changed), last
+re-synced 2026-10-03 as part of fixing this repo's issue #156, filed when the spec
+repo's bump left `verify-parity`'s byte-diff red (this gate has no version pin to wait
+on; it diffs live). Previously re-synced 2026-09-28 as part of fixing issue #135, at
+`contract_version` `1.2.0` (spec-repo PR #158, `projection_anomaly.kinds` gaining
+`duplicate_task_accept`/`settled_handoff`). Before that, re-synced 2026-09-28 as part
+of fixing issue #125, at `contract_version` `1.1.1` (spec-repo PR #154, a PATCH
+bump — annotation-only). Previously re-synced 2026-09-27 as part of fixing issue #107
+(PR #118), at `contract_version` `1.1.0` (spec-repo PR #151, adding four `collision_*`
 `contribute_payload` vectors). Originally copied on 2026-09-25 as part of
 `plans/sdk-parity-typescript.md` Phase 5, at `contract_version` `1.0.0`.
-`contract_version` at last sync: `1.1.1`.
+`contract_version` at last sync: `1.3.0`.
 
 ## Why this directory lives outside `tests/conformance/`
 
