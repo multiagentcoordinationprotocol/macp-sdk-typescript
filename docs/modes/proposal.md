@@ -111,7 +111,15 @@ There is no `'accepted'` status: acceptance is a per-sender, supersedable
 relation (RFC-MACP-0008 §5 rule 5), not a per-proposal fact — a scalar field
 can't hold "alice accepts p2 while bob still accepts p1". The projection
 tracks accepts separately in `accepts[]`/`latestAcceptBySender`; use
-`isAccepted(id)` (issue #146).
+`isAccepted(id)` (issue #146). These three values are now a cross-SDK
+contract pin, not just this SDK's own convention — `schemas/parity/contract.json`'s
+`proposal_disposition.projection_status_values` section (`contract_version`
+1.3.0) agrees with `macp-sdk-python`'s `ProposalRecord.status`, and
+`PROPOSAL_STATUS_VALUES` (`src/projections/proposal.ts`) is compile-time
+frozen to the `status` field's type so neither can drift from the other
+without failing `npm run check`; `tests/parity/contract.test.ts` then asserts
+that array against the manifest itself, so the array can't silently drift
+from the pinned contract either (issue #156).
 
 Counter-proposals set `supersedes` to link back to the original.
 

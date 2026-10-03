@@ -59,6 +59,12 @@ describe('ProposalProjection', () => {
     expect(projection.accepts).toHaveLength(1);
     expect(projection.isAccepted('p1')).toBe(true);
     expect(projection.isAccepted('p2')).toBe(false);
+    // Acceptance is a per-sender, supersedable relation (RFC-MACP-0008 §5
+    // rule 5) tracked on accepts[]/latestAcceptBySender — never denormalized
+    // onto ProposalRecord.status, which stays 'open' (issue #146, pinned
+    // cross-SDK by schemas/parity/contract.json's proposal_disposition
+    // section at contract_version 1.3.0, issue #156).
+    expect(projection.proposals.get('p1')?.status).toBe('open');
   });
 
   // RFC-MACP-0008 §5 rule 5 (`:70`): "The latest accepted Accept from a

@@ -43,6 +43,44 @@ export interface ProposalRejectRecord {
   sender: string;
 }
 
+/**
+ * The three reachable `ProposalRecord.status` values, as a runtime array —
+ * cross-SDK contract pinned by the spec repo's `schemas/parity/contract.json`
+ * (`proposal_disposition.projection_status_values`, `contract_version`
+ * 1.3.0, issue #156). `satisfies readonly ProposalRecord['status'][]` links
+ * this array to the type above at compile time, and `_ProposalStatusIsFrozen`
+ * below closes the loop in the other direction — together they prove at
+ * `npm run check` time, not just in a docblock, that `status` can never hold
+ * an acceptance-shaped value like `'accepted'` (see `ProposalRecord.status`'s
+ * own docblock above for why acceptance is tracked separately). See
+ * `tests/parity/contract.test.ts`.
+ */
+export const PROPOSAL_STATUS_VALUES = [
+  'open',
+  'rejected',
+  'withdrawn',
+] as const satisfies readonly ProposalRecord['status'][];
+
+/** Fails to instantiate — a `tsc` error — for any `T` that is not `never`. */
+type AssertNever<T extends never> = T;
+
+/**
+ * Compile-time frozen-value-set guard for `ProposalRecord['status']` (same
+ * `AssertNever`/bidirectional-`Exclude` shape as `base.ts`'s
+ * `_ProjectionAnomalyFieldOrderIsFrozen`). A value ADDED to the `status`
+ * union and missing from `PROPOSAL_STATUS_VALUES` leaves the first `Exclude`
+ * non-empty; a value REMOVED from the union while still listed in
+ * `PROPOSAL_STATUS_VALUES` leaves the second non-empty — either way `npm run
+ * check` goes red. Zero runtime cost: this is a type alias, erased at
+ * compile time. It is intentionally never referenced, which is what the
+ * disable comment is for.
+ */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+type _ProposalStatusIsFrozen = AssertNever<
+  | Exclude<ProposalRecord['status'], (typeof PROPOSAL_STATUS_VALUES)[number]>
+  | Exclude<(typeof PROPOSAL_STATUS_VALUES)[number], ProposalRecord['status']>
+>;
+
 export class ProposalProjection extends BaseProjection {
   protected readonly mode = MODE_PROPOSAL;
   readonly proposals = new Map<string, ProposalRecord>();
