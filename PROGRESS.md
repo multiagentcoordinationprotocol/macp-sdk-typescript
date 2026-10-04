@@ -3680,3 +3680,4 @@ against a stale file-count snapshot — corrected above to 25/27 and 17/27, re-v
 `find docs -name "*.md" | wc -l` (27) and re-running both citation greps.
 
 pushed docs/changelog-0.14.1-merge-unreleased ce0da92
+PR #159 opened: https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/pull/159
