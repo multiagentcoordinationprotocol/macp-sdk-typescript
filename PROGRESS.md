@@ -3618,3 +3618,44 @@ fixed: plan file's own top-level Status line, and one commit's scope label).
 
 pushed feat/issue-150-154-fixes 2ee4bea
 PR #155 opened: https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/pull/155
+
+## Monthly docs audit (2026-10-03) — CHANGELOG.md dangling Unreleased fix
+
+Requested: review the last month's changes for stale/missing docs and duplicated
+content against the sibling RFC/runtime repos. Full audit (not a plan file — single-file,
+single-phase, no code/behavior change):
+
+- Every commit touching public API surface in the last month (72c6ea4, c5142d7, 06ec632,
+  cc0f344, b52c7f2, aa157ee, a82972a, 27ef4ec, afb5943, e1a7de4, 99c2f4a, 26dddb6, 28d4c52,
+  4c633e0, df1c6a2, and the full issue-150-154-fixes/issue-140/issue-138/issue-139-146
+  plans above) already updated the matching `docs/*.md` file in the same commit, caught by
+  this project's own fresh-Opus implementation gates. No backlog there.
+- 23/25 `docs/*.md` files already cite the RFC repo
+  (`multiagentcoordinationprotocol/rfcs`), 17/25 cite the runtime repo
+  (`macp-runtime/docs`), and `docs/index.md`'s "Related documentation" section links
+  both rather than duplicating their content. The 2 files citing neither
+  (`docs/api/constants.md`, `docs/api/proto-registry.md`) are legitimately SDK-internal
+  (constant values, internal encode/decode mechanics) — no sibling citation needed.
+- One concrete gap found: `CHANGELOG.md` had a dangling `## [Unreleased]` section sitting
+  *below* the already-cut `## [0.14.1]` header. Its Added/Fixed content (issues #150,
+  #151, #152, #154 — `BaseProjection.setPhase()`, `TaskProjection.rejections`,
+  `buildDecisionPolicy` `+Infinity` guard, `watchers.ts` `MacpTransportError`) was commit
+  `e632f01`'s work, confirmed already shipped in the published `0.14.1` npm release
+  (`git merge-base --is-ancestor e632f01 92f7112` → true; `package.json` version is
+  `0.14.0` at `e632f01`, `0.14.1` at the `92f7112` release commit). Root cause:
+  `e632f01`'s commit subject ("Fix 4 cross-SDK parity gaps: ...") isn't valid
+  conventional-commit format, so `release-please` never generated a matching entry and
+  never cleaned up the manual `[Unreleased]` block this project's `/implement` workflow
+  had added for that work pre-release. The dangling-block pattern recurs 3 more times
+  further back in `CHANGELOG.md`'s history (after 0.11.0, 0.9.0, 0.6.0) — those predate
+  the last month and were deliberately left untouched here.
+
+Fix: merged the dangling block's one `### Added` bullet and three `### Fixed` bullets
+into `## [0.14.1]` verbatim, with the existing release-please-generated parity-re-vendor
+bullet folded in as a fourth `### Fixed` item (last), then deleted the orphaned
+`## [Unreleased]` header — matching this project's established post-release convention
+(no live `[Unreleased]` section until new work adds one back; see the issue-150-154-fixes
+Phase 1 note above). `npm run format:check`/`npm run lint` both clean; `git diff --stat`
+confirms only `CHANGELOG.md` touched, no other version section altered.
+
+Verifier: fresh Opus, solo, round 1 — pending.

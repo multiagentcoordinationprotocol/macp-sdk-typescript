@@ -6,13 +6,6 @@ project uses [Semantic Versioning](https://semver.org/).
 
 ## [0.14.1](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/compare/v0.14.0...v0.14.1) (2026-10-03)
 
-
-### Bug Fixes
-
-* **parity:** re-vendor contract.json for contract_version 1.3.0 ([#156](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/issues/156)) ([#157](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/issues/157)) ([497949d](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/commit/497949d2b29031d340f5d8cc2ef17ae34c946c42))
-
-## [Unreleased]
-
 ### Added
 
 - **`TaskProjection.rejections: TaskRejectRecord[]`** (issue #151; a
@@ -72,6 +65,7 @@ project uses [Semantic Versioning](https://semver.org/).
   covers a cleanly-ended watch stream alongside every other SDK failure.
   Message strings are unchanged byte-for-byte; `error.code` remains
   `undefined` on all 5 (locally raised, no gRPC status to attach).
+- **parity:** re-vendor contract.json for contract_version 1.3.0 ([#156](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/issues/156)) ([#157](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/issues/157)) ([497949d](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/commit/497949d2b29031d340f5d8cc2ef17ae34c946c42))
 
 ## [0.14.0](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/compare/v0.13.0...v0.14.0) (2026-10-01)
 
