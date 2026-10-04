@@ -3686,3 +3686,172 @@ merged #159 (squash ce9ebe6), branch deleted. No deploy to watch — this repo p
 an npm package on GitHub Release creation, not a running service; the next
 release-please PR (whenever it's cut) is a separate, later decision. Monthly docs-audit
 task complete.
+
+## Repo map — issue #160 docs/examples parity (2026-10-04)
+
+Gathered while planning `plans/issue-160-docs-examples-parity.md`. `/implement` should
+read this instead of re-scanning the repo from scratch.
+
+**TS examples (`examples/`, 12 files, all standalone `async function main()` scripts
+ending `main().catch(...)`):**
+- `decision-smoke.ts`, `proposal-smoke.ts`, `task-smoke.ts`, `handoff-smoke.ts`,
+  `quorum-smoke.ts`, `watch-smoke.ts`, `policy-registration.ts` — identical shape,
+  hardcoded `new MacpClient({ address: '127.0.0.1:50051', secure: false, allowInsecure:
+  true, auth: Auth.devAgent('coordinator') })`, no env override.
+- `bearer-smoke.ts` — env `MACP_RUNTIME_ADDRESS` override; two `MacpClient`s
+  (`Auth.bearer`, alice/bob).
+- `direct-agent-auth-initiator.ts` (69 lines) / `direct-agent-auth-observer.ts` (68
+  lines) — env `MACP_RUNTIME_TARGET`/`MACP_SESSION_ID`/`MACP_INITIATOR_BEARER`/
+  `MACP_ALICE_BEARER`; initiator completes standalone (no observer needed to exit
+  cleanly), observer blocks forever on `stream.responses()` without a paired initiator —
+  the one example that must stay excluded from any execution test.
+- `agent-policy-aware.ts` — hardcoded `127.0.0.1:50051`, no env override, **requires
+  `process.argv[2]` (a session id)**.
+- `cancel-callback.ts` — the only example with zero network/runtime dependency; builds
+  an ephemeral local HTTP server via `startCancelCallbackServer` and self-tests with
+  `fetch()`.
+- Only 7/12 have an `example:*` npm script (`decision`, `proposal`, `task`, `handoff`,
+  `quorum`, `watch`, `bearer`); the other 5 are invoked via `npx tsx examples/<file>.ts`
+  per each file's header comment.
+
+**Test/build infra:**
+- `package.json` scripts (lines 21-41): `check` chains `check:examples`
+  (`tsconfig.examples.json`, type-check only, no emit, no execution);
+  `test`/`test:coverage` → `vitest.config.ts`; `test:integration` →
+  `vitest.integration.config.ts`. `format`/`format:check` globs are `src/**/*.ts` +
+  `tests/**/*.ts` only — `examples/**` is untouched by prettier either way (not
+  ignored, just never targeted).
+- `vitest.config.ts`: `test.include: ['tests/**/*.test.ts']`,
+  `test.exclude: ['tests/integration/**']`; coverage thresholds 94/84/91/92 (`src/**`
+  only).
+- `vitest.integration.config.ts` (11 lines, full file): `include:
+  ['tests/integration/**/*.test.ts']`, `testTimeout: 15_000`, `hookTimeout: 10_000`, no
+  `globalSetup`.
+- `tests/integration/runtime.test.ts` — does **not** auto-skip when no runtime is
+  reachable; `beforeAll` only constructs the client, first real network call is inside
+  the first `it()` and fails hard if unreachable. CI's own readiness gate
+  (`.github/workflows/integration.yml` → `scripts/wait-for-runtime.ts`) is what
+  guarantees a runtime is up, not the test file itself. 3 internal `describe.skipIf`
+  blocks exist, but only for optional Bearer-token-gated sub-suites, evaluated at
+  module scope (not inside a hook — `fixture-drift-gate.test.ts:65-72` documents why a
+  sync probe at module scope is required for `skipIf` to actually skip).
+- `tests/unit/helpers/grpc-stub.ts` — `stubUnary(client, name, response, {fail?})`
+  monkey-patches `(client as unknown as {client}).client[name]` on a real `MacpClient`;
+  no network, no Docker.
+- `.github/workflows/ci.yml`: check → lint → format:check → test:coverage → build;
+  no Docker/integration step. `.github/workflows/integration.yml` is separate,
+  provisions a live runtime via a `services:` container + readiness-wait script, then
+  runs `npm run test:integration` — not part of the main required-status-check gate.
+- `.prettierignore`: `docs/` is entirely ignored (recursive) — no format gate applies
+  to any docs/ file.
+
+**Session-discovery API surface (all confirmed in `src/`):**
+- `client.listSessions(options?): Promise<SessionMetadata[]>` (`src/client.ts:678-688`,
+  auto-paginates) / `client.listSessionsPage(options?): Promise<{sessions,
+  nextPageToken}>` (`src/client.ts:659-676`, object return, not a tuple).
+- `SessionLifecycleWatcher` (`src/watchers.ts:271-304`): `constructor(client, {auth}?)`,
+  `changes(signal?): AsyncGenerator<SessionLifecycleEvent>`, `watch(handler)`,
+  `nextChange()`.
+- `SessionLifecycleEvent { eventType, session, observedAtUnixMs }` (`src/types.ts:
+  367-380`) — `eventType` is one of the `EVENT_TYPE_*`-prefixed
+  `SessionLifecycleEventType` union values (prefixed, unlike Python's unprefixed
+  `RESOLVED` etc.).
+- Predicates (`src/watchers.ts:14-48`, free functions, not properties):
+  `isSessionCreated`, `isSessionResolved`, `isSessionExpired`, `isSessionCancelled`,
+  `isSessionSuspended`, `isSessionResumed`, `isTerminalSessionLifecycleEvent`,
+  `TERMINAL_SESSION_LIFECYCLE_EVENT_TYPES`.
+- `validateMaxSuspendMs` (`src/validation.ts:134-140`) — throws `MacpSessionError` if
+  not finite or negative; `0`/absent = runtime default. Flows through
+  `buildSessionStartPayload` (`src/envelope.ts:55`: `maxSuspendMs: input.maxSuspendMs
+  ?? 0`).
+- The existing `## Session Lifecycle Watcher` section to be moved lives at
+  `docs/guides/streaming.md:180-214`; `docs/guides/security.md:80` is the one file
+  currently linking to that anchor as a workaround (`streaming.md#session-lifecycle-
+  watcher`) — needs re-pointing once the content moves.
+
+**Direct-agent-auth surface:**
+- `fromBootstrap(bootstrapPath?: string): Participant` (`src/agent/runner.ts:66`),
+  reading a snake_case `BootstrapPayload` (`src/agent/runner.ts:9-64`: `session_id`,
+  `participant_id`, `runtime_address`/`runtime_url`, `auth_token`,
+  `initiator.session_start.{intent, participants, ttl_ms, max_suspend_ms, context_id,
+  extensions, roots}`, `initiator.kickoff`, `cancel_callback`).
+- `startCancelCallbackServer(options: {host, port, path, onCancel}):
+  Promise<CancelCallbackServer>` (`src/agent/cancel-callback.ts:44`).
+- `examples/direct-agent-auth-initiator.ts` / `-observer.ts` are the real, current,
+  hand-rolled (non-bootstrap) reference implementations of this exact pattern — cite
+  directly rather than re-deriving samples.
+
+**Docs insertion points:**
+- `docs/index.md`'s Guides ToC (lines 9-20) is a flat `- [Title](guides/x.md) — a, b, c`
+  list, not alphabetical — topic-flow ordered. Current order: Getting Started,
+  Architecture, Authentication, Error Handling, Streaming, Policy Framework, Agent
+  Framework, Determinism and Replay, Security, Testing.
+- `CLAUDE.md`'s Test Structure bullet list and Coverage gate paragraph are the
+  insertion point for any new test file description — `CLAUDE.md` is gitignored/
+  local-only in this repo; edits here are never part of a PR diff (confirmed: the
+  determinism/security port commit `d21832d` did NOT touch `CLAUDE.md` at all, since it
+  added no test file — only docs).
+- Precedent commit for doc ports: `d21832d` ("docs: port determinism and security
+  guides from macp-sdk-python") — new guide file(s) + 2-line `docs/index.md` ToC
+  insertion + `PROGRESS.md` entry, in one commit, nothing else touched.
+
+**Python source (sibling repo,
+`/Users/ajitkoti/code/multiagentcoordinationprotocol/macp-sdk-python`):**
+- `docs/protocol.md` (129 lines), `docs/guides/session-discovery.md` (192 lines),
+  `docs/guides/direct-agent-auth.md` (146 lines), `docs/guides/building-orchestrators.md`
+  (202 lines) — all read in full this session; full section outlines and every code
+  sample's API surface recorded in the plan's per-phase Approach sections.
+- `tests/unit/test_examples_smoke.py` (27 lines) — `compile()`-only, no execution,
+  always-on tier. `tests/integration/test_examples_run.py` (135 lines) — real
+  `subprocess.run()` execution, `pytest.mark.integration`, hardcoded `RUN` list +
+  `EXCLUDED` dict with required non-empty reasons, a `test_coverage_parity` tripwire,
+  gated by a session-scoped autouse TCP-probe fixture that *skips* (not fails) the
+  whole directory when no runtime is reachable — the one place this repo's new
+  `tests/integration/examples.test.ts` deliberately does NOT mirror Python (this repo's
+  own `runtime.test.ts` precedent fails hard instead, by design, for consistency within
+  this repo).
+
+### Round-1 plan review corrections (2026-10-04) — load-bearing, read before implementing
+
+A fresh-Opus review of `plans/issue-160-docs-examples-parity.md` against the actual code
+found 12 issues (full itemized list in that plan's own "Plan review" section). The two
+most consequential, since they change the plan's shape rather than just a detail:
+
+- **`.github/workflows/integration.yml` runs `npm run test:integration` on every PR**
+  (`pull_request: branches: [main]`), against a runtime service container on **port
+  50123**, exporting `MACP_RUNTIME_ADDRESS=localhost:50123`. This is NOT the same as
+  CLAUDE.md's general "integration tests... not run in CI" claim, which describes
+  `ci.yml` only. 8 of the 12 `examples/*.ts` files hardcode `127.0.0.1:50051` with no
+  env override (`agent-policy-aware.ts:26`, `decision-smoke.ts:5`,
+  `policy-registration.ts:23`, `proposal-smoke.ts:5`, `quorum-smoke.ts:5`,
+  `handoff-smoke.ts:5`, `task-smoke.ts:5`, `watch-smoke.ts:5`) — the plan's original
+  Phase 5 (now split into Phase 5 + Phase 6) would have reddened real PR CI immediately.
+- **`examples/watch-smoke.ts:25`** checks `(error as { code?: number }).code === 1`
+  after `stream.cancel()`, but `grpcStatusName(code)` (`src/client.ts:104-108`) returns a
+  **string** (e.g. `'CANCELLED'`) — the comparison is always false, so the example
+  always exits 1 on its own intended-success path. One-line fix: compare to the string
+  `'CANCELLED'`.
+- **`examples/policy-registration.ts:52,126`** registers policy id
+  `policy.deploy.majority-veto` and only unregisters it in the `try` block's success
+  path, not a `finally` — a failed run leaves it registered and the next run's
+  `registerPolicy` conflicts with it.
+- **`examples/agent-policy-aware.ts:35-48`** subscribes a `Participant` to a
+  **pre-existing** session (not one it creates itself) and awaits `participant.run()`
+  until that session reaches a terminal phase (`src/agent/participant.ts:302-307`) — a
+  freshly generated UUID names no real session, so it cannot be made to "just exit 0"
+  without standing up a second session-owning process. Excluded from the execution test,
+  not worked around.
+- `InitializeResult` (`src/types.ts:105-117`): `{ selectedProtocolVersion, runtimeInfo?:
+  { name, title, version, description, websiteUrl }, supportedModes?, instructions?,
+  capabilities? }`; `client.initialize(deadlineMs?: number)` is positional
+  (`src/client.ts:372`). `commit()`'s real params (`src/base-session.ts:127-134`):
+  `{ action, authorityScope, reason, commitmentId?, outcomePositive?, sender?, auth? }`.
+  `DecisionProjection.majorityWinner()` at `:148`, `hasBlockingObjection(proposalId?)` at
+  `:180`. The 5 mode sessions' `start()` is at `decision.ts:75`/`proposal.ts:68`/
+  `task.ts:64`/`handoff.ts:62`/`quorum.ts:62` (off by 7 from the plan's first draft);
+  `modeVersion`/`configurationVersion`/`policyVersion` are constructor options
+  (`decision.ts:57-59`), not `start()` args.
+- `require.resolve('tsx/cli')` resolves correctly to `node_modules/tsx/dist/cli.mjs`
+  (tsx 4.23.15). `spawnSync` (not `execFileSync`) is the right primitive for
+  "exit code without throwing" — already this repo's own convention
+  (`tests/unit/fixture-drift-gate.test.ts:59,72`).
