@@ -121,6 +121,7 @@ All session constructors accept the same base options:
 
 ## Next Steps
 
+- Read [Core Protocol Concepts](protocol.md) for the planes/envelope/lifecycle model underneath every session
 - Learn about the [Architecture](architecture.md) to understand how sessions and projections work
 - Explore each [Coordination Mode](../modes/decision.md) in detail
 - Set up [Authentication](authentication.md) for production

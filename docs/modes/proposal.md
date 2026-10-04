@@ -24,7 +24,10 @@ SessionStart → Proposal → CounterProposal? → Accept/Reject/Withdraw → Co
 import { ProposalSession } from 'macp-sdk-typescript';
 
 const session = new ProposalSession(client);
-await session.start({ intent: '...', participants: ['bob'], ttlMs: 60_000 });
+// 'coordinator' (this client's own identity) sends propose() below with no sender
+// override, so it must be a declared participant — Proposal mode's default policy
+// rejects a mode action from a non-participant sender with FORBIDDEN.
+await session.start({ intent: '...', participants: ['coordinator', 'bob'], ttlMs: 60_000 });
 ```
 
 #### Methods
