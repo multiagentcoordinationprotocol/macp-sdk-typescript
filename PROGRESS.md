@@ -3658,4 +3658,13 @@ bullet folded in as a fourth `### Fixed` item (last), then deleted the orphaned
 Phase 1 note above). `npm run format:check`/`npm run lint` both clean; `git diff --stat`
 confirms only `CHANGELOG.md` touched, no other version section altered.
 
-Verifier: fresh Opus, solo, round 1 — pending.
+Verifier: fresh Opus, solo, round 1 — **PASS**, zero gaps. Independently re-derived the
+`git merge-base --is-ancestor e632f01 92f7112` claim and the `package.json` version check,
+confirmed the merged bullets are byte-identical to the pre-change text (one deliberate
+`*`→`-` bullet-marker normalization on the folded-in parity bullet, needed to keep it in
+the same CommonMark list as its three siblings), confirmed the three older dangling
+`[Unreleased]` blocks (after 0.11.0/0.9.0/0.6.0) were correctly left untouched, and
+confirmed `git diff main..HEAD --stat` touches only `CHANGELOG.md`/`PROGRESS.md`.
+
+Single-phase fix, no finalization-pass seams to test (same precedent as issue-140's
+single-phase plan). Next: `/ship`.
