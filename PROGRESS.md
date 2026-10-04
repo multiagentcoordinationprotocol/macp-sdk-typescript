@@ -4155,3 +4155,13 @@ meaningfully unrelated to this PR. Noted in the PR description rather than hidde
 6's AC6 specifically depends on a real green run of it), merge on green.
 `ASSUMPTIONS.md` needs no new entries (confirmed zero `UNCONFIRMED` by the ship-gate
 verifier too).
+
+Ship-gate re-verify round (fresh Opus, prior gap list + the actual `b88ecda` diff):
+**PASS** — all 6 gaps confirmed genuinely closed (gap 5 re-confirmed live a second time:
+`['coordinator','bob']` OK, `['alice','bob']` and `['coordinator']` alone both
+`INVALID_ENVELOPE`, and confirmed the initiator-inclusion rule is Handoff-specific, not
+universal — Task's `['worker']`-only `start()` from the same `coordinator` client
+succeeds fine). Full gate green again. Nothing new broken by `b88ecda` itself.
+
+pushed issue-160-docs-examples-parity b88ecdaadd4d663095e2b88b9d7477031a09a608
+PR #162 opened: https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/pull/162
