@@ -3678,3 +3678,5 @@ the merged bullets byte-for-byte against `main`, confirmed scope (`CHANGELOG.md`
 and closed: this entry's own doc-citation fractions were miscounted (23/25, 17/25)
 against a stale file-count snapshot — corrected above to 25/27 and 17/27, re-verified by
 `find docs -name "*.md" | wc -l` (27) and re-running both citation greps.
+
+pushed docs/changelog-0.14.1-merge-unreleased ce0da92
