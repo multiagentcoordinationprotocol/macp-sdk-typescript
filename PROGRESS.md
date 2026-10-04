@@ -4277,6 +4277,13 @@ fixed here:
   what the snippet actually does, and warn against copying the shape while assuming the
   `break` is what protects a double-apply from happening.
 
-**What's next:** commit this pass, report to the user (hardening fixes + Python sync
-findings + the 2 draft issues for `macp-sdk-python`, awaiting explicit go-ahead before
-filing anything there), then resume the paused `/ship` §5 CI watch on PR #162.
+Committed as `7e7a2e1` "fix(hardening): close 6 real bugs from a dedicated
+security/robustness pass" and pushed. Per this workspace's standing repo-scope rule,
+filing an issue in another repo is pre-authorized (unlike a cross-repo push/PR/merge,
+which always needs explicit go-ahead) -- so both drafted Python issues were filed, not
+just reported: **macp-sdk-python#152** (doc snippets + policy_registration.py cleanup
+bug) and **macp-sdk-python#153** (ListSessions/WatchSessions false identity-scoping
+claim + 2 other stale runtime-behavior claims). Nothing written/committed/pushed in
+macp-sdk-python itself -- that still needs explicit go-ahead and wasn't given.
+
+**What's next:** resume the paused `/ship` §5 CI watch on PR #162 (now at `7e7a2e1`).
