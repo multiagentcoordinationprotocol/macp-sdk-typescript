@@ -4099,7 +4099,59 @@ Treating this as converged: no gap item has recurred across rounds, each round's
 were on previously-unchecked surface, and round 3's own sweep covered every remaining
 runnable snippet in the modified files with nothing left open.
 
-**What's next:** proceed to: commit (one commit or a small number of phase-grouped commits)
-on `issue-160-docs-examples-parity`, then hand off to `/ship` (PR, watch CI including
-the real `integration.yml` run that satisfies Phase 6 AC6, merge on green). Nothing in
-this plan has been committed yet. `ASSUMPTIONS.md` needs no new entries.
+## /ship — commits, and the ship-gate verifier's own round
+
+Committed as 2 logical commits on `issue-160-docs-examples-parity`: `6c0e441`
+(docs-only: the 4 new guide pages + streaming.md/security.md/getting-started.md/
+docs/index.md/docs/modes/{decision,proposal,handoff}.md) and `288866d` (examples
+CI-portability + governance-policy fixes + `tests/integration/examples.test.ts` +
+README.md's matching fixes + this file). Both independently full-gate-green.
+
+**Ship-gate verifier (fresh Opus, full `main...HEAD` diff + test output): GAPS** — 6
+items, all docs-only, none in code/tests. The verifier independently re-executed 6 of
+the already-fixed README/example snippets live and confirmed all held, confirmed the
+headline authorization correction 3 ways (empirically, against the runtime's own docs,
+and the anchor), and confirmed `ASSUMPTIONS.md` has zero `UNCONFIRMED` entries — but
+found 6 more doc-accuracy gaps that none of the prior 3 finalization rounds reached,
+because those rounds scoped themselves to README.md + the 4 new/edited mode docs, not
+every doc page that happens to describe the same subject matter:
+1. `docs/guides/testing.md:504` had the *identical* "not run in CI" claim just fixed
+   elsewhere (README.md, `plans/...`'s finalization gap 5) — the last surviving copy.
+2. `docs/guides/testing.md`'s `tests/integration/` tree listing was missing this very
+   plan's own new file, `examples.test.ts`.
+3. `docs/guides/session-discovery.md:150,152` dereferenced `event.session` unguarded in
+   its own "Startup snapshot semantics" sample, contradicting its own documented "can be
+   `undefined`" caveat 7 lines below — the exact bug class fixed in
+   `building-orchestrators.md` during finalization, just never back-ported to the page
+   that invariant actually lives on.
+4. `building-orchestrators.md`'s Supervisor pattern intro claimed `listSessions()` +
+   `SessionLifecycleWatcher` show "every session a tenant/agent **can see**" —
+   contradicting this plan's own headline Phase 2 correction (both RPCs return **all**
+   sessions to any authenticated identity, no per-identity scoping) in the very sentence
+   introducing the pattern built on that correction.
+5. `README.md`/`docs/modes/handoff.md`'s ">= 2 participants" comment was necessary but
+   not sufficient — the initiator must also be among the participants (confirmed live:
+   `['alice','bob']` from a `coordinator` client → `INVALID_ENVELOPE`;
+   `['coordinator','bob']` → OK). Comment widened to state both conditions.
+6. `building-orchestrators.md` cited `BaseSession.sendAndTrack`, but none of the 5
+   built-in mode sessions extend `BaseSession` (it's the ext-mode extension point) —
+   each has its own private `sendAndTrack`. Citation corrected.
+
+All 6 fixed; re-ran the full gate (`check`/`lint`/`format:check`/`build` clean, `test` →
+1247 passed, `test:integration` → 58 passed/6 skipped) plus a scratch type-check of the
+newly-guarded `session-discovery.md` sample. These 6 fixes are committed as their own
+commit on top of the 2 above, rather than amending either — same "never amend, always a
+new commit" discipline as every other round this session.
+
+Also noted by the ship-gate verifier, decided and not acted on: local `main` sits one
+commit (`d6b2ef1`, "archive shipped plan docs; add issue #160 repo map") ahead of
+`origin/main`, predating this feature branch, so the PR against `origin/main` will carry
+it too. Decision (Autonomy ladder: consequential but decidable): include it rather than
+rebase/split — it's small (169 insertions, one file move), already committed, low risk,
+and its content (repo-map notes that fed directly into planning this same issue) is not
+meaningfully unrelated to this PR. Noted in the PR description rather than hidden.
+
+**What's next:** push, open the PR, watch CI (including `integration.yml`, since Phase
+6's AC6 specifically depends on a real green run of it), merge on green.
+`ASSUMPTIONS.md` needs no new entries (confirmed zero `UNCONFIRMED` by the ship-gate
+verifier too).

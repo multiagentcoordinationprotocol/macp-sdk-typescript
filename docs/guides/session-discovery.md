@@ -146,9 +146,9 @@ separate `listSessions()` call:
 
 ```typescript
 for await (const event of new SessionLifecycleWatcher(client).changes()) {
-  if (isSessionCreated(event)) {
+  if (isSessionCreated(event) && event.session) {
     register(event.session); // fires once per pre-existing session, plus every new one
-  } else if (isTerminalSessionLifecycleEvent(event)) {
+  } else if (isTerminalSessionLifecycleEvent(event) && event.session) {
     finalise(event.session);
   }
 }

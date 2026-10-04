@@ -133,8 +133,11 @@ async function deploymentPipeline(client: MacpClient, coordinatorAuth: AuthConfi
 ## Pattern: Supervisor and observer
 
 Use `listSessions()` + `SessionLifecycleWatcher` to build a supervisor that tracks every
-session a tenant/agent can see — no need to pre-register session ids or poll
-`getSession()`:
+session in the registry — no need to pre-register session ids or poll `getSession()`.
+Both calls return **all** sessions to any authenticated identity, not a per-tenant/agent
+view (see [Session Discovery § Authorisation](session-discovery.md#authorisation)) —
+if you need isolation between agent groups, enforce it in front of these RPCs, not by
+relying on scoping that doesn't exist:
 
 ```typescript
 import { Auth, MacpClient, SessionLifecycleWatcher, isSessionCreated, isTerminalSessionLifecycleEvent } from 'macp-sdk-typescript';
@@ -196,7 +199,8 @@ for await (const envelope of stream.responses()) {
 
 > **This feeds `session.projection` from two directions at once.** `session.vote(...)` /
 > `session.commit(...)` / any other `*Session` action already applies its own envelope
-> locally, on `ack.ok`, to `session.projection` (`BaseSession.sendAndTrack`, see
+> locally, on `ack.ok`, to `session.projection` (each mode session's own private
+> `sendAndTrack`, e.g. `DecisionSession.sendAndTrack` — see
 > [Architecture § Projections](architecture.md#projections)). The
 > loop above *also* feeds that same object every envelope the stream delivers, including
 > ones this process just sent through the session — a double apply on the same

@@ -24,7 +24,8 @@ SessionStart → HandoffOffer → HandoffContext? → HandoffAccept/HandoffDecli
 import { HandoffSession } from 'macp-sdk-typescript';
 
 const session = new HandoffSession(client);
-// Handoff's SessionStart itself requires >= 2 participants.
+// Handoff's SessionStart itself requires >= 2 participants, AND the initiator
+// ('coordinator', this client's own identity) must be one of them.
 await session.start({ intent: '...', participants: ['coordinator', 'bob'], ttlMs: 60_000 });
 ```
 

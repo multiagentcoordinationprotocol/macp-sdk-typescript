@@ -183,7 +183,8 @@ Responsibility transfer between participants.
 import { Auth, HandoffSession } from 'macp-sdk-typescript';
 
 const session = new HandoffSession(client);
-// Handoff's SessionStart itself requires >= 2 participants.
+// Handoff's SessionStart itself requires >= 2 participants, AND the initiator
+// ('coordinator', this client's own identity) must be one of them.
 await session.start({ intent: '...', participants: ['coordinator', 'bob'], ttlMs: 60_000 });
 await session.offer({ handoffId: 'h1', targetParticipant: 'bob', scope: 'frontend' });
 await session.addContext({ handoffId: 'h1', contentType: 'application/json', context: buf });
