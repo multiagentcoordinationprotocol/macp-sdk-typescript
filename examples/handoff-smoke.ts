@@ -2,7 +2,7 @@ import { Auth, MacpClient, HandoffSession } from '../src';
 
 async function main(): Promise<void> {
   const client = new MacpClient({
-    address: '127.0.0.1:50051',
+    address: process.env.MACP_RUNTIME_ADDRESS ?? '127.0.0.1:50051',
     secure: false,
     allowInsecure: true, // local dev only; production must use TLS (RFC-MACP-0006 §3)
     auth: Auth.devAgent('coordinator'),
@@ -14,7 +14,7 @@ async function main(): Promise<void> {
   const session = new HandoffSession(client);
   await session.start({
     intent: 'transfer frontend ownership',
-    participants: ['bob'],
+    participants: ['coordinator', 'bob'], // Handoff SessionStart requires >= 2 participants
     ttlMs: 60_000,
   });
 

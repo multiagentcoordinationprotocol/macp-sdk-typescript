@@ -9,12 +9,16 @@ The MACP TypeScript SDK connects TypeScript/Node.js applications to the [Multi-A
 ### Guides
 
 - [Getting Started](guides/getting-started.md) — Install, connect, and run your first session
+- [Core Protocol Concepts](guides/protocol.md) — Planes, envelopes, session lifecycle, and discovery
 - [Architecture](guides/architecture.md) — Three-layer design, projections, and the runtime boundary
 - [Authentication](guides/authentication.md) — Dev agents, bearer tokens, and multi-agent patterns
 - [Error Handling](guides/error-handling.md) — Error classes, ACK semantics, and retry patterns
-- [Streaming](guides/streaming.md) — Session streams, registry watchers, signal watchers, and policy watchers
-- [Policy Framework](guides/policy.md) — Governance policies, rule builders, and policy lifecycle
+- [Streaming](guides/streaming.md) — Session streams, registry watchers, and signal watchers
+- [Session Discovery](guides/session-discovery.md) — Listing sessions, pagination, and the session lifecycle watcher
+- [Policy Framework](guides/policy.md) — Governance policies, rule builders, policy lifecycle, and the policy watcher
 - [Agent Framework](guides/agent-framework.md) — Participant abstraction, strategies, and bootstrap
+- [Direct Agent Auth](guides/direct-agent-auth.md) — Per-agent Bearer identity, the initiator/non-initiator split, and cancellation
+- [Building Orchestrators](guides/building-orchestrators.md) — Orchestration patterns and what to keep out of the SDK
 - [Determinism and Replay](guides/determinism.md) — Version binding, replay testing, and determinism classes
 - [Security](guides/security.md) — TLS defaults, sender identity guardrail, and a production checklist
 - [Testing](guides/testing.md) — Running tests, coverage gates, conformance fixtures, and integration test patterns

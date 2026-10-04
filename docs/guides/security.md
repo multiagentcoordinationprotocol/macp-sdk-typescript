@@ -77,4 +77,4 @@ Runtime-side hardening (TLS keys, audit logging, token storage, rate-limit tunin
 - [ ] Use real bearer tokens — never `Auth.devAgent` in prod
 - [ ] When sending as multiple participants, scope auth per call (see [Authentication § Per-Operation Auth](authentication.md#per-operation-auth-multi-agent))
 - [ ] Wrap network calls in `retrySend()` with a `RetryPolicy` that excludes permanent codes (`FORBIDDEN`, `INVALID_ENVELOPE`)
-- [ ] Use `SessionLifecycleWatcher` for supervisor visibility rather than polling `getSession()` (see [Streaming § Session Lifecycle Watcher](streaming.md#session-lifecycle-watcher))
+- [ ] Use `SessionLifecycleWatcher` for supervisor visibility rather than polling `getSession()` (see [Session Discovery § `SessionLifecycleWatcher` (live stream)](session-discovery.md#sessionlifecyclewatcher-live-stream))

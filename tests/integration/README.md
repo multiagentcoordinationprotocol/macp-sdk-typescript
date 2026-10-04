@@ -3,6 +3,21 @@
 These tests drive the TypeScript SDK against a real MACP runtime. They are
 excluded from `npm test` and run via `npm run test:integration`.
 
+Two files make up the suite:
+
+- `runtime.test.ts` — exercises the SDK's client/session API directly against
+  the runtime.
+- `examples.test.ts` — spawns every `examples/*.ts` file as a real `tsx`
+  subprocess (via `spawnSync`, 25s timeout each) and asserts a clean exit, to
+  close the gap `npm run check:examples` leaves open (that only type-checks
+  them, never runs them). Each example is classified `RUN` (asserted exit 0),
+  `BEARER_GATED` (skipped unless `MACP_TEST_BEARER_ALICE`/`_BOB` are set), or
+  `EXCLUDED` (needs multi-process orchestration this suite doesn't provide —
+  see the in-file comments on `direct-agent-auth-observer.ts` and
+  `agent-policy-aware.ts`). A hung example surfaces as
+  `status=143 signal=null` with a `--- spawn error --- ETIMEDOUT` block in the
+  failure output — that's the 25s budget, not a crash.
+
 CI runs this suite automatically on every push/PR to `main` via
 `.github/workflows/integration.yml`, against the published
 `ghcr.io/multiagentcoordinationprotocol/macp-runtime:latest` image started as

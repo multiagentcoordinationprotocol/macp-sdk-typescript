@@ -48,7 +48,11 @@ Initiates the decision session.
 ```typescript
 await session.start({
   intent: 'choose deployment strategy',
-  participants: ['alice', 'bob', 'carol'],
+  // 'coordinator' sends propose() below with no sender override, so it must be a
+  // declared participant too — Decision mode's default policy rejects a mode action
+  // from a non-participant sender with FORBIDDEN (the initiator itself doesn't need
+  // to be a participant for SessionStart, but every later mode action does).
+  participants: ['coordinator', 'alice', 'bob', 'carol'],
   ttlMs: 300_000,    // 5 minutes (max 24 hours)
   contextId: 'proj-web-app',                 // optional correlation id
   extensions: { note: Buffer.from('...') },  // optional opaque extension payloads

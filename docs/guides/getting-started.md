@@ -43,9 +43,13 @@ import { DecisionSession } from 'macp-sdk-typescript';
 const session = new DecisionSession(client);
 
 // 1. Start a session
+// 'my-agent' (this client's own identity, the implicit sender of propose()
+// below) must be a declared participant -- Decision mode's default
+// governance policy rejects a mode-action from a non-participant sender
+// with FORBIDDEN.
 await session.start({
   intent: 'choose a deployment strategy',
-  participants: ['alice', 'bob'],
+  participants: ['my-agent', 'alice', 'bob'],
   ttlMs: 60_000, // 1 minute
 });
 
@@ -121,6 +125,7 @@ All session constructors accept the same base options:
 
 ## Next Steps
 
+- Read [Core Protocol Concepts](protocol.md) for the planes/envelope/lifecycle model underneath every session
 - Learn about the [Architecture](architecture.md) to understand how sessions and projections work
 - Explore each [Coordination Mode](../modes/decision.md) in detail
 - Set up [Authentication](authentication.md) for production

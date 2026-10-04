@@ -6,6 +6,10 @@
 //
 // Invocation (set MACP_SESSION_ID first, matching the initiator):
 //   MACP_SESSION_ID=$SESSION_ID npx tsx examples/direct-agent-auth-observer.ts
+//
+// Runtime address: MACP_RUNTIME_TARGET, falling back to the MACP_RUNTIME_ADDRESS
+// used by every other example. MACP_RUNTIME_TARGET takes precedence if both are
+// set -- don't leave a stale one exported alongside MACP_RUNTIME_ADDRESS.
 
 import { Auth, DecisionSession, MacpClient } from '../src';
 
@@ -19,12 +23,10 @@ async function main(): Promise<void> {
   const participantId = 'alice';
   const bearerToken = process.env.MACP_ALICE_BEARER;
 
-  const auth = bearerToken
-    ? Auth.bearer(bearerToken, { expectedSender: participantId })
-    : Auth.devAgent(participantId);
+  const auth = bearerToken ? Auth.bearer(bearerToken, { expectedSender: participantId }) : Auth.devAgent(participantId);
 
   const client = new MacpClient({
-    address: process.env.MACP_RUNTIME_TARGET ?? '127.0.0.1:50051',
+    address: process.env.MACP_RUNTIME_TARGET ?? process.env.MACP_RUNTIME_ADDRESS ?? '127.0.0.1:50051',
     secure: false,
     allowInsecure: true,
     auth,

@@ -1,6 +1,7 @@
 // Example: register a governance policy, then run a policy-governed decision session.
 //
-// Requires a running MACP Rust runtime on localhost:50051:
+// Requires a running MACP Rust runtime, by default on localhost:50051
+// (override with MACP_RUNTIME_ADDRESS):
 //   docker run -d --name macp-runtime-test -p 50051:50051 \
 //     -e MACP_BIND_ADDR=0.0.0.0:50051 -e MACP_ALLOW_INSECURE=1 \
 //     -e MACP_MEMORY_ONLY=1 macp-runtime
@@ -20,7 +21,7 @@ import {
 
 async function main(): Promise<void> {
   const client = new MacpClient({
-    address: '127.0.0.1:50051',
+    address: process.env.MACP_RUNTIME_ADDRESS ?? '127.0.0.1:50051',
     secure: false,
     allowInsecure: true, // local dev only; production requires TLS (RFC-MACP-0006 §3)
     auth: Auth.devAgent('coordinator'),
@@ -57,6 +58,12 @@ async function main(): Promise<void> {
     // ── Register with the runtime ────────────────────────────
     const resp = await client.registerPolicy(policy);
     console.log('registered:', resp.ok);
+    // registerPolicy() reports failure via `ok: false`, not a thrown error --
+    // proceeding past a false `ok` would run the session below under whatever
+    // policy (or none) the runtime already had for this id.
+    if (!resp.ok) {
+      throw new Error(`registerPolicy failed: ${resp.error ?? 'unknown error'}`);
+    }
 
     // ── Verify it's listed ───────────────────────────────────
     const listed = await client.listPolicies('macp.mode.decision.v1');
@@ -121,11 +128,21 @@ async function main(): Promise<void> {
 
     const metadata = (await session.metadata()).metadata;
     console.log('state:', metadata.state, 'mode:', metadata.mode);
-
-    // ── Cleanup ──────────────────────────────────────────────
-    await client.unregisterPolicy('policy.deploy.majority-veto');
-    console.log('unregistered policy');
   } finally {
+    // ── Cleanup ──────────────────────────────────────────────
+    // Always best-effort, even if registration failed, never confirmed `ok`,
+    // or a prior killed run already left this id registered -- otherwise a
+    // stale policy survives under the runtime's own rules indefinitely and
+    // the next run's registerPolicy() collides with (or silently inherits) it.
+    // unregisterPolicy() on an id that was never registered is expected to
+    // fail (NOT_FOUND-shaped); swallow it here rather than letting a cleanup
+    // failure mask the original error from the try block above.
+    try {
+      await client.unregisterPolicy('policy.deploy.majority-veto');
+      console.log('unregistered policy');
+    } catch (cleanupErr) {
+      console.error('failed to unregister policy during cleanup:', cleanupErr);
+    }
     client.close();
   }
 }

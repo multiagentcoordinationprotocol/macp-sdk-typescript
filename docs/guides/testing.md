@@ -54,7 +54,8 @@ tests/
 ├── commitment-hash.test.ts     # RFC-MACP-0013 commitment hash: determinism, JCS, D3
 └── integration/
     ├── README.md               # Runtime setup + bearer envs
-    └── runtime.test.ts         # Full-surface tests against a live runtime
+    ├── runtime.test.ts         # Full-surface tests against a live runtime
+    └── examples.test.ts        # Spawns every examples/*.ts as a subprocess, asserts a clean exit
 ```
 
 ## Coverage Gates
@@ -500,9 +501,11 @@ it('decision/Proposal roundtrip', () => {
 ## Integration Tests
 
 Integration tests drive the full SDK against a live MACP runtime in Docker.
-They are **local-only** — excluded from `npm test` (and from CI) via the
-vitest config split, and run with their own config
-(`vitest.integration.config.ts`). See
+They're excluded from `npm test` via the vitest config split and run with
+their own config (`vitest.integration.config.ts`) — but that's a *local
+dev* split, not a CI one: `.github/workflows/integration.yml` runs
+`npm run test:integration` against a live runtime service container on
+every push/PR to `main`, separately from `ci.yml`'s main gate. See
 [`tests/integration/README.md`](../../tests/integration/README.md) for the
 full harness (runtime setup, env vars, and the optional direct-agent-auth
 block gated on `MACP_TEST_BEARER_ALICE` / `MACP_TEST_BEARER_BOB`).

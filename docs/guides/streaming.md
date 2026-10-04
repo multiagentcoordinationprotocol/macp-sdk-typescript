@@ -5,7 +5,7 @@
 `MacpStream` provides a bidirectional gRPC stream for real-time session participation. Use it when you want to receive accepted envelopes as they arrive rather than polling.
 
 ```typescript
-const stream = client.openStream({ auth: Auth.devAgent('observer') });
+const stream = client.openStream({ auth: Auth.devAgent('observer') }); // local dev only; see Security guide for production auth
 
 // Send an envelope through the stream
 await stream.send(envelope);
@@ -179,39 +179,10 @@ for await (const envelope of watcher.signals()) {
 
 ## Session Lifecycle Watcher
 
-`SessionLifecycleWatcher` streams `CREATED` / `RESOLVED` / `EXPIRED` / `SUSPENDED` / `RESUMED` / `CANCELLED` events for every session visible to the calling identity. Each event carries the full `SessionMetadata`, including `contextId` and `extensionKeys`, so supervisor and projection agents can react to outcomes without polling `getSession()`. (`SUSPENDED`, `RESUMED`, and `CANCELLED` were added in proto 0.1.3 — `CANCELLED` is emitted on an explicit `cancelSession`, distinct from `EXPIRED`.)
-
-```typescript
-import { SessionLifecycleWatcher } from 'macp-sdk-typescript';
-
-const watcher = new SessionLifecycleWatcher(client, { auth });
-const controller = new AbortController();
-
-for await (const event of watcher.changes(controller.signal)) {
-  switch (event.eventType) {
-    case 'EVENT_TYPE_CREATED':
-      console.log('session started', event.session?.sessionId);
-      break;
-    case 'EVENT_TYPE_RESOLVED':
-      console.log('session finished', event.session?.sessionId);
-      break;
-    case 'EVENT_TYPE_EXPIRED':
-      console.log('session expired', event.session?.sessionId);
-      break;
-    case 'EVENT_TYPE_SUSPENDED':
-      console.log('session suspended', event.session?.sessionId);
-      break;
-    case 'EVENT_TYPE_RESUMED':
-      console.log('session resumed', event.session?.sessionId);
-      break;
-    case 'EVENT_TYPE_CANCELLED':
-      console.log('session cancelled', event.session?.sessionId);
-      break;
-  }
-}
-```
-
-The watcher pairs with `client.listSessions()` for initial sync + live tail: list once to fetch currently-open sessions, then attach the watcher for incremental updates. `watch(handler)` and `nextChange()` convenience methods mirror the other watchers.
+Session lifecycle events — created / resolved / expired / suspended / resumed /
+cancelled — have their own guide: see [Session Discovery](session-discovery.md). The API
+is identical to `ModeRegistryWatcher` and the other watchers above (`changes(signal?)`,
+`watch(handler)`, `nextChange()`).
 
 ## Combining Streams
 
