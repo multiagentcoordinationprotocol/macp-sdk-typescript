@@ -90,8 +90,11 @@ for await (const event of watcher.changes(controller.signal)) {
 `EVENT_TYPE_SUSPENDED`, `EVENT_TYPE_RESUMED`). The terminal subset (`RESOLVED`, `EXPIRED`,
 `CANCELLED`) is exported as a reusable `TERMINAL_SESSION_LIFECYCLE_EVENT_TYPES` array.
 **Cross-SDK divergence:** `macp-sdk-python` surfaces the *unprefixed* form (`"RESOLVED"`)
-on an `event.event_type` string property; this SDK keeps the prefixed wire form, so a
-membership test against a log written by the other SDK must strip the prefix first.
+on an `event.event_type` string property, via its own equivalent constant
+(`TERMINAL_SESSION_LIFECYCLE_EVENT_NAMES`); this SDK keeps the prefixed wire form
+(`"EVENT_TYPE_RESOLVED"`). A membership test here against a log entry written by the
+other SDK needs the `EVENT_TYPE_` prefix *added* to that entry first — there's nothing to
+strip on this side, since this SDK's values are the ones that already carry it.
 
 Unlike Python's per-event *properties* (`event.is_created`), this SDK exposes the same
 classification as free **functions** that take the event — same capability, idiomatic

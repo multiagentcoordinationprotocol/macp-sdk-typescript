@@ -4165,3 +4165,118 @@ succeeds fine). Full gate green again. Nothing new broken by `b88ecda` itself.
 
 pushed issue-160-docs-examples-parity b88ecdaadd4d663095e2b88b9d7477031a09a608
 PR #162 opened: https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/pull/162
+
+## Hardening pass (user-requested, before CI watch/merge)
+
+User asked for a dedicated hardening review ("this feels like a large change, can we do
+a hardening pass, check for issues, fix bugs, improve") beyond the 5 prior
+correctness-only verification rounds -- security, error handling, resource management,
+maintainability, enterprise-scale concerns. Spawned a fresh Opus subagent with that brief
+plus a sibling Python-SDK sync-check subagent (see below) in parallel, both read-only
+until findings came back.
+
+**Hardening review verdict:** security categories (spawnSync command-injection surface,
+credential/token logging, orphaned processes, cross-contamination with runtime.test.ts)
+all came back clean with empirical proof (reproduced live, not just read). 6 real bugs
+found and fixed:
+
+1. `examples/policy-registration.ts` -- `registerPolicy()` reports failure via `ok:
+   false`, not a thrown error; the old code set `registered = resp.ok` and only ran
+   cleanup `if (registered)`, so a stale leftover policy (e.g. from a killed prior run)
+   made `registered` false, skipped cleanup, and let the session run under a *foreign*
+   policy while still exiting 0. Reproduced live: seeded a stale
+   `policy.deploy.majority-veto`, confirmed the old shape would have silently proceeded;
+   fixed by dropping the `if (registered)` guard (cleanup now always best-effort) and
+   throwing on `resp.ok === false`. Re-verified live: the fixed example now exits 1 with
+   `Error: registerPolicy failed: policy '...' is already registered`, cleanup still ran
+   ("unregistered policy"), and a second run immediately after succeeds cleanly -- the
+   fix self-heals the stale state.
+2. `examples/watch-smoke.ts` -- a non-`CANCELLED` watch-stream error took the `throw
+   error` branch without closing the client, leaking an open stream and hanging the
+   process (verified: un-closed client after a mid-stream throw never exits; a bounded
+   watchdog had to kill it past 20s). Fixed with `finally { client.close(); }`.
+   Re-verified live: pointed at an unreachable address to force a non-CANCELLED
+   `UNAVAILABLE` error -- process now exits in ~1s instead of hanging.
+3. `tests/integration/examples.test.ts` -- `describeFailure()` discarded
+   `result.error` (set by `spawnSync` itself on `ETIMEDOUT`/`ENOBUFS`/`ENOENT`, distinct
+   from the child's own exit), so a hung example surfaced as a bare
+   `status=143 signal=null` with no hint it was a timeout. Fixed: append a `--- spawn
+   error ---` block when `result.error` is set.
+4. Same file -- the two hardcoded-classification assertions (example count, unclassified
+   drop/stale list) had no message argument, so a contributor adding a new example got a
+   bare `expected 13 to be 12` with zero guidance. Fixed: added a message to both
+   pointing at where to classify the new file.
+5. `docs/guides/getting-started.md` -- the "Run Your First Decision" walkthrough itself
+   violated the non-participant-sender rule this PR exists to document:
+   `Auth.devAgent('my-agent')` + `participants: ['alice', 'bob']` + `session.propose()`
+   with no override is the exact `FORBIDDEN` this PR fixed everywhere else. Fixed:
+   `participants: ['my-agent', 'alice', 'bob']` + explanatory comment.
+6. `docs/guides/building-orchestrators.md` -- the multi-stage pipeline pattern built a
+   `DecisionSession` under `coordinatorAuth` with `participants: ['a', 'b', 'c']` (no
+   `'coordinator'`), contradicting its own explanation 50 lines earlier of exactly why
+   that fails. Fixed: added `'coordinator'` to that participant list.
+
+All 6 re-verified live against the Docker runtime; full gate re-run clean (`check`/
+`lint`/`format:check`/`build` clean, `test` -> 1247 passed, `test:integration` -> 58
+passed/6 skipped).
+
+Also acted on from the review's non-blocking follow-up list (cheap, in-scope; deferred
+the rest -- an `examples/*.ts` process.exit-vs-exitCode idiom sweep, and additional
+stdout-content assertions in `examples.test.ts` -- as genuinely separate follow-up work,
+not part of this pass):
+- `examples/proposal-smoke.ts` -- simplified a redundant `sender: 'coordinator'` override
+  with no paired `auth` (the client's own default auth already is `'coordinator'`).
+- `examples/direct-agent-auth-{initiator,observer}.ts` -- documented
+  `MACP_RUNTIME_TARGET`'s precedence over `MACP_RUNTIME_ADDRESS` in the header comment
+  (only these two examples read the former).
+- `tests/integration/README.md` -- added a section naming `examples.test.ts`, its
+  spawn/classify/timeout design, and what a `status=143` actually means.
+- `docs/guides/direct-agent-auth.md`, `streaming.md`, `building-orchestrators.md` --
+  added "local dev only" / production-auth caveats next to bare `Auth.devAgent(...)`
+  calls, matching the caveat discipline already applied to every `allowInsecure`/
+  `secure: false` line in this PR. `direct-agent-auth.md` additionally gained a callout
+  on its `bearerToken ? Auth.bearer(...) : Auth.devAgent(...)` reference template: this
+  fails open (a missing/misspelled bearer env var silently degrades to self-asserted
+  identity with no error), linked to Security's production checklist.
+- Filed **issue #163** (same-repo, no permission needed) for a pre-existing `src/`
+  bug the review's own live probe of `watch-smoke.ts` exposed but this PR doesn't touch:
+  `ModeRegistryWatcher`/`RootsWatcher` cast the gRPC stream straight to the typed shape
+  with no unwrap (`src/watchers.ts:129,161`), but the real wire payload is wrapped under
+  `.change` while `RegistryChanged`/`RootsChanged` (`src/types.ts:358-365`) are declared
+  flat -- every consumer reads `observedAtUnixMs` as `undefined`. Unit tests can't catch
+  it because `tests/unit/watchers.test.ts` fakes the stream with already-unwrapped
+  payloads. Confirmed live (not just by the subagent's report) before filing.
+
+**Python/TypeScript sync check (parallel, user-requested):** a second fresh Opus
+subagent compared this PR's 4 newly-ported doc pages against the Python SDK's current
+sources, and checked whether the governance-policy bug classes just fixed in TS examples
+also exist in Python's. Result: **zero post-capture drift** -- all 4 Python source pages
+predate this port's capture. Python's own 9 `examples/*.py` are already safe on all 6 bug
+classes (its `test_examples_run.py`, issue #49, already executes 8 of them live against
+a real runtime -- this TS PR's `examples.test.ts` is modeled on that same precedent).
+Python's *docs* (never executed by any gate) carry 6 matching rejections of their own,
+headlined by `docs/index.md`'s published Quick Start raising
+`MacpIdentityMismatchError` client-side, plus a wrong claim that `ListSessions`/
+`WatchSessions` are identity-scoped (ground-truthed false against
+`macp-runtime/docs/deployment.md`). Two GitHub issues were drafted for
+`macp-sdk-python` -- **not filed**, since filing there is pre-authorized by workspace
+convention but this report goes to the user first. `tests/parity/contract.json` /
+`make verify-parity` confirmed unaffected (this PR touches no `src/`).
+
+The same subagent also caught **2 real defects in this PR's own ported pages**, both
+fixed here:
+- `docs/guides/session-discovery.md` -- the cross-SDK prefix note had the instruction
+  backwards: it told readers to *strip* the `EVENT_TYPE_` prefix when checking a
+  Python-written log against this SDK's prefixed constant, when the correct direction is
+  to *add* the prefix to the Python value (Python's own values are already unprefixed).
+- `docs/guides/building-orchestrators.md` -- the "double apply" callout on the
+  event-driven orchestrator pattern claimed the snippet demonstrates a double-apply, but
+  the snippet's only self-sent action (`commit()`) `break`s immediately after, so no
+  double-apply actually occurs in that exact code -- this was the Python source's own
+  point (a retraction paragraph dropped during the port). Rewrote the callout to state
+  what the snippet actually does, and warn against copying the shape while assuming the
+  `break` is what protects a double-apply from happening.
+
+**What's next:** commit this pass, report to the user (hardening fixes + Python sync
+findings + the 2 draft issues for `macp-sdk-python`, awaiting explicit go-ahead before
+filing anything there), then resume the paused `/ship` §5 CI watch on PR #162.

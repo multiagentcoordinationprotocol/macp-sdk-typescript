@@ -15,12 +15,7 @@
 //
 // Run: npx tsx examples/agent-policy-aware.ts <session-id>
 
-import {
-  Auth,
-  MODE_DECISION,
-  MacpClient,
-  agent,
-} from '../src';
+import { Auth, MODE_DECISION, MacpClient, agent } from '../src';
 
 async function main(): Promise<void> {
   const client = new MacpClient({

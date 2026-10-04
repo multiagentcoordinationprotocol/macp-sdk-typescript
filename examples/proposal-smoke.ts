@@ -45,10 +45,11 @@ async function main(): Promise<void> {
     sender: 'alice',
     auth: Auth.devAgent('alice'),
   });
+  // No sender/auth override needed here: 'coordinator' is this client's own
+  // default auth identity already.
   await session.accept({
     proposalId: 'p2',
     reason: 'team agreed',
-    sender: 'coordinator',
   });
 
   console.log('active proposals', session.projection.activeProposals().length);

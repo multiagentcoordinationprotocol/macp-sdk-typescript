@@ -27,9 +27,11 @@ async function main(): Promise<void> {
     } else {
       throw error;
     }
+  } finally {
+    // A non-CANCELLED throw above must still close the client -- an open
+    // watch stream left dangling keeps the process alive indefinitely.
+    client.close();
   }
-
-  client.close();
 }
 
 main().catch((error) => {

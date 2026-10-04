@@ -66,9 +66,15 @@ function runExample(name: string): SpawnSyncReturns<string> {
 }
 
 function describeFailure(name: string, result: SpawnSyncReturns<string>): string {
+  // `result.error` is set by spawnSync itself (ETIMEDOUT past the 25s budget,
+  // ENOBUFS past the 1MB default maxBuffer, ENOENT, ...) rather than by the
+  // child's own exit -- status/signal alone don't say a timeout happened.
+  const spawnError = result.error
+    ? `\n--- spawn error ---\n${result.error.code}: ${result.error.message} (25s budget)`
+    : '';
   return (
     `${name} exited with status=${result.status} signal=${result.signal}\n` +
-    `--- stdout ---\n${result.stdout}\n--- stderr ---\n${result.stderr}`
+    `--- stdout ---\n${result.stdout}\n--- stderr ---\n${result.stderr}${spawnError}`
   );
 }
 
@@ -77,7 +83,10 @@ describe('example execution', () => {
     // Not >= : this repo's example count is fixed and known. A new file
     // showing up here must be deliberately classified below, not just
     // tolerated by a loose inequality.
-    expect(ALL_EXAMPLES.length).toBe(12);
+    expect(
+      ALL_EXAMPLES.length,
+      'A new examples/*.ts file was added -- classify it in RUN, BEARER_GATED, or EXCLUDED below, then bump this count',
+    ).toBe(12);
   });
 
   it('every example is classified into RUN, BEARER_GATED, or EXCLUDED', () => {
@@ -85,7 +94,11 @@ describe('example execution', () => {
     const actual = new Set(ALL_EXAMPLES);
     const unclassified = ALL_EXAMPLES.filter((f) => !classified.has(f));
     const stale = [...classified].filter((f) => !actual.has(f));
-    expect({ unclassified, stale }).toEqual({ unclassified: [], stale: [] });
+    expect(
+      { unclassified, stale },
+      'unclassified: add the file to RUN, BEARER_GATED, or EXCLUDED above. ' +
+        'stale: remove the deleted/renamed file from whichever list still names it.',
+    ).toEqual({ unclassified: [], stale: [] });
   });
 
   it('every exclusion has a non-empty reason', () => {

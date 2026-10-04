@@ -31,7 +31,7 @@ async function runDecision(
   participants: string[],
   proposals: Array<{ proposalId: string; option: string; rationale: string }>,
 ): Promise<{ status: 'resolved' | 'cancelled'; winner?: string }> {
-  const auth = Auth.devAgent('orchestrator');
+  const auth = Auth.devAgent('orchestrator'); // local dev only; see Security guide for production auth
   const session = new DecisionSession(client, { auth });
   // The orchestrator is the implicit sender of propose()/commit() below (via the
   // session's own `auth`), and Decision mode's default governance policy requires
@@ -93,8 +93,15 @@ import { DecisionSession, QuorumSession, TaskSession, type AuthConfig, type Macp
 async function deploymentPipeline(client: MacpClient, coordinatorAuth: AuthConfig): Promise<void> {
   // Stage 1: Decision — majorityWinner() resolves to a proposalId, not a deployable
   // artifact; look up what that proposal actually proposed before using it downstream.
+  // 'coordinator' (coordinatorAuth's identity) must be a declared participant here too
+  // -- see the "Policy-driven decision orchestrator" pattern above for why: it's the
+  // implicit sender of the propose()/commit() calls elided below.
   const decision = new DecisionSession(client, { auth: coordinatorAuth });
-  await decision.start({ intent: 'pick version', participants: ['a', 'b', 'c'], ttlMs: 60_000 });
+  await decision.start({
+    intent: 'pick version',
+    participants: ['coordinator', 'a', 'b', 'c'],
+    ttlMs: 60_000,
+  });
   // ... proposals, votes, commit ...
   const winningProposalId = decision.projection.majorityWinner();
 
@@ -197,18 +204,26 @@ for await (const envelope of stream.responses()) {
 }
 ```
 
-> **This feeds `session.projection` from two directions at once.** `session.vote(...)` /
+> **`session.projection` can be fed from two directions at once — and it's safe when it
+> happens, but this exact snippet never actually triggers it.** `session.vote(...)` /
 > `session.commit(...)` / any other `*Session` action already applies its own envelope
 > locally, on `ack.ok`, to `session.projection` (each mode session's own private
 > `sendAndTrack`, e.g. `DecisionSession.sendAndTrack` — see
-> [Architecture § Projections](architecture.md#projections)). The
-> loop above *also* feeds that same object every envelope the stream delivers, including
-> ones this process just sent through the session — a double apply on the same
-> projection instance.
+> [Architecture § Projections](architecture.md#projections)). A loop like the one above
+> that *also* feeds that same object every envelope the stream delivers would normally
+> see that self-sent envelope a second time when the stream echoes it back — but here the
+> only self-sent action is `commit()`, and the very next line `break`s, so the loop exits
+> before the stream ever gets a chance to redeliver that Commitment. The votes applied via
+> `applyEnvelope` above it are other participants' envelopes, received, not sent by this
+> process, so they were never double-fed either.
 >
-> **This is safe.** `BaseProjection.applyEnvelope` is idempotent on `messageId`
-> (RFC-MACP-0006 §3.2) — applying the same envelope twice is a no-op, so the double apply
-> above never corrupts `votes`, `transcript`, or any other derived state. See
+> **Don't copy the shape and assume the `break` is what protects you.** Remove it — e.g.
+> to keep observing after commit, or because this orchestrator also calls `session.vote()`
+> on behalf of participants it manages — and the double-apply this callout describes
+> becomes real on the next loop iteration. What actually makes that safe, whenever it does
+> happen, is that `BaseProjection.applyEnvelope` is idempotent on `messageId` (RFC-MACP-0006
+> §3.2) — applying the same envelope twice is a no-op, so it never corrupts `votes`,
+> `transcript`, or any other derived state. See
 > [Projections § Design intent: shared projection instance](../api/projections.md#design-intent-shared-projection-instance) for
 > why this topology is reachable at all: `Participant` and the mode session it wraps
 > deliberately share one projection instance, so the local apply-on-ACK and a later

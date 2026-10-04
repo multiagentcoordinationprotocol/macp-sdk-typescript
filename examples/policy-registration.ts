@@ -27,7 +27,6 @@ async function main(): Promise<void> {
     auth: Auth.devAgent('coordinator'),
   });
 
-  let registered = false;
   try {
     const init = await client.initialize();
     console.log('runtime:', init.runtimeInfo?.name);
@@ -58,8 +57,13 @@ async function main(): Promise<void> {
 
     // ── Register with the runtime ────────────────────────────
     const resp = await client.registerPolicy(policy);
-    registered = resp.ok;
     console.log('registered:', resp.ok);
+    // registerPolicy() reports failure via `ok: false`, not a thrown error --
+    // proceeding past a false `ok` would run the session below under whatever
+    // policy (or none) the runtime already had for this id.
+    if (!resp.ok) {
+      throw new Error(`registerPolicy failed: ${resp.error ?? 'unknown error'}`);
+    }
 
     // ── Verify it's listed ───────────────────────────────────
     const listed = await client.listPolicies('macp.mode.decision.v1');
@@ -126,15 +130,18 @@ async function main(): Promise<void> {
     console.log('state:', metadata.state, 'mode:', metadata.mode);
   } finally {
     // ── Cleanup ──────────────────────────────────────────────
-    // Always run, even on a mid-session failure — otherwise the policy id
-    // stays registered and the next run's registerPolicy() collides with it.
-    if (registered) {
-      try {
-        await client.unregisterPolicy('policy.deploy.majority-veto');
-        console.log('unregistered policy');
-      } catch (cleanupErr) {
-        console.error('failed to unregister policy during cleanup:', cleanupErr);
-      }
+    // Always best-effort, even if registration failed, never confirmed `ok`,
+    // or a prior killed run already left this id registered -- otherwise a
+    // stale policy survives under the runtime's own rules indefinitely and
+    // the next run's registerPolicy() collides with (or silently inherits) it.
+    // unregisterPolicy() on an id that was never registered is expected to
+    // fail (NOT_FOUND-shaped); swallow it here rather than letting a cleanup
+    // failure mask the original error from the try block above.
+    try {
+      await client.unregisterPolicy('policy.deploy.majority-veto');
+      console.log('unregistered policy');
+    } catch (cleanupErr) {
+      console.error('failed to unregister policy during cleanup:', cleanupErr);
     }
     client.close();
   }

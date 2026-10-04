@@ -35,7 +35,7 @@ interface BootstrapPayload {
   auth_token?: string;
   agent_id?: string; // dev-mode identity override; defaults to participant_id when unset
   secure?: boolean;
-  allow_insecure?: boolean;
+  allow_insecure?: boolean; // local dev only; production requires TLS (see Security guide)
   participants?: string[];
   initiator?: {
     session_start: {
@@ -73,6 +73,17 @@ The two patterns below are **deliberately hand-rolled, not `fromBootstrap()`-bas
 they build `Auth`, `MacpClient`, and `DecisionSession` directly from environment
 variables, which is a useful minimal reference for understanding what `fromBootstrap()`
 automates, or for a script that doesn't want the full `Participant` abstraction.
+
+> **This template fails open.** Both patterns below use
+> `bearerToken ? Auth.bearer(...) : Auth.devAgent(participantId)` — if the expected bearer
+> env var (`MACP_INITIATOR_BEARER`, `MACP_ALICE_BEARER`) is unset or misspelled,
+> `bearerToken` is `undefined` and the agent silently falls back to self-asserted
+> `Auth.devAgent` identity instead of erroring. That's convenient for local dev (the same
+> code runs with or without real credentials) but means a missing env var in production
+> degrades verified bearer auth to an unverified identity claim with no warning. See
+> [Security § SDK-side production checklist](security.md#sdk-side-production-checklist) —
+> "never `Auth.devAgent` in prod" — before deploying this pattern; a production variant
+> should throw if `bearerToken` is unset rather than falling back.
 
 ## Initiator agent
 

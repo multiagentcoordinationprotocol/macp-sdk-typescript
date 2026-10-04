@@ -5,7 +5,7 @@
 `MacpStream` provides a bidirectional gRPC stream for real-time session participation. Use it when you want to receive accepted envelopes as they arrive rather than polling.
 
 ```typescript
-const stream = client.openStream({ auth: Auth.devAgent('observer') });
+const stream = client.openStream({ auth: Auth.devAgent('observer') }); // local dev only; see Security guide for production auth
 
 // Send an envelope through the stream
 await stream.send(envelope);
