@@ -3630,8 +3630,8 @@ single-phase, no code/behavior change):
   4c633e0, df1c6a2, and the full issue-150-154-fixes/issue-140/issue-138/issue-139-146
   plans above) already updated the matching `docs/*.md` file in the same commit, caught by
   this project's own fresh-Opus implementation gates. No backlog there.
-- 23/25 `docs/*.md` files already cite the RFC repo
-  (`multiagentcoordinationprotocol/rfcs`), 17/25 cite the runtime repo
+- 25/27 `docs/*.md` files already cite the RFC repo
+  (`multiagentcoordinationprotocol/rfcs`), 17/27 cite the runtime repo
   (`macp-runtime/docs`), and `docs/index.md`'s "Related documentation" section links
   both rather than duplicating their content. The 2 files citing neither
   (`docs/api/constants.md`, `docs/api/proto-registry.md`) are legitimately SDK-internal
@@ -3668,3 +3668,13 @@ confirmed `git diff main..HEAD --stat` touches only `CHANGELOG.md`/`PROGRESS.md`
 
 Single-phase fix, no finalization-pass seams to test (same precedent as issue-140's
 single-phase plan). Next: `/ship`.
+
+### Ship-gate verification — PASS
+
+Fresh Opus ship-gate verifier (independent of the `/implement`-phase verifier above):
+**PASS**. Independently re-ran the `git merge-base`/`package.json` version check, diffed
+the merged bullets byte-for-byte against `main`, confirmed scope (`CHANGELOG.md`/
+`PROGRESS.md` only), and re-ran `format:check`/`lint` clean. One non-blocking gap found
+and closed: this entry's own doc-citation fractions were miscounted (23/25, 17/25)
+against a stale file-count snapshot — corrected above to 25/27 and 17/27, re-verified by
+`find docs -name "*.md" | wc -l` (27) and re-running both citation greps.
