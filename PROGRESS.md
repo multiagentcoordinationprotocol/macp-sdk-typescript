@@ -3681,3 +3681,8 @@ against a stale file-count snapshot — corrected above to 25/27 and 17/27, re-v
 
 pushed docs/changelog-0.14.1-merge-unreleased ce0da92
 PR #159 opened: https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/pull/159
+CI green (build-and-test Node 22/24, integration, verify-fixtures all pass)
+merged #159 (squash ce9ebe6), branch deleted. No deploy to watch — this repo publishes
+an npm package on GitHub Release creation, not a running service; the next
+release-please PR (whenever it's cut) is a separate, later decision. Monthly docs-audit
+task complete.
