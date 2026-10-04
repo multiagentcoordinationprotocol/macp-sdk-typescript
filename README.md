@@ -43,7 +43,9 @@ await client.initialize();
 const session = new DecisionSession(client);
 await session.start({
   intent: 'pick a deployment strategy',
-  participants: ['alice', 'bob'],
+  // 'coordinator' (this client's own identity) sends propose()/commit() below with no
+  // sender override, so it must be a declared participant too.
+  participants: ['coordinator', 'alice', 'bob'],
   ttlMs: 60_000,
 });
 
@@ -108,7 +110,10 @@ Structured decision with proposals, evaluations, objections, and votes.
 import { DecisionSession } from 'macp-sdk-typescript';
 
 const session = new DecisionSession(client);
-await session.start({ intent: '...', participants: ['alice'], ttlMs: 60_000 });
+// 'coordinator' (this client's own identity) sends propose()/vote()/commit() below,
+// so it must be a declared participant — Decision mode's default governance policy
+// rejects a mode action from a non-participant sender with FORBIDDEN.
+await session.start({ intent: '...', participants: ['coordinator', 'alice'], ttlMs: 60_000 });
 await session.propose({ proposalId: 'p1', option: 'A', rationale: '...' });
 await session.evaluate({ proposalId: 'p1', recommendation: 'approve', confidence: 0.9 });
 await session.raiseObjection({ proposalId: 'p1', reason: 'risk', severity: 'high' });
@@ -118,7 +123,7 @@ await session.commit({ action: 'decided', authorityScope: 'team', reason: '...' 
 // Projection queries
 session.projection.voteTotals();                 // { p1: 1 }
 session.projection.majorityWinner();             // 'p1'
-session.projection.hasBlockingObjection('p1');   // true (severity: high)
+session.projection.hasBlockingObjection('p1');   // false (only severity 'critical' blocks)
 ```
 
 ### Proposal Mode
@@ -126,13 +131,17 @@ session.projection.hasBlockingObjection('p1');   // true (severity: high)
 Proposal and counterproposal negotiation.
 
 ```typescript
-import { ProposalSession } from 'macp-sdk-typescript';
+import { Auth, ProposalSession } from 'macp-sdk-typescript';
 
 const session = new ProposalSession(client);
-await session.start({ intent: '...', participants: ['bob'], ttlMs: 60_000 });
+// 'coordinator' sends propose() below, so it must be a declared participant (same
+// FORBIDDEN rule as Decision mode). Proposal mode's default policy also requires
+// *every* participant to accept() before commit() — not just the non-proposing ones.
+await session.start({ intent: '...', participants: ['coordinator', 'bob'], ttlMs: 60_000 });
 await session.propose({ proposalId: 'p1', title: 'Plan A', summary: '...' });
 await session.counterPropose({ proposalId: 'p2', supersedesProposalId: 'p1', title: 'Plan B' });
 await session.accept({ proposalId: 'p2', reason: 'better' });
+await session.accept({ proposalId: 'p2', reason: 'bob agrees', sender: 'bob', auth: Auth.devAgent('bob') });
 await session.commit({ action: 'proposal.accepted', authorityScope: 'team', reason: '...' });
 
 // Projection queries
@@ -146,14 +155,18 @@ session.projection.isTerminallyRejected('p1');   // false
 Bounded task delegation.
 
 ```typescript
-import { TaskSession } from 'macp-sdk-typescript';
+import { Auth, TaskSession } from 'macp-sdk-typescript';
 
 const session = new TaskSession(client);
 await session.start({ intent: '...', participants: ['worker'], ttlMs: 120_000 });
 await session.requestTask({ taskId: 't1', title: 'Build feature', instructions: '...' });
-await session.acceptTask({ taskId: 't1', assignee: 'worker' });
-await session.updateTask({ taskId: 't1', status: 'working', progress: 0.5, message: 'halfway' });
-await session.completeTask({ taskId: 't1', assignee: 'worker', summary: 'done' });
+// The coordinator requests and commits, but every task-side action must be sent by the
+// assignee itself: Task mode's default policy rejects an acceptTask/updateTask/
+// completeTask from any other sender with FORBIDDEN.
+const asWorker = { sender: 'worker', auth: Auth.devAgent('worker') };
+await session.acceptTask({ taskId: 't1', assignee: 'worker', ...asWorker });
+await session.updateTask({ taskId: 't1', status: 'working', progress: 0.5, message: 'halfway', ...asWorker });
+await session.completeTask({ taskId: 't1', assignee: 'worker', summary: 'done', ...asWorker });
 await session.commit({ action: 'task.completed', authorityScope: 'lead', reason: '...' });
 
 // Projection queries
@@ -167,13 +180,21 @@ session.projection.activeTasks();      // []
 Responsibility transfer between participants.
 
 ```typescript
-import { HandoffSession } from 'macp-sdk-typescript';
+import { Auth, HandoffSession } from 'macp-sdk-typescript';
 
 const session = new HandoffSession(client);
-await session.start({ intent: '...', participants: ['bob'], ttlMs: 60_000 });
+// Handoff's SessionStart itself requires >= 2 participants.
+await session.start({ intent: '...', participants: ['coordinator', 'bob'], ttlMs: 60_000 });
 await session.offer({ handoffId: 'h1', targetParticipant: 'bob', scope: 'frontend' });
 await session.addContext({ handoffId: 'h1', contentType: 'application/json', context: buf });
-await session.acceptHandoff({ handoffId: 'h1', acceptedBy: 'bob' });
+// Only the offer's targetParticipant may accept — sender must be 'bob', not the
+// session's own coordinator identity.
+await session.acceptHandoff({
+  handoffId: 'h1',
+  acceptedBy: 'bob',
+  sender: 'bob',
+  auth: Auth.devAgent('bob'),
+});
 await session.commit({ action: 'handoff.accepted', authorityScope: 'team', reason: '...' });
 
 // Projection queries
@@ -186,19 +207,24 @@ session.projection.pendingHandoffs();     // []
 Threshold-based approval voting.
 
 ```typescript
-import { QuorumSession } from 'macp-sdk-typescript';
+import { Auth, QuorumSession } from 'macp-sdk-typescript';
 
 const session = new QuorumSession(client);
 await session.start({ intent: '...', participants: ['alice', 'bob', 'carol'], ttlMs: 60_000 });
 await session.requestApproval({ requestId: 'r1', action: 'deploy', summary: '...', requiredApprovals: 2 });
-await session.approve({ requestId: 'r1', reason: 'ok' });
+// Ballots must come from a declared participant ('coordinator' is not one here), so each
+// approve() needs its own sender. commit() additionally requires the threshold to be met —
+// with requiredApprovals: 2, a single approval makes the runtime reject the Commitment
+// with INVALID_ENVELOPE.
+await session.approve({ requestId: 'r1', reason: 'ok', sender: 'alice', auth: Auth.devAgent('alice') });
+await session.approve({ requestId: 'r1', reason: 'ok', sender: 'bob', auth: Auth.devAgent('bob') });
 await session.commit({ action: 'quorum.approved', authorityScope: 'ops', reason: '...' });
 
 // Projection queries
-session.projection.hasQuorum('r1');              // true/false
-session.projection.approvalCount('r1');          // number
-session.projection.remainingVotesNeeded('r1');   // number
-session.projection.votedSenders('r1');           // string[]
+session.projection.hasQuorum('r1');              // true
+session.projection.approvalCount('r1');          // 2
+session.projection.remainingVotesNeeded('r1');   // 0
+session.projection.votedSenders('r1');           // ['alice', 'bob']
 ```
 
 ## Agent Framework
@@ -412,12 +438,15 @@ npm run format             # Prettier
 npm test                   # Run unit + conformance tests
 npm run test:watch         # Watch mode
 npm run test:coverage      # With coverage (CI enforces thresholds from vitest.config.ts)
-npm run test:integration   # Integration tests (requires Docker runtime; not run in CI)
+npm run test:integration   # Integration tests (requires Docker runtime)
 ```
 
 CI (GitHub Actions) runs type-check, lint, format check, the coverage-gated
 test suite, and the build on Node 22 and 24 for every push and pull
-request, and posts a coverage summary comment on PRs.
+request, and posts a coverage summary comment on PRs. A separate workflow
+(`.github/workflows/integration.yml`) runs `npm run test:integration` against a live
+runtime service container on every pull request too — an example that no longer runs
+cleanly fails that workflow, not just a local check.
 
 ### Integration Tests
 

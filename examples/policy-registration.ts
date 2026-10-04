@@ -1,6 +1,7 @@
 // Example: register a governance policy, then run a policy-governed decision session.
 //
-// Requires a running MACP Rust runtime on localhost:50051:
+// Requires a running MACP Rust runtime, by default on localhost:50051
+// (override with MACP_RUNTIME_ADDRESS):
 //   docker run -d --name macp-runtime-test -p 50051:50051 \
 //     -e MACP_BIND_ADDR=0.0.0.0:50051 -e MACP_ALLOW_INSECURE=1 \
 //     -e MACP_MEMORY_ONLY=1 macp-runtime
@@ -20,12 +21,13 @@ import {
 
 async function main(): Promise<void> {
   const client = new MacpClient({
-    address: '127.0.0.1:50051',
+    address: process.env.MACP_RUNTIME_ADDRESS ?? '127.0.0.1:50051',
     secure: false,
     allowInsecure: true, // local dev only; production requires TLS (RFC-MACP-0006 §3)
     auth: Auth.devAgent('coordinator'),
   });
 
+  let registered = false;
   try {
     const init = await client.initialize();
     console.log('runtime:', init.runtimeInfo?.name);
@@ -56,6 +58,7 @@ async function main(): Promise<void> {
 
     // ── Register with the runtime ────────────────────────────
     const resp = await client.registerPolicy(policy);
+    registered = resp.ok;
     console.log('registered:', resp.ok);
 
     // ── Verify it's listed ───────────────────────────────────
@@ -121,11 +124,18 @@ async function main(): Promise<void> {
 
     const metadata = (await session.metadata()).metadata;
     console.log('state:', metadata.state, 'mode:', metadata.mode);
-
-    // ── Cleanup ──────────────────────────────────────────────
-    await client.unregisterPolicy('policy.deploy.majority-veto');
-    console.log('unregistered policy');
   } finally {
+    // ── Cleanup ──────────────────────────────────────────────
+    // Always run, even on a mid-session failure — otherwise the policy id
+    // stays registered and the next run's registerPolicy() collides with it.
+    if (registered) {
+      try {
+        await client.unregisterPolicy('policy.deploy.majority-veto');
+        console.log('unregistered policy');
+      } catch (cleanupErr) {
+        console.error('failed to unregister policy during cleanup:', cleanupErr);
+      }
+    }
     client.close();
   }
 }

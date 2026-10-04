@@ -3855,3 +3855,251 @@ most consequential, since they change the plan's shape rather than just a detail
   (tsx 4.23.15). `spawnSync` (not `execFileSync`) is the right primitive for
   "exit code without throwing" — already this repo's own convention
   (`tests/unit/fixture-drift-gate.test.ts:59,72`).
+
+## Implementation checkpoint — issue #160, Phases 1-5 (2026-10-04)
+
+**PR strategy:** one PR for all 6 phases — issue #160 is one coherent deliverable (4 doc
+ports + example portability/bug-fixes + 1 new test file), small enough that a single
+`Closes #160` PR reviews better than splitting into 6 fragments.
+
+**Risk tiers:** Phases 1-4 (docs-only) tagged `simple`, batched 2-per-gate (1+2, then
+3+4). Phases 5-6 tagged `complex` (cross a process/network boundary against a live
+runtime; Phase 6 depends on Phase 5), each verified solo.
+
+**Phase 1 (`docs/guides/protocol.md`) + Phase 2 (`docs/guides/session-discovery.md` +
+streaming.md/security.md link fixes) — batched verify, round 1 GAPS (4 + 6 items), fixed,
+round 2 (re-verify shortcut, prior gap list + diff) PASS both.** Verifier tier: fresh Opus
+per round (4 agents total across both batches + both re-verify rounds). Most consequential
+finding: Phase 2's "## Authorisation" section originally claimed `listSessions`/
+`watchSessions` are participant-scoped — backwards per the runtime's own docs
+(`macp-runtime/docs/deployment.md` "Observation-surface authorization": they return ALL
+sessions to any authenticated identity). Also fixed: a dead `architecture.md#why-
+projections-exist` anchor (real heading is `#projections`) that recurred in Phase 4 too
+(shared copy-paste origin), a stale `OPEN → RESOLVED | EXPIRED`-only state-machine
+description, an overly-narrow "already OPEN at subscribe time" snapshot-semantics claim
+(should be "currently in the registry," including not-yet-evicted terminal sessions), and
+several missing anchor fragments/version markers. 3 further minor polish items applied
+after the PASS verdict (non-blocking per the re-verifier, fixed anyway: an unbound `auth`
+reference in a code sample, a misplaced `nextChange()` paragraph callout, retention-window
+wording clarity). Files: `docs/guides/protocol.md` (new), `docs/guides/session-
+discovery.md` (new), `docs/guides/streaming.md`, `docs/guides/security.md`, `docs/
+index.md`.
+
+**Phase 3 (`docs/guides/direct-agent-auth.md`) + Phase 4 (`docs/guides/building-
+orchestrators.md`) — batched verify, round 1 GAPS (4 + 6 items), fixed, round 2 PASS
+both.** Most consequential finding: Phase 4's flagship "Policy-driven decision
+orchestrator" sample called `session.vote({..., sender: participant})` with no `auth`
+override, while the session's own auth is `Auth.devAgent('orchestrator')` — since
+`Auth.devAgent` unconditionally binds `expectedSender` (issue #124), every non-
+orchestrator vote would throw `MacpIdentityMismatchError` at runtime: the sample
+type-checked but could not actually run. This is exactly the class of bug a docs-only
+phase's compile-check (AC2 in Phases 1-4) cannot catch — it proves syntax and types, not
+runtime behavior. Also fixed: Phase 3's `BootstrapPayload` sample was introduced as "its
+real shape" while omitting 7 real fields from `src/agent/runner.ts` (including the
+load-bearing `agent_id`), and its observer sample had silently dropped the dev-mode auth
+fallback and address fallback chain its own sibling initiator sample kept. Files: `docs/
+guides/direct-agent-auth.md` (new), `docs/guides/building-orchestrators.md` (new), `docs/
+index.md`.
+
+**Phase 5 (make examples CI-portable + fix 2 named bugs) — solo verify, PASS.** Delivered
+as planned (`MACP_RUNTIME_ADDRESS` env override on 8 examples, the 3-way fallback on the
+2 `direct-agent-auth-*.ts` examples, `watch-smoke.ts`'s string-comparison fix, `policy-
+registration.ts`'s try/finally cleanup fix) **plus 3 additional bugs found only by
+actually executing every example against a live runtime** (`ghcr.io/
+multiagentcoordinationprotocol/macp-runtime:latest`, the same tag CI's `integration.yml`
+pulls) — none caught by `check:examples`'s type-check, since all are valid-but-wrong
+string values, not type errors:
+1. `decision-smoke.ts`/`proposal-smoke.ts`: `coordinator` (the implicit sender of the
+   first mode action, via the client's default auth) was never a declared `participant`
+   — rejected `FORBIDDEN`. Decision/Proposal mode's default governance policy requires a
+   mode-action's sender to be a participant; Task/Quorum's defaults do not enforce this
+   for their first action (confirmed by isolated probe against the live runtime, not
+   derived from documentation — the default policy's exact rule set isn't written down
+   anywhere in this repo or the runtime's docs that this session found).
+2. `handoff-smoke.ts`: `participants: ['bob']` (1 entry) — Handoff's `SessionStart`
+   itself rejects `INVALID_ENVELOPE` with fewer than 2 participants (confirmed by
+   isolated probe).
+3. `proposal-smoke.ts` (second bug): `commit()` after only `bob` accepted `p2` also
+   failed `INVALID_ENVELOPE` — Proposal mode's default policy requires **every**
+   participant to accept before commit, not just the non-proposing ones (confirmed by
+   isolated probe: adding only `coordinator`'s accept still failed, only alice+coordinator
+   both accepting succeeded).
+
+All 8 runnable examples confirmed exit 0 end-to-end on a fresh container after every fix
+landed. Files: the 10 `examples/*.ts` files listed in the plan's Phase 5 section.
+`tsconfig.examples.json`/`check:examples`, `lint`, `format:check` all stay green
+throughout — none of these are type or lint errors.
+
+**Phase 5 verify gate:** solo Opus verifier, round 1 **PASS** (8/8 ACs confirmed by
+independent re-derivation; diff minimal — 38 insertions/18 deletions across exactly the
+10 named files). 4 non-blocking observations; 1 acted on post-PASS: `policy-
+registration.ts`'s cleanup `finally` could mask the original error (or skip
+`client.close()`) if `unregisterPolicy` itself threw during cleanup — wrapped that one
+call in its own `try`/`catch`. Re-ran `check:examples`/`lint` and the example itself
+against the live container (exit 0, unchanged output) to confirm. The other 3
+observations needed no action (lint not covering `examples/` is a pre-existing gate gap;
+the coordinator-accept-without-explicit-`auth` question resolves correctly via
+`BaseSession.senderFor`'s fallback chain; `task-smoke.ts`/`quorum-smoke.ts` omitting
+`coordinator` is explicitly out of scope, no bug found there).
+
+### Phase 6 (`tests/integration/examples.test.ts`) — **Status: DONE**
+
+- Verifier: solo Opus (complex tier — crosses a process boundary against a live
+  runtime), round 1 **PASS**. All 10 acceptance criteria independently re-derived against
+  actual file/repo state rather than trusted from my own claims — notably AC10's
+  non-vacuity check was independently re-proven by the verifier on a *different* example
+  (`decision-smoke.ts`) than the one I used (`task-smoke.ts`), confirming the test
+  genuinely fails with a useful diagnostic on a broken example, not just on the one case
+  I happened to try. AC6 ("a real `integration.yml` CI run on this phase's PR") is
+  correctly deferred to the PR's actual CI run rather than flagged as a gap — it's
+  unsatisfiable pre-commit by its own wording.
+- 1 actionable gap found and fixed immediately (GAP-1): `env: process.env` on the
+  `spawnSync` call leaked any ambient `MACP_SESSION_ID` from the calling shell into
+  `direct-agent-auth-initiator.ts`'s subprocess (which reads it as an override),
+  producing a false local failure if a developer had just run that example's own
+  documented paired-invocation instructions in the same shell. CI is unaffected
+  (`integration.yml` only sets `MACP_RUNTIME_ADDRESS`), fixed anyway for local-dev
+  robustness: `env: { ...process.env, MACP_SESSION_ID: undefined }`. Re-ran `check`/
+  `lint`/`format:check` (clean) and `test:integration` (58 passed | 6 skipped, unchanged)
+  to confirm.
+- Also independently confirmed by the verifier: no secret (Bearer token) leakage risk in
+  the failure-diagnostic stdout/stderr capture across any of the gated examples; `it.each`
+  cases run sequentially (not concurrently) as the plan assumed; the per-`it()` 30s
+  timeout genuinely fires after the 25s subprocess timeout as intended (proven both
+  directions with a throwaway probe).
+- Files touched: `tests/integration/examples.test.ts` (new), `CLAUDE.md` (+1 Test
+  Structure bullet, local-only — not part of the PR diff; also corrected a stale "not run
+  in CI" claim on the neighboring `runtime.test.ts` bullet while touching this section).
+- Non-blocking observation left as-is: this new file is not covered by `npm run check`
+  (`tsconfig.json` includes only `src/**`) or `npm run lint` (`eslint src/` only) — true
+  of all 42 test files in this repo already, not a Phase 6-specific gap.
+
+### Finalization pass — **Status: DONE**
+
+Whole-feature solo Opus verifier over the cumulative diff (not per-phase) — specifically
+hunting for seams between phases that no single phase's own gate could see, since each
+phase was verified against the code *as it stood at that phase's own gate*, not against
+what later phases changed. **Verdict: GAPS** — 6 findings, all fixed; full gate re-run
+clean afterward. See `plans/issue-160-docs-examples-parity.md`'s "Finalization pass"
+section for the complete per-gap writeup; summary:
+1. **Ship-blocking**: `building-orchestrators.md`'s flagship orchestrator sample shipped
+   the exact `FORBIDDEN` bug Phase 5 found and fixed in the real examples — Phase 4 was
+   verified *before* Phase 5's live-runtime findings existed. Verifier proved the failure
+   by replicating the sample against the live container. Fixed: the sample now always
+   includes `'orchestrator'` in the session's participant list.
+2-3. The Supervisor/observer sample repeated a session-snapshot claim Phase 2's own
+   verifier had already corrected elsewhere in this same plan, and dereferenced
+   `event.session` unguarded, contradicting a caveat documented one page over. Fixed:
+   reworded to match, added a state check before monitoring, guarded `event.session`.
+4. Two pages mis-routed `PolicyWatcher` readers to `streaming.md`, true before Phase 2
+   shrank it, false after. Fixed: now point at `policy.md`'s watcher section.
+5. `README.md` (tracked, ships in the PR) still claimed `test:integration` "not run in
+   CI" — Phase 6's correction of this exact claim had landed only in the gitignored
+   `CLAUDE.md`. Fixed in `README.md` too.
+6. **Scope decision**: `README.md`'s Quick Start snippets and `docs/modes/{decision,
+   proposal,handoff}.md` carry the identical pre-existing participant-list bugs Phase 5
+   fixed in the real example files. Pre-existing, not introduced by this plan — but this
+   plan is the first to prove them wrong, and shipping "we made examples run" while
+   leaving README's own Quick Start broken the same way would be inconsistent. Decided
+   (Autonomy ladder: consequential but decidable) to fix forward using the same
+   already-validated pattern, rather than file separately.
+
+Also fixed, minor/non-blocking: `getting-started.md`'s Next Steps now mentions the new
+`protocol.md`; two example header comments updated for the `MACP_RUNTIME_ADDRESS`
+override; `building-orchestrators.md` gained a `## Related` section pointing at a real
+runnable example (previously cited none, despite the PR's thesis).
+
+**Infra incident during this pass (unrelated to the plan's content):** the local disk
+filled completely mid-session (every `Bash` call, even `df -h`, failed with `ENOSPC`),
+blocking all further work for one user turn. After the user freed space: Docker
+Desktop's daemon had died and needed a full quit+relaunch (`docker.sock` was refusing
+connections even though stale backend processes lingered — killing them and relaunching
+fixed it), and **`node_modules` had been deleted entirely** (most likely as part of
+whatever freed the disk space) — `npm ci` restored it from the committed lockfile in
+~1s. Re-ran the full gate afterward (`check`/`lint`/`format:check`/`build`, `npm test`
+→ 42 files/1247 passed/20 skipped, `test:integration` → 58 passed/6 skipped,
+`test:coverage` → 96.65/90.09/94.74/97.49 vs. 92/84/91/94) — all numbers identical to
+pre-incident, confirming no corruption, just a clean reinstall.
+
+**Re-verify round of the finalization pass (same 6-item gap list, fresh Opus agent):
+GAPS again** — 4 items confirmed closed (1, 2, 3, 5 + all 4 minors), but gap 6's own fix
+was incomplete and introduced one new self-contradiction, both caught by actually
+re-running the *fixed* snippets live rather than trusting them on sight:
+1. **Ship-blocking**: `README.md`'s top-level Quick Start (first code block in the
+   file) still had the exact gap-1-class `FORBIDDEN` bug (`participants: ['alice',
+   'bob']`, implicit `coordinator` sender) — the gap-6 fix touched the Decision mode
+   snippet further down but missed this one, and left it contradicting a sentence the
+   same fix had just added below it. Fixed: added `coordinator` to `participants`.
+2. Gap 6's Handoff fix added the 2nd participant but missed that `acceptHandoff` must
+   be sent by the offer's `targetParticipant` (`bob`), not the implicit `coordinator`
+   sender — still `FORBIDDEN` live. Fixed: added the `sender`/`auth` override.
+3. Gap 4's fix missed a third `PolicyWatcher`→`streaming.md` mis-route, in
+   `docs/index.md`'s own Streaming ToC line. Fixed.
+4. Found independently: README's Decision snippet asserted `hasBlockingObjection('p1')
+   // true (severity: high)` — false, only `'critical'` blocks. Fixed the comment.
+
+Verified by extracting all 4 fixed README snippets into scratch files (deleted after)
+and running them against the live runtime: all exit 0, output matches doc comments
+exactly (`winner= p1`, `hasBlockingObjection false`, `isAccepted p2 true`, `isAccepted=
+true`). Full gate re-run clean (`check`/`lint`/`format:check`/`build`, `test` → 1247
+passed, `test:integration` → 58 passed/6 skipped) — unchanged numbers, no regressions.
+
+**Third re-verify round (same gap list, fresh Opus agent): GAPS** — all 4 of round 2's
+fixes confirmed genuinely closed by live re-execution, and the `PolicyWatcher` routing
+confirmed clean repo-wide (zero lines now route a policy watcher to `streaming.md`;
+`guides/policy.md:119` `## Watching for Policy Changes` backs both deep links). But the
+round found **one new ship-blocking item of the identical class**, by doing what no
+prior round had done: executing *all six* README snippets, not just the ones a fix had
+touched.
+1. **Ship-blocking**: `README.md`'s **Task** and **Quorum** "Coordination Modes"
+   snippets both fail live — `acceptTask` → `FORBIDDEN` (Task), `approve` →
+   `FORBIDDEN` (Quorum). Root cause: gap 6's scope decision covered only
+   Decision/Proposal/Handoff because Phase 5's finding was over-generalized from
+   "Task/Quorum's defaults do not enforce this **for their first action**" (plan `:546`
+   — *correct as written*, and re-confirmed: `requestTask`/`requestApproval` really do
+   succeed from the non-participant `coordinator`) to a blanket Task/Quorum exemption.
+   The *later* actions are gated: Task on `sender == assignee`, Quorum on
+   `sender ∈ participants`. Quorum additionally failed `commit()` with
+   `INVALID_ENVELOPE`, a second independent bug — `requiredApprovals: 2` was never
+   satisfied by the snippet's single `approve()`. Fixed: Task's
+   `acceptTask`/`updateTask`/`completeTask` now carry a `worker` sender (via one
+   `asWorker` spread) and Quorum's snippet has both `alice` and `bob` approvals with
+   explicit senders; both now import `Auth`, and Quorum's four hedged
+   `// true/false`/`// number` projection comments were replaced with the concrete
+   verified values (`true`, `2`, `0`, `['alice', 'bob']`).
+
+`docs/modes/task.md` and `docs/modes/quorum.md` were checked for the same bug and are
+**already correct** (they carry per-call `sender`/`auth` overrides throughout) — which
+is exactly why they are absent from this plan's modified-file list while
+`docs/modes/{decision,proposal,handoff}.md` are present. The defect was README-only.
+
+Verified by transcribing all six README snippets (Quick Start + all five modes)
+verbatim into scratch files, running each against the live runtime, and additionally
+type-checking all six through the real `npm run check:examples` (catching what `tsx`
+alone cannot, since it transpiles without type-checking — the `...asWorker` spread
+type-checks clean under `strict` + `noUncheckedIndexedAccess`). All six exit 0 with
+output matching their doc comments exactly. Scratch files deleted; `git status` back to
+the expected 19 modified + 5 new. Full gate re-run after the fix: `check`/`lint`/
+`format:check`/`build` clean, `test` → 1247 passed/20 skipped, `test:integration` → 58
+passed/6 skipped.
+
+Independently spot-checked by the executor (not just the verifier's self-report):
+re-read `README.md`'s final Task/Quorum/Handoff sections directly, re-extracted the
+Task and Quorum snippets into fresh scratch files, and re-ran them against the live
+runtime myself — both exit 0 with output identical to what's documented
+(`progressOf 1`, `isCompleted true`, `activeTasks []`; `hasQuorum true`,
+`approvalCount 2`, `remainingVotesNeeded 0`, `votedSenders ['alice', 'bob']`) — before
+re-running the full gate one more time myself (`check`/`lint`/`format:check`/`build`
+clean; `test` → 42 files/1247 passed/20 skipped; `test:integration` → 58 passed/6
+skipped) and confirming `git status --porcelain` is exactly the expected 19 modified +
+5 new files with no scratch-file residue. Three consecutive re-verify rounds each found
+a genuine, previously-unexecuted bug — converging only once every runnable snippet
+touched by or adjacent to this plan had actually been executed live, not merely read.
+Treating this as converged: no gap item has recurred across rounds, each round's finds
+were on previously-unchecked surface, and round 3's own sweep covered every remaining
+runnable snippet in the modified files with nothing left open.
+
+**What's next:** proceed to: commit (one commit or a small number of phase-grouped commits)
+on `issue-160-docs-examples-parity`, then hand off to `/ship` (PR, watch CI including
+the real `integration.yml` run that satisfies Phase 6 AC6, merge on green). Nothing in
+this plan has been committed yet. `ASSUMPTIONS.md` needs no new entries.

@@ -7,7 +7,8 @@
 // The session's policyVersion is read in each strategy so stricter policies
 // tighten the rules without any class boilerplate.
 //
-// Requires a running MACP Rust runtime on localhost:50051:
+// Requires a running MACP Rust runtime, by default on localhost:50051
+// (override with MACP_RUNTIME_ADDRESS):
 //   docker run -d --name macp-runtime-test -p 50051:50051 \
 //     -e MACP_BIND_ADDR=0.0.0.0:50051 -e MACP_ALLOW_INSECURE=1 \
 //     -e MACP_MEMORY_ONLY=1 macp-runtime
@@ -23,7 +24,7 @@ import {
 
 async function main(): Promise<void> {
   const client = new MacpClient({
-    address: '127.0.0.1:50051',
+    address: process.env.MACP_RUNTIME_ADDRESS ?? '127.0.0.1:50051',
     secure: false,
     allowInsecure: true,
     auth: Auth.devAgent('voter-bob'),

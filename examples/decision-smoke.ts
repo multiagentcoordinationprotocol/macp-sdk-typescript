@@ -2,7 +2,7 @@ import { Auth, DecisionSession, MacpClient } from '../src';
 
 async function main(): Promise<void> {
   const client = new MacpClient({
-    address: '127.0.0.1:50051',
+    address: process.env.MACP_RUNTIME_ADDRESS ?? '127.0.0.1:50051',
     secure: false,
     allowInsecure: true, // local dev only; production must use TLS (RFC-MACP-0006 §3)
     auth: Auth.devAgent('coordinator'),
@@ -14,7 +14,7 @@ async function main(): Promise<void> {
   const session = new DecisionSession(client);
   await session.start({
     intent: 'pick a deployment',
-    participants: ['alice', 'bob'],
+    participants: ['coordinator', 'alice', 'bob'], // coordinator proposes below, so must be a participant
     ttlMs: 60_000,
   });
   await session.propose({ proposalId: 'p1', option: 'deploy-v2.1', rationale: 'canary checks passed' });

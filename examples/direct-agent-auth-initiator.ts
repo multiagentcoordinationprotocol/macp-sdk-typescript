@@ -29,7 +29,7 @@ async function main(): Promise<void> {
     : Auth.devAgent(participantId);
 
   const client = new MacpClient({
-    address: process.env.MACP_RUNTIME_TARGET ?? '127.0.0.1:50051',
+    address: process.env.MACP_RUNTIME_TARGET ?? process.env.MACP_RUNTIME_ADDRESS ?? '127.0.0.1:50051',
     secure: false,
     allowInsecure: true, // local dev only; production requires TLS
     auth,

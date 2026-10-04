@@ -2,7 +2,7 @@ import { Auth, MacpClient, ModeRegistryWatcher } from '../src';
 
 async function main(): Promise<void> {
   const client = new MacpClient({
-    address: '127.0.0.1:50051',
+    address: process.env.MACP_RUNTIME_ADDRESS ?? '127.0.0.1:50051',
     secure: false,
     allowInsecure: true, // local dev only; production must use TLS (RFC-MACP-0006 §3)
     auth: Auth.devAgent('coordinator'),
@@ -22,7 +22,7 @@ async function main(): Promise<void> {
       console.log('registry changed at', change.observedAtUnixMs);
     }
   } catch (error: unknown) {
-    if ((error as { code?: number }).code === 1) {
+    if ((error as { code?: string }).code === 'CANCELLED') {
       console.log('watch cancelled');
     } else {
       throw error;

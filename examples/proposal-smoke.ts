@@ -2,7 +2,7 @@ import { Auth, MacpClient, ProposalSession } from '../src';
 
 async function main(): Promise<void> {
   const client = new MacpClient({
-    address: '127.0.0.1:50051',
+    address: process.env.MACP_RUNTIME_ADDRESS ?? '127.0.0.1:50051',
     secure: false,
     allowInsecure: true, // local dev only; production must use TLS (RFC-MACP-0006 §3)
     auth: Auth.devAgent('coordinator'),
@@ -14,7 +14,7 @@ async function main(): Promise<void> {
   const session = new ProposalSession(client);
   await session.start({
     intent: 'choose a tech stack',
-    participants: ['alice', 'bob'],
+    participants: ['coordinator', 'alice', 'bob'], // coordinator proposes below, so must be a participant
     ttlMs: 60_000,
   });
 
@@ -34,6 +34,21 @@ async function main(): Promise<void> {
     reason: 'svelte is good',
     sender: 'bob',
     auth: Auth.devAgent('bob'),
+  });
+
+  // The default governance policy requires every participant to accept
+  // before a Proposal-mode session can commit — including the proposer and
+  // the initiator, not just the other participant.
+  await session.accept({
+    proposalId: 'p2',
+    reason: 'agreed, my own proposal',
+    sender: 'alice',
+    auth: Auth.devAgent('alice'),
+  });
+  await session.accept({
+    proposalId: 'p2',
+    reason: 'team agreed',
+    sender: 'coordinator',
   });
 
   console.log('active proposals', session.projection.activeProposals().length);
