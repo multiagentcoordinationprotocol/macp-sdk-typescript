@@ -45,3 +45,44 @@ export const INVALID_REQUEST = 'INVALID_REQUEST';
 export const STREAM_LAGGED = 'STREAM_LAGGED';
 /** GetManifest for an agent this runtime does not host — NOT_FOUND. */
 export const AGENT_NOT_FOUND = 'AGENT_NOT_FOUND';
+
+// Structured POLICY_DENIED denial codes (`PolicyDenial.code`, runtime ≥ 0.9.0;
+// RFC-MACP-0012 §6.2). Open set — names match python-sdk's exports.
+export const DENY_VETO = 'veto';
+export const DENY_VETO_HOLD = 'veto_hold';
+export const DENY_QUORUM_NOT_MET = 'quorum_not_met';
+export const DENY_THRESHOLD_NOT_MET = 'threshold_not_met';
+export const DENY_CONFIDENCE_BELOW_MINIMUM = 'confidence_below_minimum';
+export const DENY_EVALUATION_REQUIRED = 'evaluation_required';
+export const DENY_NO_VOTES = 'no_votes';
+export const DENY_DECLINE_OVER_APPROVAL = 'decline_over_approval';
+export const DENY_DECLINE_NOT_BACKED = 'decline_not_backed';
+export const DENY_CRITERION_NOT_MET = 'criterion_not_met';
+export const DENY_OUTPUT_REQUIRED = 'output_required';
+export const DENY_REASSIGNMENT_NOT_ALLOWED = 'reassignment_not_allowed';
+export const DENY_UNSUPPORTED_SCHEMA_VERSION = 'unsupported_schema_version';
+export const DENY_INVALID_RULES = 'invalid_rules';
+export const DENY_UNSPECIFIED = 'unspecified';
+
+/**
+ * The denial codes the reference evaluator emits. A custom evaluator may send
+ * others — `PolicyDenial.code` passes them through unchanged, so treat a code
+ * not in this set as {@link DENY_UNSPECIFIED}.
+ */
+export const KNOWN_DENY_CODES: ReadonlySet<string> = new Set([
+  DENY_VETO,
+  DENY_VETO_HOLD,
+  DENY_QUORUM_NOT_MET,
+  DENY_THRESHOLD_NOT_MET,
+  DENY_CONFIDENCE_BELOW_MINIMUM,
+  DENY_EVALUATION_REQUIRED,
+  DENY_NO_VOTES,
+  DENY_DECLINE_OVER_APPROVAL,
+  DENY_DECLINE_NOT_BACKED,
+  DENY_CRITERION_NOT_MET,
+  DENY_OUTPUT_REQUIRED,
+  DENY_REASSIGNMENT_NOT_ALLOWED,
+  DENY_UNSUPPORTED_SCHEMA_VERSION,
+  DENY_INVALID_RULES,
+  DENY_UNSPECIFIED,
+]);

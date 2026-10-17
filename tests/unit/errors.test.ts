@@ -1,4 +1,6 @@
 import { describe, it, expect } from 'vitest';
+import * as constants from '../../src/constants';
+import { KNOWN_DENY_CODES } from '../../src/constants';
 import {
   MacpSdkError,
   MacpTransportError,
@@ -234,7 +236,27 @@ describe('Error classes', () => {
       expect(parsed.denials).toEqual([
         { code: 'vendor_custom', message: 'custom rule', participants: [] },
         { code: 'unspecified', message: 'no code', participants: ['agent://p'] },
+        { code: 'veto', message: '', participants: [] },
       ]);
+    });
+
+    it('keeps a denial whose message is missing or not a string, with message "" (issue #168)', () => {
+      const parsed = parseErrorDetails(
+        JSON.stringify({ denials: [{ code: 'veto', message: 7, participants: ['agent://x'] }, { participants: [] }] }),
+      );
+      expect(parsed.denials).toEqual([
+        { code: 'veto', message: '', participants: ['agent://x'] },
+        { code: 'unspecified', message: '', participants: [] },
+      ]);
+    });
+
+    it('KNOWN_DENY_CODES holds exactly the 15 DENY_* constants (issue #168)', () => {
+      const denyConstants = Object.entries(constants)
+        .filter(([name]) => name.startsWith('DENY_'))
+        .map(([, value]) => value);
+      expect(denyConstants).toHaveLength(15);
+      expect([...KNOWN_DENY_CODES].sort()).toEqual([...denyConstants].sort());
+      expect(KNOWN_DENY_CODES.has('vendor_custom')).toBe(false);
     });
 
     it.each([
