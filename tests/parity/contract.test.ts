@@ -22,6 +22,10 @@ import {
   INTERNAL_ERROR,
   INVALID_ENVELOPE,
   INVALID_POLICY_DEFINITION,
+  REGISTRY_READ_ONLY,
+  INVALID_REQUEST,
+  STREAM_LAGGED,
+  AGENT_NOT_FOUND,
   INVALID_SESSION_ID,
   MACP_VERSION,
   MODE_MULTI_ROUND,
@@ -58,7 +62,7 @@ function snakeToLowerCamel(name: string): string {
 }
 
 describe('parity contract (tests/parity/contract.json)', () => {
-  it('pins contract_version 1.3.0 — a version bump means re-reading this whole file', () => {
+  it('pins contract_version 1.4.0 — a version bump means re-reading this whole file', () => {
     // Not a manifest-content assertion: a tripwire so a future contract_version
     // bump (MINOR or MAJOR, per the manifest's own versioning rule) forces a
     // human to re-review every section below, not just whichever one changed.
@@ -98,7 +102,16 @@ describe('parity contract (tests/parity/contract.json)', () => {
     // SDK-side counterpart to assert against — see that section's own
     // `source` field). No other section changed; re-reviewed every section
     // below against the bump regardless.
-    expect(contract.contract_version).toBe('1.3.0');
+    // Bumped 1.3.0 -> 1.4.0 (spec-repo PR #196, merged 2026-10-17 at
+    // 60262b8): MINOR — `error_codes.permanent` gains the four runtime 0.9.0
+    // control-plane codes (`REGISTRY_READ_ONLY`, `INVALID_REQUEST`,
+    // `STREAM_LAGGED`, `AGENT_NOT_FOUND`), already exported from
+    // `src/constants.ts` since PR #164 — the `error_codes` block below now
+    // pins them. No code→status section was added: SDKs pass gRPC statuses
+    // through, and `send()`'s status-name map is only the pre-0.9.0 fallback
+    // when no `macp-error-code` key is present. No other section changed;
+    // re-reviewed every section below against the bump regardless.
+    expect(contract.contract_version).toBe('1.4.0');
   });
 
   describe('protocol', () => {
@@ -148,9 +161,13 @@ describe('parity contract (tests/parity/contract.json)', () => {
       INVALID_SESSION_ID,
       UNKNOWN_POLICY_VERSION,
       INVALID_POLICY_DEFINITION,
+      REGISTRY_READ_ONLY,
+      INVALID_REQUEST,
+      STREAM_LAGGED,
+      AGENT_NOT_FOUND,
     };
 
-    it('exports exactly the 16 permanent codes the manifest pins (order-independent)', () => {
+    it('exports exactly the 20 permanent codes the manifest pins (order-independent)', () => {
       expect(Object.keys(exported).sort()).toEqual([...contract.sections.error_codes.permanent].sort());
       for (const [name, value] of Object.entries(exported)) {
         expect(value, `${name} export`).toBe(name);
