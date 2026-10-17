@@ -2,7 +2,12 @@ import { describe, it, expect } from 'vitest';
 import { createHash } from 'node:crypto';
 import * as path from 'node:path';
 import protobuf from 'protobufjs';
-import { commitmentHash, canonicalizeCommitmentPayload, isCanonicalCommitmentHash } from '../src/commitment-hash';
+import {
+  commitmentHash,
+  canonicalizeCommitmentPayload,
+  isCanonicalCommitmentHash,
+  verifyCommitmentHash,
+} from '../src/commitment-hash';
 import { ProtoRegistry } from '../src/proto-registry';
 import type { CommitmentPayload } from '../src/types';
 
@@ -389,5 +394,137 @@ describe('isCanonicalCommitmentHash', () => {
     for (const input of ['', 'not a hash', 'sha256:', '   ', '\0', 'sha256:' + 'g'.repeat(64)]) {
       expect(() => isCanonicalCommitmentHash(input)).not.toThrow();
     }
+  });
+});
+
+describe('verifyCommitmentHash (RFC-MACP-0013 §6.1)', () => {
+  // Hand-built wire fragments, independent of the reader under test.
+  const tag = (field: number, wireType: number): number[] => varint(field * 8 + wireType);
+  function varint(n: number): number[] {
+    const out: number[] = [];
+    while (n > 127) {
+      out.push((n % 128) | 0x80);
+      n = Math.floor(n / 128);
+    }
+    out.push(n);
+    return out;
+  }
+  const str = (field: number, value: string | number[]): number[] => {
+    const bytes = typeof value === 'string' ? [...Buffer.from(value, 'utf8')] : value;
+    return [...tag(field, 2), ...varint(bytes.length), ...bytes];
+  };
+  const wire = (...parts: number[][]): Uint8Array => Uint8Array.from(parts.flat());
+
+  const base: CommitmentPayload = {
+    commitmentId: 'c1',
+    action: 'decision.approved',
+    authorityScope: 'team',
+    reason: 'ok',
+    modeVersion: '1.0.0',
+    policyVersion: 'policy.default',
+    configurationVersion: 'config.default',
+    outcomePositive: true,
+  };
+  const baseWire = (): number[][] => [
+    str(1, 'c1'),
+    str(2, 'decision.approved'),
+    str(3, 'team'),
+    str(4, 'ok'),
+    str(5, '1.0.0'),
+    str(6, 'policy.default'),
+    str(7, 'config.default'),
+    [...tag(8, 0), 1],
+  ];
+
+  it('match for a well-formed payload and its canonical hash', () => {
+    expect(verifyCommitmentHash(wire(...baseWire()), commitmentHash(base))).toBe('match');
+  });
+
+  it('a zero-length encoding is the all-default payload (hashable, never cannot_verify)', () => {
+    const allDefault = commitmentHash({
+      commitmentId: '',
+      action: '',
+      authorityScope: '',
+      reason: '',
+      modeVersion: '',
+      policyVersion: '',
+      configurationVersion: '',
+      outcomePositive: false,
+    });
+    expect(verifyCommitmentHash(new Uint8Array(0), allDefault)).toBe('match');
+  });
+
+  it.each([
+    ['truncated length-delimited field', wire([...tag(1, 2), 5, 0x61])],
+    ['truncated varint', wire([...tag(8, 0), 0x80])],
+    ['known string field with the varint wire type', wire([...tag(2, 0), 1])],
+    ['bool field with the length-delimited wire type', wire(str(8, 'x'))],
+    ['supersedes with the varint wire type', wire([...tag(9, 0), 1])],
+    ['invalid UTF-8 in a string field', wire(str(2, [0xc3, 0x28]))],
+    ['invalid UTF-8 inside supersedes', wire(str(9, str(1, [0xff])))],
+    ['a start-group', wire([...tag(1, 3)])],
+    ['an end-group', wire([...tag(1, 4)])],
+    ['field number 0', wire([0x02, 0x00])],
+    ['wire type 6', wire([...tag(1, 6)])],
+    ['an unknown payload field (any wire type)', wire(...baseWire(), [...tag(10, 0), 1])],
+    ['an unknown fixed32 field', wire([...tag(12, 5), 0, 0, 0, 0])],
+    ['an unknown supersedes field', wire(str(9, [...str(1, 's0'), ...tag(3, 0), 1]))],
+    ['a varint longer than 10 bytes', wire([...tag(8, 0), ...Array(10).fill(0xff), 0x01])],
+  ])('cannot_verify: %s', (_label, bytes) => {
+    expect(verifyCommitmentHash(bytes, commitmentHash(base))).toBe('cannot_verify');
+  });
+
+  it.each([
+    ['uppercase hex', (h: string) => h.toUpperCase().replace('SHA256:', 'sha256:')],
+    ['SHA256: prefix', (h: string) => h.replace('sha256:', 'SHA256:')],
+    ['no prefix', (h: string) => h.slice('sha256:'.length)],
+    ['leading whitespace', (h: string) => ` ${h}`],
+    ['trailing newline', (h: string) => `${h}\n`],
+    ['empty claim', () => ''],
+  ])('mismatch, never normalized: %s', (_label, mutate) => {
+    expect(verifyCommitmentHash(wire(...baseWire()), mutate(commitmentHash(base)))).toBe('mismatch');
+  });
+
+  it('a repeated scalar field takes the last value', () => {
+    const bytes = wire(...baseWire(), str(4, 'final'), [...tag(8, 0), 0]);
+    expect(verifyCommitmentHash(bytes, commitmentHash({ ...base, reason: 'final', outcomePositive: false }))).toBe(
+      'match',
+    );
+  });
+
+  it('any non-zero varint is a true bool', () => {
+    const bytes = wire(...baseWire().slice(0, 7), [...tag(8, 0), 0x96, 0x01]);
+    expect(verifyCommitmentHash(bytes, commitmentHash(base))).toBe('match');
+  });
+
+  it('repeated supersedes occurrences merge sub-field by sub-field', () => {
+    const h = commitmentHash(base);
+    const bytes = wire(...baseWire(), str(9, str(1, 's0')), str(9, str(2, h)));
+    expect(
+      verifyCommitmentHash(bytes, commitmentHash({ ...base, supersedes: { sessionId: 's0', commitmentHash: h } })),
+    ).toBe('match');
+  });
+
+  it('an empty supersedes is present-but-empty, not absent', () => {
+    const bytes = wire(...baseWire(), str(9, []));
+    const present = commitmentHash({ ...base, supersedes: { sessionId: '', commitmentHash: '' } });
+    expect(verifyCommitmentHash(bytes, present)).toBe('match');
+    expect(verifyCommitmentHash(bytes, commitmentHash(base))).toBe('mismatch');
+  });
+
+  it('keeps a leading BOM in a string field rather than stripping it', () => {
+    const bytes = wire(...baseWire(), str(4, '﻿ok'));
+    expect(verifyCommitmentHash(bytes, commitmentHash({ ...base, reason: '﻿ok' }))).toBe('match');
+    expect(verifyCommitmentHash(bytes, commitmentHash(base))).toBe('mismatch');
+  });
+
+  it('never throws on non-byte wire or a non-string claim', () => {
+    expect(verifyCommitmentHash('not bytes' as never, commitmentHash(base))).toBe('cannot_verify');
+    expect(verifyCommitmentHash(null as never, commitmentHash(base))).toBe('cannot_verify');
+    expect(verifyCommitmentHash(wire(...baseWire()), undefined as never)).toBe('mismatch');
+  });
+
+  it('accepts a Buffer', () => {
+    expect(verifyCommitmentHash(Buffer.from(wire(...baseWire())), commitmentHash(base))).toBe('match');
   });
 });

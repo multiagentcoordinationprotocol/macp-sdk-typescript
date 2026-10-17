@@ -23,7 +23,9 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { describe, it, expect } from 'vitest';
-import { commitmentHash, canonicalizeCommitmentPayload } from '../../src/commitment-hash';
+import { commitmentHash, canonicalizeCommitmentPayload, verifyCommitmentHash } from '../../src/commitment-hash';
+import { MODE_DECISION } from '../../src/constants';
+import { ProtoRegistry } from '../../src/proto-registry';
 import type { CommitmentPayload } from '../../src/types';
 
 // Domain-separation label (RFC-MACP-0013 §4/§5/§7). Not exported by
@@ -48,7 +50,7 @@ interface CmtHashVectorPayload {
   };
 }
 
-/** Wire (snake_case) shape of a `tests/vectors/cmt-hash/*.json` vector file. */
+/** A COMPUTE vector (RFC-MACP-0013 §4): pins every step of hashing `payload`. */
 interface CmtHashVector {
   name: string;
   description: string;
@@ -60,7 +62,18 @@ interface CmtHashVector {
   must_differ_from?: string;
 }
 
+/** A VERIFY vector (RFC-MACP-0013 §6.1): a wire encoding, a claim, and the one outcome a verifier MUST return. */
+interface CmtHashVerifyVector {
+  name: string;
+  description: string;
+  label: string;
+  wire_hex: string;
+  claimed_hash: string;
+  expected_outcome: 'match' | 'mismatch' | 'cannot_verify';
+}
+
 const VECTOR_DIR = path.resolve(__dirname, 'cmt-hash');
+const registry = new ProtoRegistry();
 
 const vectorFiles = fs
   .readdirSync(VECTOR_DIR)
@@ -69,7 +82,13 @@ const vectorFiles = fs
   .filter((f) => /^cmt_hash_.*\.json$/.test(f))
   .sort();
 
-const vectors: CmtHashVector[] = vectorFiles.map((f) => JSON.parse(fs.readFileSync(path.join(VECTOR_DIR, f), 'utf8')));
+const allVectors: Array<CmtHashVector | CmtHashVerifyVector> = vectorFiles.map((f) =>
+  JSON.parse(fs.readFileSync(path.join(VECTOR_DIR, f), 'utf8')),
+);
+// The vector schema's `oneOf` makes the two kinds disjoint: only verify
+// vectors carry `wire_hex`.
+const vectors = allVectors.filter((v): v is CmtHashVector => !('wire_hex' in v));
+const verifyVectors = allVectors.filter((v): v is CmtHashVerifyVector => 'wire_hex' in v);
 
 /**
  * Builds this SDK's camelCase `CommitmentPayload` from a vector's snake_case
@@ -106,13 +125,23 @@ function toCommitmentPayload(payload: CmtHashVectorPayload): CommitmentPayload {
 }
 
 describe('RFC-MACP-0013 commitment hash: canonical spec vectors', () => {
-  it('loaded all 5 canonical vectors', () => {
+  it('loaded all 5 canonical compute vectors', () => {
     expect(vectors.map((v) => v.name)).toEqual([
       'cmt_hash_001_minimal',
       'cmt_hash_002_supersedes',
       'cmt_hash_003_all_empty',
       'cmt_hash_004_empty_supersedes',
       'cmt_hash_005_escapes',
+    ]);
+  });
+
+  it('loaded all 5 canonical verify vectors', () => {
+    expect(verifyVectors.map((v) => v.name)).toEqual([
+      'cmt_hash_006_unknown_field',
+      'cmt_hash_007_mismatch',
+      'cmt_hash_008_noncanonical_claim',
+      'cmt_hash_009_unknown_supersedes_field',
+      'cmt_hash_010_no_prefix',
     ]);
   });
 
@@ -139,6 +168,30 @@ describe('RFC-MACP-0013 commitment hash: canonical spec vectors', () => {
     it('commitmentHash() matches hash', () => {
       const payload = toCommitmentPayload(vector.payload);
       expect(commitmentHash(payload)).toBe(vector.hash);
+    });
+
+    // Vector schema: "verifying its own hash against the payload's wire
+    // encoding is *match*". The wire comes from protobufjs (an independent
+    // encoder), not from the verifier's own reader.
+    it('verifyCommitmentHash(protobuf wire of payload, hash) is match', () => {
+      const wire = registry.encodeKnownPayload(
+        MODE_DECISION,
+        'Commitment',
+        toCommitmentPayload(vector.payload) as unknown as Record<string, unknown>,
+      );
+      expect(verifyCommitmentHash(wire, vector.hash)).toBe('match');
+    });
+  });
+
+  describe.each(verifyVectors)('$name (verify)', (vector) => {
+    it('pins the label this module hardcodes', () => {
+      expect(vector.label).toBe(LABEL);
+    });
+
+    it('verifyCommitmentHash() returns expected_outcome', () => {
+      expect(verifyCommitmentHash(Buffer.from(vector.wire_hex, 'hex'), vector.claimed_hash)).toBe(
+        vector.expected_outcome,
+      );
     });
   });
 
