@@ -5,10 +5,13 @@ import { MacpSessionError } from './errors';
 const UUID_SHAPE_RE = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
 // Strict lowercase UUID v4/v7 (version nibble 4 or 7, RFC 9562 variant 8/9/a/b).
 const UUID_V4V7_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[47][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
-const BASE64URL_RE = /^[A-Za-z0-9_-]{22,}$/;
+// 22–128 chars: the 128 cap is RFC-MACP-0004 §11.2's portability floor, which
+// runtime ≥ 0.9.0 enforces at SessionStart (INVALID_SESSION_ID). The charset is
+// ASCII, so 128 chars == 128 bytes.
+const BASE64URL_RE = /^[A-Za-z0-9_-]{22,128}$/;
 
 /**
- * Validate that `sid` is a lowercase UUID v4/v7 or base64url (22+ chars).
+ * Validate that `sid` is a lowercase UUID v4/v7 or base64url (22–128 chars).
  *
  * Mirrors the runtime's **no-fall-through** rule (issue #108.1, and
  * `macp-sdk-python`'s `validate_session_id`, `validation.py:33-58`, which
@@ -31,7 +34,7 @@ export function validateSessionId(sid: string): void {
     return;
   }
   if (BASE64URL_RE.test(sid)) return;
-  throw new MacpSessionError(`session_id must be a lowercase UUID v4/v7 or base64url (22+ chars), got: ${sid}`);
+  throw new MacpSessionError(`session_id must be a lowercase UUID v4/v7 or base64url (22–128 chars), got: ${sid}`);
 }
 
 const VALID_VOTES = new Set(['APPROVE', 'REJECT', 'ABSTAIN']);

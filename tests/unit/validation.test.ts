@@ -24,7 +24,13 @@ describe('validation', () => {
       expect(() => validateSessionId('550e8400-e29b-41d4-a716-446655440000')).not.toThrow();
     });
 
-    it('accepts base64url (22+ chars)', () => {
+    it('caps base64url at 128 chars (RFC-MACP-0004 §11.2, runtime 0.9.0)', () => {
+      expect(() => validateSessionId('a'.repeat(128))).not.toThrow();
+      expect(() => validateSessionId('a'.repeat(129))).toThrow(MacpSessionError);
+      expect(() => validateSessionId('a'.repeat(129))).toThrow(/22–128 chars/);
+    });
+
+    it('accepts base64url (22–128 chars)', () => {
       expect(() => validateSessionId('abcdefghij1234567890_-')).not.toThrow();
       expect(() => validateSessionId('abcdefghij1234567890_-extra')).not.toThrow();
     });

@@ -206,11 +206,11 @@ bearer) — pre-0.2 code continues to work unchanged.
 | `SESSION_ALREADY_EXISTS` | `send()`'s `SessionStart` collided with an existing session id (mapped from a gRPC `ALREADY_EXISTS`) |
 | `DUPLICATE_MESSAGE` | message_id already accepted |
 | `INVALID_ENVELOPE` | Validation failed or payload invalid |
-| `UNSUPPORTED_PROTOCOL_VERSION` | No mutually supported version |
+| `UNSUPPORTED_PROTOCOL_VERSION` | No mutually supported version — `initialize()` raises `MacpTransportError` (`code: 'INVALID_ARGUMENT'`, `macpErrorCode` set) on runtime ≥ 0.9.0 |
 | `MODE_NOT_SUPPORTED` | Mode or mode version not supported |
 | `PAYLOAD_TOO_LARGE` | Exceeds size limit (default 1MB) |
 | `RATE_LIMITED` | Too many requests |
-| `INVALID_SESSION_ID` | Session ID format invalid |
+| `INVALID_SESSION_ID` | Session ID format invalid, or longer than 128 bytes (runtime ≥ 0.9.0; the SDK checks this client-side) |
 | `INTERNAL_ERROR` | Internal runtime error |
 | `REGISTRY_READ_ONLY` | Register/UnregisterPolicy against a file-loaded registry (runtime ≥ 0.9.0, `FAILED_PRECONDITION`) |
 | `INVALID_REQUEST` | Malformed control-plane request — bad `page_size`/`page_token`, missing descriptor (runtime ≥ 0.9.0, `INVALID_ARGUMENT`) |

@@ -44,7 +44,7 @@ import { agent, MacpClient, Auth, MODE_DECISION } from 'macp-sdk-typescript';
 
 const config: agent.ParticipantConfig = {
   participantId: 'agent-1',
-  // Session ids must be a lowercase UUID v4/v7 or base64url (22+ chars) — a
+  // Session ids must be a lowercase UUID v4/v7 or base64url (22–128 chars) — a
   // UUID-shaped string is never reinterpreted as base64url (runtime's validator)
   sessionId: '550e8400-e29b-41d4-a716-446655440000',
   mode: MODE_DECISION,
@@ -120,7 +120,7 @@ const p2 = agent.fromBootstrap();
 
 | Field | Required | Behaviour |
 |-------|----------|-----------|
-| `session_id` | yes | Lowercase UUID v4/v7 or base64url 22+ chars — a UUID-shaped string is never reinterpreted as base64url (runtime validator). |
+| `session_id` | yes | Lowercase UUID v4/v7 or base64url 22–128 chars — a UUID-shaped string is never reinterpreted as base64url (runtime validator). |
 | `participant_id` | yes | Authenticated sender this agent will use. |
 | `mode` | yes | One of the five standard mode identifiers or an extension mode. |
 | `runtime_address` | yes | gRPC endpoint (`host:port`). Alias: `runtime_url`. |
