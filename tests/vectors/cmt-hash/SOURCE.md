@@ -70,8 +70,12 @@ done now.
 
 ## Contents
 
-Five vectors (`cmt_hash_001_minimal.json` through `cmt_hash_005_escapes.json`) plus
-`vector-schema.json`. Do not hand-edit any file in this directory — refresh it with
+Ten vectors plus `vector-schema.json`: five **compute** vectors
+(`cmt_hash_001_minimal.json` through `cmt_hash_005_escapes.json`, RFC-MACP-0013 §4) and
+five **verify** vectors (`cmt_hash_006_unknown_field.json` through
+`cmt_hash_010_no_prefix.json`, §6.1 — `wire_hex` + `claimed_hash` + `expected_outcome`),
+the latter added by spec commit `59ae57d` (#190, RFC-MACP-0013 1.1.0-draft) and asserted
+against `verifyCommitmentHash`. Do not hand-edit any file in this directory — refresh it with
 `make sync-fixtures` and commit the result, then re-run `make verify-fixtures` to confirm
 zero drift. Note: `make sync-fixtures` copies but never deletes — if a canonical vector is
 renamed or removed upstream, `make verify-fixtures` still reports the orphaned local file

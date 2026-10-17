@@ -6,13 +6,14 @@
 export { Auth, type AuthConfig, type BearerAuthOptions } from './auth';
 export * from './base-session';
 export * from './client';
-// Commitment hash: export `commitmentHash` and `isCanonicalCommitmentHash`.
+// Commitment hash: export `commitmentHash`, `isCanonicalCommitmentHash`, and
+// the RFC-MACP-0013 §6.1 verifier `verifyCommitmentHash`.
 // `canonicalizeCommitmentPayload` is the projection/JCS half of the
 // algorithm — importable from the `./commitment-hash` submodule (as the
 // vector-runner tests do) but kept off the top-level surface to match
 // python-sdk's public API, which does not expose its `canonical_projection`
 // equivalent either.
-export { commitmentHash, isCanonicalCommitmentHash } from './commitment-hash';
+export { commitmentHash, isCanonicalCommitmentHash, verifyCommitmentHash, type VerifyOutcome } from './commitment-hash';
 export * from './constants';
 export * from './decision';
 export * from './envelope';
