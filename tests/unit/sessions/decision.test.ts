@@ -127,6 +127,30 @@ describe('DecisionSession — projection roundtrip', () => {
     expect(decoded).toMatchObject({ severity: 'high' });
   });
 
+  it('raiseObjection() without severity sends an explicit "medium" (runtime 0.9.0 S7 casing)', async () => {
+    const client = makeClient();
+    const session = new DecisionSession(client);
+    const sendSpy = vi.spyOn(client, 'send').mockResolvedValue({ ok: true });
+
+    await session.propose({ proposalId: 'p1', option: 'go' });
+    await session.raiseObjection({ proposalId: 'p1', reason: 'unsafe' });
+
+    const envelope = sendSpy.mock.calls[1]![0] as Envelope;
+    const decoded = client.protoRegistry.decodeKnownPayload(MODE_DECISION, 'Objection', envelope.payload);
+    expect(decoded).toMatchObject({ severity: 'medium' });
+  });
+
+  it('raiseObjection() rejects an explicit empty severity before sending', async () => {
+    const client = makeClient();
+    const session = new DecisionSession(client);
+    const sendSpy = vi.spyOn(client, 'send').mockResolvedValue({ ok: true });
+
+    await expect(session.raiseObjection({ proposalId: 'p1', reason: 'unsafe', severity: '' })).rejects.toThrow(
+      /invalid severity/,
+    );
+    expect(sendSpy).not.toHaveBeenCalled();
+  });
+
   it("issue #108.3: vote({ vote: 'approve' }) puts APPROVE on the encoded payload", async () => {
     const client = makeClient();
     const session = new DecisionSession(client);

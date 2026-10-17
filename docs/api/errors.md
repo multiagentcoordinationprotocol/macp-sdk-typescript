@@ -51,9 +51,27 @@ try {
 `'FAILED_PRECONDITION'`, `'UNAUTHENTICATED'`) when the underlying failure had
 one, mapped via the exported `grpcStatusName()` helper. It lets consumers
 distinguish, for example, watch-stream consumer lag (`RESOURCE_EXHAUSTED` →
-reconnect) from an auth failure (`UNAUTHENTICATED` → don't reconnect), or a
-passive-subscribe resume below a compacted base (`FAILED_PRECONDITION`).
+reconnect) from an auth failure (`UNAUTHENTICATED` → don't reconnect).
 `undefined` for locally-raised transport errors.
+
+### `macpErrorCode` property
+
+`macpErrorCode?: string` is the MACP error-codes registry code (e.g.
+`'SESSION_NOT_FOUND'`, `'RATE_LIMITED'`) read from the status's
+`macp-error-code` trailing metadata (runtime ≥ 0.9.0). Branch on it rather
+than `code` when present — since 0.9.0 the gRPC status follows the registry's
+gRPC column and several codes share one status. Set on unary RPC failures,
+`MacpStream` terminal errors, and watcher stream errors; `undefined` for older
+runtimes and for statuses raised without a registry code.
+`macpErrorCodeFromMetadata(entries)` is the exported helper that reads it.
+
+Since 0.9.0 the control-plane RPCs set it too — e.g. `SESSION_NOT_FOUND` /
+`FORBIDDEN` from `getSession`/`cancelSession`/`suspendSession`/`resumeSession`,
+`UNKNOWN_POLICY_VERSION` from `getPolicy`, `INVALID_REQUEST` from a bad
+`listSessions` page token, `AGENT_NOT_FOUND` from `getManifest`, and
+`STREAM_LAGGED` (status `RESOURCE_EXHAUSTED`) when a stream or watch
+subscriber falls behind — resubscribe with `afterSequence`. Treat an
+unrecognised code by falling back to `code`.
 
 ## MacpTimeoutError
 
@@ -91,6 +109,7 @@ try {
     err.ack.sessionState;  // 'SESSION_STATE_RESOLVED'
     err.failure;           // structured AckFailure record (see below)
     err.grpcMetadata;      // optional gRPC trailing metadata
+    err.macpErrorCode;     // 'macp-error-code' metadata, if any (runtime ≥ 0.9.0)
   }
 }
 ```
@@ -108,8 +127,30 @@ interface AckFailure {
   messageId: string;
   reasons: string[];  // parsed from ack.error.details JSON, falling back to
                       // the 'macp-error-details-bin' gRPC trailing metadata
+  denials: PolicyDenial[]; // structured POLICY_DENIED reasons (runtime ≥ 0.9.0)
+}
+
+interface PolicyDenial {
+  code: string;           // 'veto', 'quorum_not_met', ... — open set; treat
+                          // unknown codes as 'unspecified'
+  message: string;        // no participant ids since 0.9.0
+  participants: string[]; // e.g. a veto's objectors
 }
 ```
+
+`parseErrorDetails(details)` decodes `{ reasons, denials }` from any details
+source (`Buffer`, `Uint8Array`, or string — e.g. an inline stream error's
+`details`) and never throws. See
+[error-handling.md › Structured policy denials](../guides/error-handling.md#structured-policy-denials-runtime--090).
+
+### `macpErrorCode` property
+
+`macpErrorCode?: string` is the `macp-error-code` metadata value when the NACK
+was synthesized from a gRPC status (runtime ≥ 0.9.0). On `send()` it equals
+`failure.code`. The registry-mutation RPCs keep `failure.code:
+'FAILED_PRECONDITION'` for compatibility, so check `macpErrorCode` for the
+precise cause — `REGISTRY_READ_ONLY` when the policy registry is file-loaded
+(`MACP_POLICIES_DIR`). Don't match the message text.
 
 ### Suppressing MacpAckError
 
@@ -170,3 +211,7 @@ bearer) — pre-0.2 code continues to work unchanged.
 | `RATE_LIMITED` | Too many requests |
 | `INVALID_SESSION_ID` | Session ID format invalid |
 | `INTERNAL_ERROR` | Internal runtime error |
+| `REGISTRY_READ_ONLY` | Register/UnregisterPolicy against a file-loaded registry (runtime ≥ 0.9.0, `FAILED_PRECONDITION`) |
+| `INVALID_REQUEST` | Malformed control-plane request — bad `page_size`/`page_token`, missing descriptor (runtime ≥ 0.9.0, `INVALID_ARGUMENT`) |
+| `STREAM_LAGGED` | Stream/watch subscriber fell behind; resubscribe with `afterSequence` (runtime ≥ 0.9.0, `RESOURCE_EXHAUSTED`) |
+| `AGENT_NOT_FOUND` | `getManifest` for an agent this runtime doesn't host (runtime ≥ 0.9.0, `NOT_FOUND`) |

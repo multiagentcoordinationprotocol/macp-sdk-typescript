@@ -53,8 +53,10 @@ await client.registerPolicy(policy);
 > `'FAILED_PRECONDITION'` (inspect via `err.failure.code`, not
 > `MacpTransportError.code` — the gRPC-level rejection is reclassified into the
 > same Ack-error model every NACK uses; see
-> [error-handling.md](error-handling.md#macpackerror)). Check the capability
-> flag before attempting to register:
+> [error-handling.md](error-handling.md#macpackerror)). On runtime ≥ 0.9.0,
+> `err.macpErrorCode === REGISTRY_READ_ONLY` identifies this case exactly —
+> `failure.code` stays `'FAILED_PRECONDITION'` for compatibility. Check the
+> capability flag before attempting to register:
 >
 > ```typescript
 > const init = await client.initialize();

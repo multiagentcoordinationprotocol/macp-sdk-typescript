@@ -197,6 +197,7 @@ export interface DecisionEvaluationPayload {
 export interface DecisionObjectionPayload {
   proposalId: string;
   reason: string;
+  /** `critical` | `high` | `medium` | `low` (case-insensitive; sent lowercase). Defaults to `medium`. */
   severity?: string;
 }
 

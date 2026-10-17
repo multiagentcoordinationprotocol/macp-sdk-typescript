@@ -28,6 +28,15 @@ couldn't express as a normal Ack. `send()` maps a gRPC `ALREADY_EXISTS` to
 handling works unchanged. Every other gRPC status on these calls (and every
 status on every other RPC) is still `MacpTransportError`, not `MacpAckError`.
 
+**Runtime ≥ 0.9.0.** The runtime's gRPC statuses now follow the MACP
+error-codes registry (`POLICY_DENIED`/`FORBIDDEN` → `PERMISSION_DENIED`,
+`SESSION_NOT_FOUND` → `NOT_FOUND`, `INVALID_ENVELOPE` → `INVALID_ARGUMENT`,
+`SESSION_NOT_OPEN` → `FAILED_PRECONDITION`, `RATE_LIMITED` →
+`RESOURCE_EXHAUSTED`, …) and every such status carries the exact registry code
+in a `macp-error-code` metadata key. Because several codes share one status,
+`send()` uses that key as `failure.code` whenever it is present, whatever the
+status; the status-name mapping above is only the fallback for older runtimes.
+
 Contains the full Ack object:
 
 ```typescript
@@ -46,11 +55,41 @@ try {
 ```
 
 For structured logging or persistence, `err.failure` exposes an `AckFailure`
-record (`{ code, message, sessionId, messageId, reasons }`) with the same
-shape as the Python SDK's `MacpAckError.failure`. The `reasons` array is
-parsed from `ack.error.details` (or the `macp-error-details-bin` gRPC
+record (`{ code, message, sessionId, messageId, reasons, denials }`) with the
+same shape as the Python SDK's `MacpAckError.failure`. `reasons` and `denials`
+are parsed from `ack.error.details` (or the `macp-error-details-bin` gRPC
 trailing metadata) when the runtime attaches per-rule rejection reasons —
 e.g. policy denials.
+
+### Structured policy denials (runtime ≥ 0.9.0)
+
+A `POLICY_DENIED` now carries `denials` beside the legacy `reasons` strings:
+
+```json
+{"reasons": ["critical objection veto"],
+ "denials": [{"code": "veto", "message": "critical objection veto", "participants": ["agent://x"]}]}
+```
+
+`reasons` messages no longer embed participant ids (a veto used to end in
+`", from: a, b"`) — read them from `denials[].participants` instead. Branch on
+`denials[].code`: `veto`, `veto_hold`, `quorum_not_met`, `threshold_not_met`,
+`confidence_below_minimum`, `evaluation_required`, `no_votes`,
+`decline_over_approval`, `decline_not_backed`, `criterion_not_met`,
+`output_required`, `reassignment_not_allowed`, `unsupported_schema_version`,
+`invalid_rules`, `unspecified`. The set is open (custom evaluators may add
+codes), so treat an unrecognised code as `unspecified`. Older runtimes send
+`reasons` only, leaving `denials` empty.
+
+```typescript
+if (err instanceof MacpAckError && err.failure.code === 'POLICY_DENIED') {
+  for (const d of err.failure.denials) {
+    if (d.code === 'veto') console.log('vetoed by', d.participants);
+  }
+}
+```
+
+`parseErrorDetails(details)` decodes the same JSON from any source — e.g. an
+inline stream error's `details` — and never throws.
 
 ### Suppressing Auto-Throw
 
@@ -81,9 +120,19 @@ try {
 
 When the underlying failure carried a gRPC status, `err.code` holds the
 status name (e.g. `RESOURCE_EXHAUSTED` for watch-stream consumer lag →
-reconnect; `UNAUTHENTICATED` for an auth failure → do not reconnect;
-`FAILED_PRECONDITION` for a passive-subscribe resume below a compacted
-base). It is absent for locally-raised transport errors.
+reconnect; `UNAUTHENTICATED` for an auth failure → do not reconnect). It is
+absent for locally-raised transport errors.
+
+On runtime ≥ 0.9.0 a runtime-raised MACP error also sets `err.macpErrorCode`
+(from the `macp-error-code` metadata key, e.g. `SESSION_NOT_FOUND`). Prefer it
+over `err.code` whenever it is present: several registry codes share one gRPC
+status (`INVALID_ENVELOPE` and `INVALID_SESSION_ID` are both
+`INVALID_ARGUMENT`), and pre-0.9.0 runtimes reported most of them as
+`FAILED_PRECONDITION`. The control-plane RPCs (`getSession`, `cancelSession`,
+`getPolicy`, `listSessions`, `getManifest`, watches, …) carry it too since
+0.9.0 — e.g. `STREAM_LAGGED` on a lagging watch (resubscribe with
+`afterSequence`), `INVALID_REQUEST` on a bad page token. Fall back to
+`err.code` when the value is a code you don't recognise.
 
 ## MacpSdkError
 
@@ -122,6 +171,10 @@ most often:
 | `POLICY_DENIED` | Governance policy denied the message (e.g. commitment without quorum) |
 | `RATE_LIMITED` | Too many requests |
 | `INTERNAL_ERROR` | Unrecoverable internal runtime error |
+| `REGISTRY_READ_ONLY` | Policy register/unregister against a file-loaded registry — read `MacpAckError.macpErrorCode` (runtime ≥ 0.9.0) |
+| `INVALID_REQUEST` | Malformed control-plane request (runtime ≥ 0.9.0) |
+| `STREAM_LAGGED` | Stream/watch subscriber fell behind — resubscribe with `afterSequence` (runtime ≥ 0.9.0) |
+| `AGENT_NOT_FOUND` | `getManifest` for an agent this runtime doesn't host (runtime ≥ 0.9.0) |
 
 The canonical, complete code list lives in the spec's
 [Common Error Codes](https://github.com/multiagentcoordinationprotocol/multiagentcoordinationprotocol/blob/main/docs/security.md#common-error-codes);

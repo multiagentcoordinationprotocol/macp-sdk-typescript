@@ -6,7 +6,7 @@ import { protoDir } from '@multiagentcoordinationprotocol/proto';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Auth } from '../../src/auth';
 import { MacpClient, MacpStream } from '../../src/client';
-import { MacpSdkError, MacpTimeoutError, MacpTransportError } from '../../src/errors';
+import { MacpSdkError, MacpTimeoutError, MacpTransportError, parseErrorDetails } from '../../src/errors';
 import { _resetLoggingForTests, configureLogging, type LogSink } from '../../src/logging';
 import type { Envelope } from '../../src/types';
 
@@ -27,10 +27,12 @@ const streamResponsePackageDefinition = protoLoader.loadSync(
 const StreamSessionResponseType = (grpc.loadPackageDefinition(streamResponsePackageDefinition) as any).macp.v1
   .StreamSessionResponse;
 
-function realStreamResponse(input: { envelope: Envelope } | { error: { code?: string; message?: string } }): {
+type ErrorFrame = { code?: string; message?: string; sessionId?: string; messageId?: string; details?: Buffer };
+
+function realStreamResponse(input: { envelope: Envelope } | { error: ErrorFrame }): {
   response: 'envelope' | 'error';
   envelope?: Envelope;
-  error?: { code?: string; message?: string };
+  error?: ErrorFrame;
 } {
   return StreamSessionResponseType.deserialize(StreamSessionResponseType.serialize(input));
 }
@@ -187,6 +189,49 @@ describe('MacpStream — data delivery', () => {
     expect(second).toHaveBeenCalledWith(errorChunk.error);
     // Stream is still readable after an inline error.
     await expect(stream.read()).resolves.toEqual(envelope);
+  });
+
+  it('runtime 0.9.0: an inline error frame carries the registry code, rejected message_id and parseable details', () => {
+    const duplex = new FakeDuplex();
+    const stream = makeStream(duplex);
+    const cb = vi.fn();
+    stream.onInlineError(cb);
+
+    const details = Buffer.from(
+      JSON.stringify({
+        reasons: ['quorum not met'],
+        denials: [{ code: 'quorum_not_met', message: 'quorum not met', participants: [] }],
+      }),
+    );
+    duplex.emit(
+      'data',
+      realStreamResponse({
+        error: { code: 'POLICY_DENIED', message: 'PolicyDenied', sessionId: 's-1', messageId: 'm-9', details },
+      }),
+    );
+
+    expect(cb).toHaveBeenCalledTimes(1);
+    const frame = cb.mock.calls[0][0];
+    expect(frame.code).toBe('POLICY_DENIED');
+    expect(frame.messageId).toBe('m-9');
+    expect(frame.sessionId).toBe('s-1');
+    expect(parseErrorDetails(frame.details).denials).toEqual([
+      { code: 'quorum_not_met', message: 'quorum not met', participants: [] },
+    ]);
+  });
+
+  it('runtime 0.9.0: a terminal stream error carries macp-error-code as MacpTransportError.macpErrorCode', async () => {
+    const duplex = new FakeDuplex();
+    const stream = makeStream(duplex);
+    const metadata = new grpc.Metadata();
+    metadata.set('macp-error-code', 'RATE_LIMITED');
+    duplex.emit('error', { code: 8, details: 'slow down', message: '8 RESOURCE_EXHAUSTED', metadata });
+
+    await expect(stream.read()).rejects.toMatchObject({
+      name: 'MacpTransportError',
+      code: 'RESOURCE_EXHAUSTED',
+      macpErrorCode: 'RATE_LIMITED',
+    });
   });
 
   it('logs exactly one warn for an inline error frame', () => {

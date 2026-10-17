@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Auth } from '../../src/auth';
 import { MacpClient } from '../../src/client';
 import { MacpAckError, MacpSdkError, MacpSessionError, MacpTransportError } from '../../src/errors';
+import { AGENT_NOT_FOUND, INVALID_REQUEST, REGISTRY_READ_ONLY, SESSION_NOT_FOUND } from '../../src/constants';
 import type { Ack, Envelope } from '../../src/types';
 import { stubUnary } from './helpers/grpc-stub';
 
@@ -289,6 +290,65 @@ describe('MacpClient.send', () => {
     expect((caught as MacpAckError).failure.reasons).toEqual([]);
   });
 
+  // Runtime 0.9.0 (S13): the gRPC status follows the error-codes registry and
+  // the exact code rides in `macp-error-code` metadata. Several codes share a
+  // status, so on Send that key wins over the legacy status-name map.
+  it.each([
+    ['PERMISSION_DENIED', grpc.status.PERMISSION_DENIED, 'POLICY_DENIED'],
+    ['FAILED_PRECONDITION', grpc.status.FAILED_PRECONDITION, 'SESSION_NOT_OPEN'],
+    ['ALREADY_EXISTS', grpc.status.ALREADY_EXISTS, 'DUPLICATE_MESSAGE'],
+    ['INVALID_ARGUMENT', grpc.status.INVALID_ARGUMENT, 'INVALID_ENVELOPE'],
+  ])(
+    'runtime 0.9.0: Send %s + macp-error-code=%s raises MacpAckError with the registry code',
+    async (_n, code, macp) => {
+      const client = makeClient();
+      const metadata = new grpc.Metadata();
+      metadata.set('macp-error-code', macp);
+      stubUnary(client, 'Send', { code, details: 'rejected', message: 'rejected', metadata }, { fail: true });
+
+      let caught: unknown;
+      try {
+        await client.send(envelope);
+      } catch (err) {
+        caught = err;
+      }
+      expect(caught).toBeInstanceOf(MacpAckError);
+      expect((caught as MacpAckError).failure.code).toBe(macp);
+    },
+  );
+
+  it('runtime 0.9.0: PERMISSION_DENIED POLICY_DENIED exposes structured denials from macp-error-details-bin', async () => {
+    const client = makeClient();
+    const metadata = new grpc.Metadata();
+    metadata.set('macp-error-code', 'POLICY_DENIED');
+    metadata.set(
+      'macp-error-details-bin',
+      Buffer.from(
+        JSON.stringify({
+          reasons: ['critical objection veto'],
+          denials: [{ code: 'veto', message: 'critical objection veto', participants: ['agent://x'] }],
+        }),
+      ),
+    );
+    stubUnary(
+      client,
+      'Send',
+      { code: grpc.status.PERMISSION_DENIED, details: 'PolicyDenied', message: 'nope', metadata },
+      { fail: true },
+    );
+
+    let caught: unknown;
+    try {
+      await client.send(envelope);
+    } catch (err) {
+      caught = err;
+    }
+    expect((caught as MacpAckError).failure.code).toBe('POLICY_DENIED');
+    expect((caught as MacpAckError).failure.denials).toEqual([
+      { code: 'veto', message: 'critical objection veto', participants: ['agent://x'] },
+    ]);
+  });
+
   // Non-vacuity guard against over-broad mapping: other gRPC statuses on
   // Send must still surface as MacpTransportError with .code set.
   it.each(['UNAVAILABLE', 'DEADLINE_EXCEEDED', 'UNAUTHENTICATED'] as const)(
@@ -502,6 +562,45 @@ describe('MacpClient registry-mutation RPCs — gRPC FAILED_PRECONDITION mapping
     },
   );
 
+  it.each(REGISTRY_MUTATION_CALLS)(
+    'runtime 0.9.0: $name keeps failure.code FAILED_PRECONDITION and exposes REGISTRY_READ_ONLY as macpErrorCode',
+    async ({ rpc, invoke }) => {
+      const client = makeClient();
+      const metadata = new grpc.Metadata();
+      metadata.set('macp-error-code', REGISTRY_READ_ONLY);
+      stubUnary(
+        client,
+        rpc,
+        { code: grpc.status.FAILED_PRECONDITION, details: 'read-only registry', message: 'nope', metadata },
+        { fail: true },
+      );
+
+      let caught: unknown;
+      try {
+        await invoke(client);
+      } catch (err) {
+        caught = err;
+      }
+      expect(caught).toBeInstanceOf(MacpAckError);
+      expect((caught as MacpAckError).failure.code).toBe('FAILED_PRECONDITION');
+      expect((caught as MacpAckError).macpErrorCode).toBe(REGISTRY_READ_ONLY);
+    },
+  );
+
+  it('a pre-0.9.0 read-only rejection (no macp-error-code) leaves MacpAckError.macpErrorCode undefined', async () => {
+    const client = makeClient();
+    stubUnary(
+      client,
+      'UnregisterPolicy',
+      { code: grpc.status.FAILED_PRECONDITION, details: 'read-only registry', message: 'nope' },
+      { fail: true },
+    );
+
+    const caught = await client.unregisterPolicy('pol-1').catch((err: unknown) => err);
+    expect(caught).toBeInstanceOf(MacpAckError);
+    expect((caught as MacpAckError).macpErrorCode).toBeUndefined();
+  });
+
   it('issue #107: a registry method given ALREADY_EXISTS (not in its map) still raises MacpTransportError — proves the maps are per-RPC', async () => {
     const client = makeClient();
     stubUnary(
@@ -525,6 +624,60 @@ describe('MacpClient registry-mutation RPCs — gRPC FAILED_PRECONDITION mapping
     }
     expect(caught).toBeInstanceOf(MacpTransportError);
     expect((caught as MacpTransportError).code).toBe('ALREADY_EXISTS');
+  });
+
+  it('runtime 0.9.0: a registry-coded status outside the per-RPC map stays MacpTransportError but carries macpErrorCode', async () => {
+    const client = makeClient();
+    const metadata = new grpc.Metadata();
+    metadata.set('macp-error-code', 'INVALID_POLICY_DEFINITION');
+    stubUnary(
+      client,
+      'RegisterPolicy',
+      { code: grpc.status.INVALID_ARGUMENT, details: 'bad rules', message: 'bad', metadata },
+      { fail: true },
+    );
+
+    let caught: unknown;
+    try {
+      await client.registerPolicy({ policyId: 'p', mode: 'macp.mode.decision.v1', schemaVersion: 1 } as never);
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(MacpTransportError);
+    expect((caught as MacpTransportError).code).toBe('INVALID_ARGUMENT');
+    expect((caught as MacpTransportError).macpErrorCode).toBe('INVALID_POLICY_DEFINITION');
+  });
+});
+
+describe('MacpClient control-plane RPCs — runtime 0.9.0 macp-error-code', () => {
+  it.each([
+    {
+      rpc: 'GetSession',
+      status: grpc.status.NOT_FOUND,
+      code: SESSION_NOT_FOUND,
+      invoke: (c: MacpClient) => c.getSession('s1'),
+    },
+    {
+      rpc: 'ListSessions',
+      status: grpc.status.INVALID_ARGUMENT,
+      code: INVALID_REQUEST,
+      invoke: (c: MacpClient) => c.listSessions(),
+    },
+    {
+      rpc: 'GetManifest',
+      status: grpc.status.NOT_FOUND,
+      code: AGENT_NOT_FOUND,
+      invoke: (c: MacpClient) => c.getManifest('agent://elsewhere'),
+    },
+  ])('$rpc surfaces $code on MacpTransportError.macpErrorCode', async ({ rpc, status, code, invoke }) => {
+    const client = makeClient();
+    const metadata = new grpc.Metadata();
+    metadata.set('macp-error-code', code);
+    stubUnary(client, rpc, { code: status, details: 'x', message: 'x', metadata }, { fail: true });
+
+    const caught = await invoke(client).catch((err: unknown) => err);
+    expect(caught).toBeInstanceOf(MacpTransportError);
+    expect((caught as MacpTransportError).macpErrorCode).toBe(code);
   });
 });
 

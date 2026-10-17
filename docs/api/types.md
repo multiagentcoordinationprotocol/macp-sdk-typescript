@@ -230,7 +230,7 @@ interface ProgressPayload {
 
 - `DecisionProposalPayload` — `{ proposalId, option, rationale?, supportingData? }`
 - `DecisionEvaluationPayload` — `{ proposalId, recommendation, confidence, reason? }`
-- `DecisionObjectionPayload` — `{ proposalId, reason, severity? }`
+- `DecisionObjectionPayload` — `{ proposalId, reason, severity? }` (`severity` defaults to `'medium'`)
 - `DecisionVotePayload` — `{ proposalId, vote, reason? }`
 
 ### Proposal Mode
