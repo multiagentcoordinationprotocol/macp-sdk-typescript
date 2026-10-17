@@ -35,3 +35,13 @@ export const POLICY_DENIED = 'POLICY_DENIED';
 export const INVALID_SESSION_ID = 'INVALID_SESSION_ID';
 export const UNKNOWN_POLICY_VERSION = 'UNKNOWN_POLICY_VERSION';
 export const INVALID_POLICY_DEFINITION = 'INVALID_POLICY_DEFINITION';
+// Control-plane codes added in runtime 0.9.0 (carried in `macp-error-code`
+// metadata; see `MacpTransportError.macpErrorCode` / `MacpAckError.macpErrorCode`).
+/** Register/UnregisterPolicy against a file-loaded (read-only) policy registry — FAILED_PRECONDITION. */
+export const REGISTRY_READ_ONLY = 'REGISTRY_READ_ONLY';
+/** Malformed control-plane request (bad page_size/page_token, missing descriptor, …) — INVALID_ARGUMENT. */
+export const INVALID_REQUEST = 'INVALID_REQUEST';
+/** Stream/watch subscriber fell behind — RESOURCE_EXHAUSTED; resubscribe with `afterSequence`. */
+export const STREAM_LAGGED = 'STREAM_LAGGED';
+/** GetManifest for an agent this runtime does not host — NOT_FOUND. */
+export const AGENT_NOT_FOUND = 'AGENT_NOT_FOUND';

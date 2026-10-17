@@ -98,7 +98,7 @@ Flag an objection against a proposal.
 await session.raiseObjection({
   proposalId: 'p1',
   reason: 'insufficient monitoring coverage',
-  severity: 'high',  // 'low' | 'medium' | 'high' | 'critical' (case-insensitive; only 'critical' blocks)
+  severity: 'high',  // 'low' | 'medium' | 'high' | 'critical' (case-insensitive; defaults to 'medium'; only 'critical' blocks)
   sender: 'bob',
   auth: Auth.devAgent('bob'),
 });
@@ -213,7 +213,11 @@ same sender; it does not accept and overwrite it — see
 [Vote Cardinality](#vote-cardinality) above), commitment authority, and at
 least one proposal before resolution. The SDK validates only field formats
 client-side (vote/recommendation/severity values, confidence range, required
-fields). The
+fields). It also normalises casing: `vote` and `recommendation` are sent
+UPPER_CASE and `severity` lowercase, with an omitted severity sent as an
+explicit `'medium'` — runtime ≥ 0.9.0 (semantics_rev 4) rejects any other
+casing, or an empty severity, with `INVALID_ENVELOPE` instead of defaulting it.
+The
 normative rule set lives in RFC-MACP-0007 §4; the
 [runtime modes guide › Decision Mode](https://github.com/multiagentcoordinationprotocol/macp-runtime/blob/main/docs/modes.md#decision-mode)
 documents validation as implemented, including the NACK codes each rejection

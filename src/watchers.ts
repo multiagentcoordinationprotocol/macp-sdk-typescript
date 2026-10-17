@@ -1,7 +1,7 @@
 import type * as grpc from '@grpc/grpc-js';
 import type { AuthConfig } from './auth';
 import { grpcStatusName, type MacpClient } from './client';
-import { MacpTransportError } from './errors';
+import { MacpTransportError, macpErrorCodeFromMetadata } from './errors';
 import type {
   Envelope,
   PolicyDescriptor,
@@ -65,7 +65,15 @@ function serverStreamToAsyncGenerator<T>(stream: grpc.ClientReadableStream<T>): 
     // WatchSignals with UNAUTHENTICATED (fix auth, do NOT reconnect).
     const code = grpcStatusName((error as grpc.ServiceError).code);
     const serviceErr = error as grpc.ServiceError;
-    const wrapped = new MacpTransportError(serviceErr.details || error.message, code);
+    const wrapped = new MacpTransportError(
+      serviceErr.details || error.message,
+      code,
+      macpErrorCodeFromMetadata(
+        serviceErr.metadata
+          ? serviceErr.metadata.get('macp-error-code').map((value) => ({ key: 'macp-error-code', value }))
+          : undefined,
+      ),
+    );
     queue.push({ error: wrapped });
     if (resolve) {
       resolve();

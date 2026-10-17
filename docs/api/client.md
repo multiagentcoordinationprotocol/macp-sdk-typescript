@@ -77,7 +77,9 @@ A gRPC `ALREADY_EXISTS` or `FAILED_PRECONDITION` on the underlying call also
 throws `MacpAckError` (`failure.code` `'SESSION_ALREADY_EXISTS'` /
 `'POLICY_DENIED'` respectively) rather than `MacpTransportError` — these are
 application-level rejections the runtime couldn't express as a normal Ack.
-Every other gRPC status is still `MacpTransportError`. See
+On runtime ≥ 0.9.0 a `macp-error-code` metadata key on the failure supplies
+`failure.code` directly (any status), since several registry codes share one
+gRPC status. Every other gRPC status is still `MacpTransportError`. See
 [error-handling.md › MacpAckError](../guides/error-handling.md#macpackerror).
 
 ### `getSession(sessionId, options?)`
@@ -457,8 +459,10 @@ Redelivery); the agent framework's `GrpcTransportAdapter` exposes this as its
 `lastSequence` getter, computed exactly this way.
 Ordinals are **stable across log compaction and runtime restart**, and envelopes
 accepted during the subscribe window are never delivered twice. Resuming **below
-a compacted base** fails with `FAILED_PRECONDITION` (inspect via
-`MacpTransportError.code`) rather than silently skipping history.
+a compacted base** is refused rather than silently skipping history: on runtime
+≥ 0.9.0 as an inline `INVALID_ENVELOPE` error frame (see `onInlineError`) with
+the stream left open; on 0.5.0–0.8.x by ending the stream with
+`FAILED_PRECONDITION` (inspect via `MacpTransportError.code`).
 
 Rejects with `MacpSdkError` if the stream has already been closed. The agent
 framework's `GrpcTransportAdapter` calls this automatically after opening the
@@ -499,10 +503,17 @@ failures. The SDK also logs each one at `warn` (via `src/logging.ts`'s
 `logger`/`configureLogging`) before invoking registered callbacks.
 
 ```typescript
-stream.onInlineError(({ code, message }) => {
-  console.warn('inline error', code, message);
+stream.onInlineError(({ code, message, messageId, details }) => {
+  console.warn('inline error', code, message, messageId);
+  if (code === 'POLICY_DENIED') console.warn(parseErrorDetails(details).denials);
 });
 ```
+
+The callback receives an `InlineStreamError` (`code`, `message`, `sessionId`,
+`messageId`, `details`). Since runtime 0.9.0, `code` is the error-codes
+registry code (`INVALID_ENVELOPE`, `POLICY_DENIED`, …) — earlier runtimes put
+the status message text there — and `messageId`/`details` identify the
+rejected envelope and carry the same structured details a unary `Ack` does.
 
 ### `close()`
 

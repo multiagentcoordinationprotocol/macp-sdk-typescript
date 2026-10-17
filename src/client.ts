@@ -12,7 +12,14 @@ import * as protoLoader from '@grpc/proto-loader';
 import { assertSenderMatchesIdentity, authSender, type AuthConfig, metadataFromAuth } from './auth';
 import { POLICY_DENIED, SESSION_ALREADY_EXISTS } from './constants';
 import { buildEnvelope, buildProgressPayload, buildSignalPayload } from './envelope';
-import { MacpAckError, MacpSdkError, MacpSessionError, MacpTimeoutError, MacpTransportError } from './errors';
+import {
+  MacpAckError,
+  MacpSdkError,
+  MacpSessionError,
+  MacpTimeoutError,
+  MacpTransportError,
+  macpErrorCodeFromMetadata,
+} from './errors';
 import { logger } from './logging';
 import { ProtoRegistry } from './proto-registry';
 import { validateProgressScope, validateSignalType } from './validation';
@@ -146,7 +153,22 @@ const STREAM_END = Symbol('stream-end');
 
 type StreamItem = Envelope | Error | typeof STREAM_END;
 
-export type InlineErrorCallback = (error: { code?: string; message?: string }) => void;
+/**
+ * An inline `MACPError` frame on a `StreamSession` stream. Since runtime 0.9.0
+ * `code` is the error-codes registry code (`INVALID_ENVELOPE`,
+ * `POLICY_DENIED`, ...) — before, it held the status message text — and
+ * `messageId`/`details` identify the rejected envelope and carry the same
+ * structured details a unary `Ack` does (decode with `parseErrorDetails`).
+ */
+export interface InlineStreamError {
+  code?: string;
+  message?: string;
+  sessionId?: string;
+  messageId?: string;
+  details?: Buffer;
+}
+
+export type InlineErrorCallback = (error: InlineStreamError) => void;
 
 export class MacpStream {
   private readonly queue = new AsyncQueue<StreamItem>();
@@ -168,12 +190,22 @@ export class MacpStream {
         this.queue.push(envelope);
       } else if (chunk?.error) {
         // Inline application-level error — stream stays open (core.proto).
-        logger.warn('inline stream error', { code: chunk.error.code, message: chunk.error.message });
+        logger.warn('inline stream error', {
+          code: chunk.error.code,
+          message: chunk.error.message,
+          messageId: chunk.error.messageId,
+        });
         for (const cb of this.inlineErrorCallbacks) cb(chunk.error);
       }
     });
     call.on('error', (error: grpc.ServiceError) => {
-      this.queue.push(new MacpTransportError(error.details || error.message, grpcStatusName(error.code)));
+      this.queue.push(
+        new MacpTransportError(
+          error.details || error.message,
+          grpcStatusName(error.code),
+          macpErrorCodeFromMetadata(grpcMetadataEntries(error.metadata)),
+        ),
+      );
     });
     call.on('end', () => {
       this.queue.push(STREAM_END);
@@ -209,9 +241,11 @@ export class MacpStream {
    * delivery, redeliveries included; see `GrpcTransportAdapter.lastSequence`
    * for a cursor that tracks the ordinal correctly.
    * Ordinals are stable across log compaction and runtime restart. Resuming
-   * below a compacted base returns `FAILED_PRECONDITION` (inspectable via
-   * `MacpTransportError.code`) rather than silently skipping history (runtime
-   * ≥ 0.5.0; older runtimes compared inclusively against a raw log index).
+   * below a compacted base is refused rather than silently skipping history
+   * (runtime ≥ 0.5.0; older runtimes compared inclusively against a raw log
+   * index): since runtime 0.9.0 as an inline `INVALID_ENVELOPE` error frame
+   * (see `onInlineError`) with the stream left open; on 0.5.0–0.8.x it ended
+   * the stream with `FAILED_PRECONDITION` (`MacpTransportError.code`).
    */
   sendSubscribe(sessionId: string, afterSequence = 0): Promise<void> {
     if (this.closed) return Promise.reject(new MacpSdkError('stream is already closed'));
@@ -340,21 +374,29 @@ export class MacpClient {
     auth?: AuthConfig,
     deadlineMs?: number,
     ackStatuses?: AckStatusMap,
+    registryCodeAsAck = false,
   ): Promise<TResponse> {
     return new Promise<TResponse>((resolve, reject) => {
       const callback = (error: grpc.ServiceError | null, response: TResponse) => {
         if (error) {
           const statusName = grpcStatusName(error.code);
-          const mappedCode = statusName ? ackStatuses?.[statusName] : undefined;
+          const entries = grpcMetadataEntries(error.metadata);
+          // Runtime ≥ 0.9.0 names the registry code in `macp-error-code`
+          // metadata; several codes share one gRPC status, so when the call
+          // opts in, that code wins over the status-name map (which remains
+          // the fallback for older runtimes that send no such key).
+          const macpErrorCode = macpErrorCodeFromMetadata(entries);
+          const mappedCode =
+            (registryCodeAsAck ? macpErrorCode : undefined) ?? (statusName ? ackStatuses?.[statusName] : undefined);
           if (mappedCode) {
             reject(
               new MacpAckError(
                 { ok: false, error: { code: mappedCode, message: error.details || error.message } },
-                grpcMetadataEntries(error.metadata),
+                entries,
               ),
             );
           } else {
-            reject(new MacpTransportError(error.details || error.message, statusName));
+            reject(new MacpTransportError(error.details || error.message, statusName, macpErrorCode));
           }
         } else {
           resolve(response);
@@ -410,7 +452,10 @@ export class MacpClient {
       // gRPC ALREADY_EXISTS/FAILED_PRECONDITION on Send are application-level
       // rejections the runtime couldn't express as a normal NACK (issue #107);
       // surface them as MacpAckError, matching macp-sdk-python (client.py:442-452).
+      // That status map is the pre-0.9.0 fallback: a `macp-error-code` key
+      // (runtime ≥ 0.9.0) supplies the exact registry code instead.
       { ALREADY_EXISTS: SESSION_ALREADY_EXISTS, FAILED_PRECONDITION: POLICY_DENIED },
+      true,
     );
     const ack = response.ack;
     // Duplicate acks are success — the message was already accepted

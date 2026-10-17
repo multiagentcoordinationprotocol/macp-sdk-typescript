@@ -1,4 +1,5 @@
 import { EventEmitter } from 'node:events';
+import * as grpc from '@grpc/grpc-js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { MacpClient } from '../../src/client';
 import {
@@ -83,6 +84,16 @@ describe('ModeRegistryWatcher', () => {
     const svcErr = Object.assign(new Error('8 RESOURCE_EXHAUSTED'), { code: 8, details: 'lagging consumer' });
     stream.emitError(svcErr);
     await expect(next).rejects.toMatchObject({ name: 'MacpTransportError', code: 'RESOURCE_EXHAUSTED' });
+  });
+
+  it('runtime 0.9.0: carries the macp-error-code metadata as macpErrorCode', async () => {
+    const stream = new FakeReadableStream();
+    const watcher = new ModeRegistryWatcher(makeClientWith('watchModeRegistry', stream));
+    const next = watcher.changes().next();
+    const metadata = new grpc.Metadata();
+    metadata.set('macp-error-code', 'INTERNAL_ERROR');
+    stream.emitError(Object.assign(new Error('13 INTERNAL'), { code: 13, details: 'storage', metadata }));
+    await expect(next).rejects.toMatchObject({ code: 'INTERNAL', macpErrorCode: 'INTERNAL_ERROR' });
   });
 
   it('cancels the underlying stream when the AbortSignal fires', async () => {

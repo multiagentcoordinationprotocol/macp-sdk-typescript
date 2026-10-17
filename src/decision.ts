@@ -149,7 +149,10 @@ export class DecisionSession {
 
   async raiseObjection(input: DecisionObjectionPayload & { sender?: string; auth?: AuthConfig }): Promise<Ack> {
     validateRequiredField('proposalId', input.proposalId);
-    const severity = input.severity ? validateSeverity(input.severity) : input.severity;
+    // Always send an explicit lowercase severity: runtime ≥ 0.9.0 sessions
+    // (semantics_rev 4) reject an empty one instead of defaulting to
+    // "medium", so the SDK applies that default itself (python-sdk parity).
+    const severity = validateSeverity(input.severity ?? 'medium');
     const envelope = buildEnvelope({
       mode: MODE_DECISION,
       messageType: 'Objection',
