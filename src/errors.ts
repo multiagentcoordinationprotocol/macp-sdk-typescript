@@ -45,8 +45,10 @@ export class MacpTransportError extends MacpSdkError {
  * `evaluation_required`, `no_votes`, `decline_over_approval`,
  * `decline_not_backed`, `criterion_not_met`, `output_required`,
  * `reassignment_not_allowed`, `unsupported_schema_version`, `invalid_rules`
- * and `unspecified`, but a custom evaluator may mint its own — treat any code
- * you do not recognise as `unspecified`. `participants` lists the participant
+ * and `unspecified` (exported as the `DENY_*` constants and
+ * {@link KNOWN_DENY_CODES}), but a custom evaluator may mint its own. `code`
+ * is the wire value passed through unchanged — treat one not in
+ * `KNOWN_DENY_CODES` as `unspecified`. `participants` lists the participant
  * ids the reason concerns (e.g. a veto's objectors); since 0.9.0 they are no
  * longer embedded in `message`.
  */
@@ -66,8 +68,9 @@ export interface MacpErrorDetails {
  * Parse the JSON `details` the runtime attaches to a `POLICY_DENIED` error —
  * found on `Ack.error.details`, an inline stream `MACPError.details`, or the
  * `macp-error-details-bin` trailing metadata. Never throws: missing,
- * non-JSON, or malformed input yields empty arrays, and malformed `denials`
- * entries are dropped individually. Pre-0.9.0 runtimes send `reasons` only,
+ * non-JSON, or malformed input yields empty arrays; a `denials` entry that is
+ * not an object is dropped, and one without a string `message` is kept with
+ * `message: ''`. Pre-0.9.0 runtimes send `reasons` only,
  * so `denials` is `[]` for them.
  */
 export function parseErrorDetails(details: Buffer | Uint8Array | string | null | undefined): MacpErrorDetails {
@@ -89,10 +92,11 @@ export function parseErrorDetails(details: Buffer | Uint8Array | string | null |
     for (const d of obj.denials) {
       if (typeof d !== 'object' || d === null) continue;
       const { code, message, participants } = d as { code?: unknown; message?: unknown; participants?: unknown };
-      if (typeof message !== 'string') continue;
       denials.push({
         code: typeof code === 'string' && code.length > 0 ? code : 'unspecified',
-        message,
+        // A denial without a string message is kept with '' (python-sdk
+        // parity, issue #168) — its code and participants still matter.
+        message: typeof message === 'string' ? message : '',
         participants: Array.isArray(participants) ? participants.filter((p): p is string => typeof p === 'string') : [],
       });
     }

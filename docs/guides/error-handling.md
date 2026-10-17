@@ -77,13 +77,19 @@ A `POLICY_DENIED` now carries `denials` beside the legacy `reasons` strings:
 `decline_over_approval`, `decline_not_backed`, `criterion_not_met`,
 `output_required`, `reassignment_not_allowed`, `unsupported_schema_version`,
 `invalid_rules`, `unspecified`. The set is open (custom evaluators may add
-codes), so treat an unrecognised code as `unspecified`. Older runtimes send
+codes) and `code` is passed through unchanged, so treat a code not in the
+exported `KNOWN_DENY_CODES` set as `unspecified`. Each known code is also
+exported as a `DENY_*` constant (`DENY_VETO`, `DENY_QUORUM_NOT_MET`, …). A
+denial with no `message` is kept with `message: ''`. Older runtimes send
 `reasons` only, leaving `denials` empty.
 
 ```typescript
+import { DENY_VETO, KNOWN_DENY_CODES, MacpAckError } from 'macp-sdk-typescript';
+
 if (err instanceof MacpAckError && err.failure.code === 'POLICY_DENIED') {
   for (const d of err.failure.denials) {
-    if (d.code === 'veto') console.log('vetoed by', d.participants);
+    if (d.code === DENY_VETO) console.log('vetoed by', d.participants);
+    else if (!KNOWN_DENY_CODES.has(d.code)) console.log('custom denial', d.code);
   }
 }
 ```

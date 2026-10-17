@@ -81,3 +81,32 @@ import { SESSION_NOT_OPEN, POLICY_DENIED } from 'macp-sdk-typescript';
 | `INVALID_SESSION_ID` |
 | `UNKNOWN_POLICY_VERSION` |
 | `INVALID_POLICY_DEFINITION` |
+| `REGISTRY_READ_ONLY` |
+| `INVALID_REQUEST` |
+| `STREAM_LAGGED` |
+| `AGENT_NOT_FOUND` |
+
+## Policy denial codes
+
+`PolicyDenial.code` values from a structured `POLICY_DENIED` (runtime ≥ 0.9.0).
+The set is open: a custom evaluator may send others, which pass through
+unchanged — treat a code not in `KNOWN_DENY_CODES` (a `ReadonlySet<string>` of
+the values below) as `DENY_UNSPECIFIED`.
+
+| Constant | Value |
+|----------|-------|
+| `DENY_VETO` | `veto` |
+| `DENY_VETO_HOLD` | `veto_hold` |
+| `DENY_QUORUM_NOT_MET` | `quorum_not_met` |
+| `DENY_THRESHOLD_NOT_MET` | `threshold_not_met` |
+| `DENY_CONFIDENCE_BELOW_MINIMUM` | `confidence_below_minimum` |
+| `DENY_EVALUATION_REQUIRED` | `evaluation_required` |
+| `DENY_NO_VOTES` | `no_votes` |
+| `DENY_DECLINE_OVER_APPROVAL` | `decline_over_approval` |
+| `DENY_DECLINE_NOT_BACKED` | `decline_not_backed` |
+| `DENY_CRITERION_NOT_MET` | `criterion_not_met` |
+| `DENY_OUTPUT_REQUIRED` | `output_required` |
+| `DENY_REASSIGNMENT_NOT_ALLOWED` | `reassignment_not_allowed` |
+| `DENY_UNSUPPORTED_SCHEMA_VERSION` | `unsupported_schema_version` |
+| `DENY_INVALID_RULES` | `invalid_rules` |
+| `DENY_UNSPECIFIED` | `unspecified` |

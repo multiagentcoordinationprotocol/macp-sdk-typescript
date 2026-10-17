@@ -131,9 +131,10 @@ interface AckFailure {
 }
 
 interface PolicyDenial {
-  code: string;           // 'veto', 'quorum_not_met', ... — open set; treat
-                          // unknown codes as 'unspecified'
-  message: string;        // no participant ids since 0.9.0
+  code: string;           // wire code, unchanged: 'veto', 'quorum_not_met', ...
+                          // (DENY_* constants). Open set — treat a code not
+                          // in KNOWN_DENY_CODES as 'unspecified'
+  message: string;        // no participant ids since 0.9.0; '' if absent
   participants: string[]; // e.g. a veto's objectors
 }
 ```
