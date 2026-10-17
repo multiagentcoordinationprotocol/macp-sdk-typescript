@@ -4,6 +4,20 @@ All notable changes to `macp-sdk-typescript` are documented here. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the
 project uses [Semantic Versioning](https://semver.org/).
 
+## [0.15.0](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/compare/v0.14.1...v0.15.0) (2026-10-17)
+
+
+### Features
+
+* **commitment-hash:** RFC-MACP-0013 §6.1 verifyCommitmentHash + verify vectors 006–010 ([#170](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/issues/170)) ([a39421c](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/commit/a39421cfb2908731b1470ff787b0fffcacfd6299))
+* **errors:** export DENY_* constants and KNOWN_DENY_CODES; keep message-less denials ([#169](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/issues/169)) ([fef7335](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/commit/fef733589427dd185fe445024e330c8c10d4c864)), closes [#168](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/issues/168)
+* **errors:** runtime 0.9.0 registry error codes and structured policy denials ([#164](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/issues/164)) ([d37ad7f](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/commit/d37ad7ff799e94b66271a08e7d18774b115d1c4c))
+
+
+### Bug Fixes
+
+* **validation:** cap base64url session ids at 128 bytes ([#167](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/issues/167)) ([bb60588](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/commit/bb60588f67edcb200e9f109491e3a262232a8a11))
+
 ## [0.14.1](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/compare/v0.14.0...v0.14.1) (2026-10-03)
 
 ### Added
