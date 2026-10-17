@@ -142,6 +142,39 @@ isCanonicalCommitmentHash('not-a-hash'); // false
 
 Pinned as part of the cross-SDK parity contract — see [Testing § Parity Contract Gate](../guides/testing.md#parity-contract-gate).
 
+## `verifyCommitmentHash(wire, claimedHash)`
+
+Verifies a claimed commitment hash against a `CommitmentPayload`'s **Protobuf
+wire bytes** (RFC-MACP-0013 §6.1). Returns exactly one `VerifyOutcome`:
+
+| Outcome | When |
+|---------|------|
+| `'match'` | `claimedHash` equals the canonical hash of the decoded payload |
+| `'mismatch'` | it does not — including any claim not in canonical form (`SHA256:` prefix, uppercase hex, no prefix, whitespace). The comparison is exact and never normalized |
+| `'cannot_verify'` | the encoding is outside what the `macp-commitment-hash/1` label covers: an unknown field in the payload or inside `supersedes` (§5), or an unparseable encoding — truncated, a known field with the wrong wire type, invalid UTF-8 in a string, a group, or field number 0 |
+
+It takes bytes rather than a decoded object because a decoder drops unknown
+fields, and §5 requires a payload carrying one to be `cannot_verify`, never
+hashed without it. A known field repeated on the wire follows Protobuf merge
+semantics (last scalar wins, `supersedes` merges), an empty-but-present
+`supersedes` is distinct from an absent one, and a zero-length encoding is the
+all-default payload. Never throws.
+
+```typescript
+import { verifyCommitmentHash, type VerifyOutcome } from 'macp-sdk-typescript';
+
+// e.g. the payload bytes of a Commitment envelope, and a CommitmentRef's hash
+const outcome: VerifyOutcome = verifyCommitmentHash(envelope.payload, ref.commitmentHash);
+if (outcome === 'cannot_verify') {
+  // the payload uses fields this hash label doesn't cover — neither proven nor refuted
+}
+```
+
+Same signature and outcome strings as the Python SDK's
+`verify_commitment_hash(wire, claimed_hash)`. Exercised against the spec's
+verify vectors `cmt_hash_006`–`010`, and every compute vector
+(`001`–`005`) must verify `'match'` against its own Protobuf encoding.
+
 ## `buildSignalPayload(input)` / `buildProgressPayload(input)`
 
 Ambient-plane payload builders used by `client.sendSignal()` and

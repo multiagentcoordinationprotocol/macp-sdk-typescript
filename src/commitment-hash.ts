@@ -284,3 +284,182 @@ export function commitmentHash(payload: CommitmentPayload): string {
 export function isCanonicalCommitmentHash(value: string): boolean {
   return /^sha256:[0-9a-f]{64}$/.test(value);
 }
+
+/**
+ * Result of {@link verifyCommitmentHash} (RFC-MACP-0013 §6.1). `cannot_verify`
+ * is a verdict on the payload encoding — never on the claim.
+ */
+export type VerifyOutcome = 'match' | 'mismatch' | 'cannot_verify';
+
+/** Thrown internally by the wire reader; never escapes this module. */
+class CannotVerify extends Error {}
+
+// `ignoreBOM: true` keeps a leading U+FEFF in a string field (the default
+// strips it, which would hash different bytes than the sender's); `fatal`
+// makes invalid UTF-8 throw, which RFC-MACP-0013 §6.1 rule 1 requires to be
+// cannot-verify rather than U+FFFD-substituted.
+const STRICT_UTF8 = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
+
+/**
+ * Minimal strict Protobuf wire reader for the two message types the
+ * `macp-commitment-hash/1` label covers. Hand-written rather than protobufjs
+ * because protobufjs silently skips unknown fields, and RFC-MACP-0013 §5
+ * requires an unknown field to be cannot-verify, never dropped.
+ */
+class WireReader {
+  private pos = 0;
+  constructor(private readonly buf: Uint8Array) {}
+
+  get done(): boolean {
+    return this.pos >= this.buf.length;
+  }
+
+  /** Varint as a Number. Exact up to 2^53; larger values are only ever compared against small bounds. */
+  varint(): number {
+    let result = 0;
+    let scale = 1;
+    for (let i = 0; i < 10; i++) {
+      if (this.pos >= this.buf.length) throw new CannotVerify('truncated varint');
+      const byte = this.buf[this.pos++]!;
+      result += (byte & 0x7f) * scale;
+      if ((byte & 0x80) === 0) return result;
+      scale *= 128;
+    }
+    throw new CannotVerify('varint longer than 10 bytes');
+  }
+
+  /** Reads a varint and reports only whether it is non-zero (proto3 bool). */
+  nonZeroVarint(): boolean {
+    return this.varint() !== 0;
+  }
+
+  bytes(): Uint8Array {
+    const len = this.varint();
+    if (len > this.buf.length - this.pos) throw new CannotVerify('truncated length-delimited field');
+    const out = this.buf.subarray(this.pos, this.pos + len);
+    this.pos += len;
+    return out;
+  }
+
+  string(): string {
+    try {
+      return STRICT_UTF8.decode(this.bytes());
+    } catch (err) {
+      if (err instanceof CannotVerify) throw err;
+      throw new CannotVerify('invalid UTF-8');
+    }
+  }
+
+  /** Field number and wire type of the next tag; field 0, groups, and wire types 6/7 are unparseable. */
+  tag(): { field: number; wireType: number } {
+    const key = this.varint();
+    if (key > 0xffffffff) throw new CannotVerify('tag out of range');
+    const field = Math.floor(key / 8);
+    const wireType = key % 8;
+    if (field === 0) throw new CannotVerify('field number 0');
+    if (wireType === 3 || wireType === 4) throw new CannotVerify('group');
+    if (wireType > 5) throw new CannotVerify(`invalid wire type ${wireType}`);
+    return { field, wireType };
+  }
+}
+
+const WIRE_VARINT = 0;
+const WIRE_LEN = 2;
+
+// Field numbers of the frozen set (RFC-MACP-0013 §5), in proto order.
+const PAYLOAD_STRING_FIELDS = {
+  1: 'commitmentId',
+  2: 'action',
+  3: 'authorityScope',
+  4: 'reason',
+  5: 'modeVersion',
+  6: 'policyVersion',
+  7: 'configurationVersion',
+} as const;
+const FIELD_OUTCOME_POSITIVE = 8;
+const FIELD_SUPERSEDES = 9;
+const REF_STRING_FIELDS = { 1: 'sessionId', 2: 'commitmentHash' } as const;
+
+function expectWireType(actual: number, expected: number): void {
+  if (actual !== expected) throw new CannotVerify('known field with the wrong wire type');
+}
+
+/** Merges one `CommitmentRef` occurrence into `ref` (Protobuf message merge: present sub-fields overwrite). */
+function mergeCommitmentRef(wire: Uint8Array, ref: CommitmentRef): void {
+  const r = new WireReader(wire);
+  while (!r.done) {
+    const { field, wireType } = r.tag();
+    const name = REF_STRING_FIELDS[field as keyof typeof REF_STRING_FIELDS];
+    // `supersedes` carries exactly two fields (§5): anything else is outside the label.
+    if (name === undefined) throw new CannotVerify(`unknown CommitmentRef field ${field}`);
+    expectWireType(wireType, WIRE_LEN);
+    ref[name] = r.string();
+  }
+}
+
+/** Strictly decodes a `CommitmentPayload` wire encoding; throws `CannotVerify` on anything §5/§6.1 excludes. */
+function decodeCommitmentPayloadStrict(wire: Uint8Array): CommitmentPayload {
+  // Proto3 defaults: a zero-length encoding is the all-default payload (§6.1 rule 3).
+  const payload: CommitmentPayload = {
+    commitmentId: '',
+    action: '',
+    authorityScope: '',
+    reason: '',
+    modeVersion: '',
+    policyVersion: '',
+    configurationVersion: '',
+    outcomePositive: false,
+  };
+  const r = new WireReader(wire);
+  while (!r.done) {
+    const { field, wireType } = r.tag();
+    const name = PAYLOAD_STRING_FIELDS[field as keyof typeof PAYLOAD_STRING_FIELDS];
+    if (name !== undefined) {
+      expectWireType(wireType, WIRE_LEN);
+      payload[name] = r.string(); // last value wins (§6.1 rule 2)
+    } else if (field === FIELD_OUTCOME_POSITIVE) {
+      expectWireType(wireType, WIRE_VARINT);
+      payload.outcomePositive = r.nonZeroVarint();
+    } else if (field === FIELD_SUPERSEDES) {
+      expectWireType(wireType, WIRE_LEN);
+      // Present even when empty; repeated occurrences merge (§6.1 rule 2).
+      payload.supersedes ??= { sessionId: '', commitmentHash: '' };
+      mergeCommitmentRef(r.bytes(), payload.supersedes);
+    } else {
+      throw new CannotVerify(`field ${field} is outside the macp-commitment-hash/1 frozen set`);
+    }
+  }
+  return payload;
+}
+
+/**
+ * Verifies a claimed commitment hash against a `CommitmentPayload`'s Protobuf
+ * wire encoding (RFC-MACP-0013 §6.1), returning exactly one of:
+ *
+ * - `'match'` — the claim equals the canonical hash of the decoded payload;
+ * - `'mismatch'` — it does not, including any claim not in canonical form
+ *   (`SHA256:` prefix, uppercase hex, no prefix, surrounding whitespace):
+ *   the comparison is exact, never normalized;
+ * - `'cannot_verify'` — the encoding is outside what the
+ *   `macp-commitment-hash/1` label covers: an unknown field in the payload or
+ *   in `supersedes` (§5), or an unparseable encoding — truncated, a known
+ *   field with the wrong wire type, invalid UTF-8 in a string, a group, or
+ *   field number 0 (§6.1 rule 1).
+ *
+ * Takes the wire bytes, not a decoded object, so unknown fields stay
+ * observable. A known field repeated on the wire follows Protobuf merge
+ * semantics (last scalar wins, `supersedes` merges), and a zero-length
+ * encoding is the all-default payload, which is hashable. Never throws: a
+ * non-byte `wire` is `'cannot_verify'`, a non-string claim `'mismatch'`.
+ */
+export function verifyCommitmentHash(wire: Uint8Array, claimedHash: string): VerifyOutcome {
+  if (!(wire instanceof Uint8Array)) return 'cannot_verify';
+  let payload: CommitmentPayload;
+  try {
+    payload = decodeCommitmentPayloadStrict(wire);
+  } catch (err) {
+    if (err instanceof CannotVerify) return 'cannot_verify';
+    throw err; // a bug in the reader, not a property of the input — surface it
+  }
+  return typeof claimedHash === 'string' && claimedHash === commitmentHash(payload) ? 'match' : 'mismatch';
+}

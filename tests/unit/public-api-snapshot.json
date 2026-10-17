@@ -115,5 +115,6 @@
   "validateSeverity",
   "validateSignalType",
   "validateTtlMs",
-  "validateVote"
+  "validateVote",
+  "verifyCommitmentHash"
 ]
