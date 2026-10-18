@@ -224,6 +224,46 @@ describe('SignalWatcher', () => {
     expect(first.value).toMatchObject({ messageId: 'm2' });
   });
 
+  // Runtime 0.9.0 / RFC-MACP-0004 §4.1: WatchSignalsResponse.sender_authenticated.
+  it.each([
+    ['true', true, true],
+    ['false', false, false],
+    ['absent (pre-0.9.0 runtime)', undefined, false],
+    ['a non-boolean truthy value', 'yes', false],
+  ])('events() reports senderAuthenticated %s as %s', async (_label, wire, expected) => {
+    const stream = new FakeReadableStream();
+    const watcher = new SignalWatcher(makeClientWith('watchSignals', stream));
+
+    const pending = watcher.events().next();
+    stream.emitData({ envelope: { mode: '', messageType: 'Signal', messageId: 'm3' }, senderAuthenticated: wire });
+    const first = await pending;
+    expect(first.value).toEqual({
+      envelope: expect.objectContaining({ messageId: 'm3' }),
+      senderAuthenticated: expected,
+    });
+  });
+
+  it('events() skips frames that carry no envelope', async () => {
+    const stream = new FakeReadableStream();
+    const watcher = new SignalWatcher(makeClientWith('watchSignals', stream));
+
+    const pending = watcher.events().next();
+    stream.emitData({ senderAuthenticated: true });
+    stream.emitData({ envelope: { mode: '', messageType: 'Signal', messageId: 'm4' }, senderAuthenticated: true });
+    expect((await pending).value).toMatchObject({ envelope: { messageId: 'm4' }, senderAuthenticated: true });
+  });
+
+  it('signals() still yields bare envelopes when the frame carries senderAuthenticated', async () => {
+    const stream = new FakeReadableStream();
+    const watcher = new SignalWatcher(makeClientWith('watchSignals', stream));
+
+    const pending = watcher.signals().next();
+    stream.emitData({ envelope: { mode: '', messageType: 'Signal', messageId: 'm5' }, senderAuthenticated: true });
+    const value = (await pending).value as Record<string, unknown>;
+    expect(value).toMatchObject({ messageId: 'm5' });
+    expect(value).not.toHaveProperty('senderAuthenticated');
+  });
+
   // Issue #154: same MacpTransportError swap as ModeRegistryWatcher above.
   it('nextSignal rejects with MacpTransportError when the stream ends empty', async () => {
     const stream = new FakeReadableStream();

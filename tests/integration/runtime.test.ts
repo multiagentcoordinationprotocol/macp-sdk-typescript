@@ -23,6 +23,7 @@ import {
   HandoffSession,
   QuorumSession,
   SessionLifecycleWatcher,
+  SignalWatcher,
   buildDecisionPolicy,
   buildHandoffPolicy,
   newSessionId,
@@ -1218,6 +1219,31 @@ describe('Signals', () => {
       auth: agentAlice,
     });
     expect(ack.ok).toBe(true);
+  });
+
+  // Runtime 0.9.0 / RFC-MACP-0004 §4.1: this suite runs the runtime in dev
+  // mode (MACP_ALLOW_INSECURE=1), where no sender is authenticated, so every
+  // Signal on WatchSignals must arrive with senderAuthenticated === false.
+  it('WatchSignals reports dev-mode signals as unauthenticated', async () => {
+    const abort = new AbortController();
+    const signalType = `ext.sdk-ts.auth-probe.${Date.now()}`;
+    const events = new SignalWatcher(client, { auth: agentBob }).events(abort.signal);
+    const first = events.next();
+    try {
+      // The subscription is live once the server stream is open; resend until
+      // one Signal lands rather than racing a single send against it.
+      const deadline = Date.now() + 10_000;
+      let result: Awaited<typeof first> | undefined;
+      while (!result && Date.now() < deadline) {
+        await client.sendSignal({ signalType, sender: 'alice', auth: agentAlice });
+        result = await Promise.race([first, new Promise<undefined>((r) => setTimeout(() => r(undefined), 250))]);
+      }
+      expect(result?.done).toBe(false);
+      expect(result?.value).toMatchObject({ envelope: { messageType: 'Signal' }, senderAuthenticated: false });
+    } finally {
+      abort.abort();
+      await events.return(undefined);
+    }
   });
 
   it('sends a progress notification', async () => {

@@ -198,6 +198,21 @@ export class RootsWatcher {
  * A missing/invalid credential surfaces as `code === 'UNAUTHENTICATED'` — fix
  * auth, do not reconnect.
  */
+/**
+ * One `WatchSignals` frame: the Signal envelope plus whether the runtime
+ * authenticated its `sender` (RFC-MACP-0004 §4.1, runtime ≥ 0.9.0).
+ */
+export interface SignalEvent {
+  envelope: Envelope;
+  /**
+   * `true` only when the runtime authenticated the Signal's `sender` (JWT or
+   * static-token auth). `false` in dev mode and on runtimes that predate the
+   * field — the safe direction. A Signal with `false` MUST NOT influence
+   * operational decisions (RFC-MACP-0004 §4.1).
+   */
+  senderAuthenticated: boolean;
+}
+
 export class SignalWatcher {
   private readonly client: MacpClient;
   private readonly auth?: AuthConfig;
@@ -207,14 +222,28 @@ export class SignalWatcher {
     this.auth = options?.auth;
   }
 
+  /**
+   * Signal envelopes only. Does not say whether a Signal's `sender` was
+   * authenticated — use {@link events} wherever a Signal can drive a decision.
+   */
   async *signals(signal?: AbortSignal): AsyncGenerator<Envelope, void, void> {
-    const stream = this.client.watchSignals(this.auth) as grpc.ClientReadableStream<{ envelope?: Envelope }>;
+    for await (const event of this.events(signal)) yield event.envelope;
+  }
+
+  /** Signal envelopes paired with the runtime's `sender_authenticated` verdict. */
+  async *events(signal?: AbortSignal): AsyncGenerator<SignalEvent, void, void> {
+    const stream = this.client.watchSignals(this.auth) as grpc.ClientReadableStream<{
+      envelope?: Envelope;
+      senderAuthenticated?: boolean;
+    }>;
     if (signal) {
       signal.addEventListener('abort', () => stream.cancel(), { once: true });
     }
     const gen = serverStreamToAsyncGenerator(stream);
     for await (const response of gen) {
-      if (response.envelope) yield response.envelope;
+      // Strict `=== true`: anything but an explicit true is unauthenticated.
+      if (response.envelope)
+        yield { envelope: response.envelope, senderAuthenticated: response.senderAuthenticated === true };
     }
   }
 
