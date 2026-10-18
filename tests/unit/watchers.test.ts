@@ -309,9 +309,10 @@ describe('PolicyWatcher', () => {
 
     const iter = watcher.changes();
     const pending = iter.next();
-    stream.emitData({ descriptors: [{ policyId: 'p1' }], observedAtUnixMs: 5 });
+    // int64 decodes as a decimal string (`longs: String`).
+    stream.emitData({ descriptors: [{ policyId: 'p1' }], observedAtUnixMs: '5' });
     const first = await pending;
-    expect(first.value).toMatchObject({ observedAtUnixMs: 5 });
+    expect(first.value).toMatchObject({ observedAtUnixMs: '5' });
     expect(first.value?.descriptors?.[0]?.policyId).toBe('p1');
   });
 

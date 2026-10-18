@@ -19,6 +19,7 @@ import {
   DecisionSession,
   MacpIdentityMismatchError,
   ModeRegistryWatcher,
+  PolicyWatcher,
   ProposalSession,
   TaskSession,
   HandoffSession,
@@ -1207,6 +1208,30 @@ describe('Policy lifecycle', () => {
   it('unregisters the policy', async () => {
     const result = await client.unregisterPolicy(policyId, { auth: agentAlice });
     expect(result.ok).toBe(true);
+  });
+
+  // PolicyChange.observedAtUnixMs is int64 on the wire and decodes as a
+  // decimal string (`longs: String`) — it was mistyped `number`.
+  it('PolicyWatcher reports observedAtUnixMs as a decimal string', async () => {
+    const watchedId = `test-policy-watch-${Date.now()}`;
+    const abort = new AbortController();
+    const changes = new PolicyWatcher(client, { auth: agentAlice }).changes(abort.signal);
+    const first = changes.next();
+    await new Promise((r) => setTimeout(r, 200));
+    try {
+      const descriptor = buildDecisionPolicy(watchedId, 'Policy watch test', {
+        voting: { algorithm: 'majority', threshold: 0.5 },
+      });
+      expect((await client.registerPolicy(descriptor, { auth: agentAlice })).ok).toBe(true);
+
+      const result = await first;
+      expect(result.done).toBe(false);
+      expect(typeof result.value?.observedAtUnixMs).toBe('string');
+      expect(result.value?.observedAtUnixMs).toMatch(/^[1-9]\d*$/);
+    } finally {
+      abort.abort();
+      await client.unregisterPolicy(watchedId, { auth: agentAlice }).catch(() => undefined);
+    }
   });
 });
 

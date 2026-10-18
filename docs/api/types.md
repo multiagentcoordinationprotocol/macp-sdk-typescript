@@ -315,4 +315,4 @@ not. The SDK exports `TERMINAL_SESSION_LIFECYCLE_EVENT_TYPES` plus predicates
 - `InitializeResult` — result of `client.initialize()`: `{ selectedProtocolVersion, runtimeInfo?, supportedModes?, instructions?, capabilities? }`
 - `TransportEndpoint` — `{ transport, uri, contentTypes?, metadata? }` (used in `AgentManifest.transportEndpoints`)
 - `PolicyDescriptor` — see [policy.md](policy.md)
-- `PolicyChange` — `{ descriptors: PolicyDescriptor[]; observedAtUnixMs: number }` (yielded by `PolicyWatcher`)
+- `PolicyChange` — `{ descriptors: PolicyDescriptor[]; observedAtUnixMs: string }` (yielded by `PolicyWatcher`; int64 Unix ms as a decimal string, like the other watchers' timestamps)
