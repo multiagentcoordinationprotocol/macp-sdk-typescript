@@ -28,12 +28,16 @@ import {
   INVALID_SESSION_ID,
   UNKNOWN_POLICY_VERSION,
   INVALID_POLICY_DEFINITION,
+  REGISTRY_READ_ONLY,
+  INVALID_REQUEST,
+  STREAM_LAGGED,
+  AGENT_NOT_FOUND,
 } from '../../src/constants';
 import { BaseProjection, type ProjectionAnomaly } from '../../src/projections/base';
 import { DecisionProjection } from '../../src/projections/decision';
-import { ProposalProjection } from '../../src/projections/proposal';
+import { ProposalProjection, type ProposalRecord } from '../../src/projections/proposal';
 import { TaskProjection } from '../../src/projections/task';
-import { HandoffProjection } from '../../src/projections/handoff';
+import { HandoffProjection, type HandoffRecord } from '../../src/projections/handoff';
 import { QuorumProjection } from '../../src/projections/quorum';
 
 interface FixtureMessage {
@@ -51,6 +55,33 @@ interface FixtureMessage {
    * resolvable payload_type — see 'conformance: reject-path fixtures'.
    */
   expected_error_code?: string;
+  /**
+   * Acceptance clock for this step (spec #192, RFC-MACP-0001 §7.6 item 4).
+   * All-or-none across the fixture's messages, and non-decreasing. Distinct
+   * from the Envelope's `timestamp_unix_ms`: the projection has no acceptance
+   * clock, so the harness only validates it and switches the default Envelope
+   * timestamp to 0, exactly as the spec's harness contract says.
+   */
+  accepted_at_ms?: number;
+  /** Envelope field overrides (spec #192). A SessionStart MUST set `session_id`. */
+  envelope?: EnvelopeOverrides;
+}
+
+interface EnvelopeOverrides {
+  session_id?: string;
+  macp_version?: string;
+  mode?: string;
+  timestamp_unix_ms?: number;
+}
+
+/** One entry of the spec's `expected_history` (accepted history after SessionStart). */
+interface ExpectedHistoryEntry {
+  message_type: string;
+  sender: string;
+  /** Subset match on the decoded payload. */
+  payload?: Record<string, unknown>;
+  /** A runtime-emitted envelope no fixture message submitted (e.g. RFC-MACP-0010 §5.1 implicit accept). */
+  synthetic?: boolean;
 }
 
 interface Fixture {
@@ -67,6 +98,7 @@ interface Fixture {
   expect_resolution_present?: boolean;
   expected_resolution?: Record<string, unknown>;
   expected_mode_state?: Record<string, unknown>;
+  expected_history?: ExpectedHistoryEntry[];
 }
 
 type ProjectionLike = {
@@ -82,11 +114,6 @@ type ProjectionLike = {
   // the cardinality violation any of these kinds records.
   anomalies?: readonly ProjectionAnomaly[];
 };
-
-// Shape of expected_mode_state.votes (decision mode). Named alias so the `as`
-// cast below stays on one line — different prettier 3.x versions wrap an inline
-// union differently, and CI installs the latest at build time.
-type ExpectedVotes = Record<string, Record<string, { vote: string }>>;
 
 /**
  * Replay projection for the `ext.multi_round.v1` extension mode. The mode has
@@ -133,6 +160,11 @@ const CANONICAL_ERROR_CODES = new Set([
   INVALID_SESSION_ID,
   UNKNOWN_POLICY_VERSION,
   INVALID_POLICY_DEFINITION,
+  // Permanent since runtime 0.9.0 / parity contract 1.4.0.
+  REGISTRY_READ_ONLY,
+  INVALID_REQUEST,
+  STREAM_LAGGED,
+  AGENT_NOT_FOUND,
 ]);
 
 const MODE_SHORT_MAP: Record<string, string> = {
@@ -179,18 +211,318 @@ const CANONICAL_PAYLOAD_TYPE_RE = /^(macp\.v1\.[A-Za-z]+|macp\.modes\.[a-z_]+\.v
 // mirrors the python harness's descriptor-driven str→bytes coercion.
 const BYTES_FIELDS = new Set(['context', 'supportingData', 'details', 'input', 'output', 'partialOutput', 'data']);
 
-// Normalize fixture payload field names from snake_case to camelCase for
-// ProtoRegistry, coercing string values destined for `bytes` fields to Buffer.
+const snakeToCamel = (key: string): string => key.replace(/_([a-z])/g, (_, c: string) => c.toUpperCase());
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value) && !Buffer.isBuffer(value);
+}
+
+// Normalize a fixture payload for ProtoRegistry: snake_case → camelCase keys,
+// recursively. `bytes` fields arrive either as a UTF-8 string or as a JSON
+// byte array (serde's `Vec<u8>` encoding, e.g. `"details": []`) and become a
+// Buffer; every other array (repeated fields such as `tags`, `participants`)
+// is preserved element-wise.
 function normalizePayload(payload: Record<string, unknown>): Record<string, unknown> {
   const result: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(payload)) {
-    // Skip repeated/list-valued fields — the projections under test don't assert
-    // on them; mirrors the python harness's `isinstance(v, list): continue`.
-    if (Array.isArray(value)) continue;
-    const camelKey = key.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
-    result[camelKey] = BYTES_FIELDS.has(camelKey) && typeof value === 'string' ? Buffer.from(value, 'utf8') : value;
+    const camelKey = snakeToCamel(key);
+    if (BYTES_FIELDS.has(camelKey) && typeof value === 'string') {
+      result[camelKey] = Buffer.from(value, 'utf8');
+    } else if (BYTES_FIELDS.has(camelKey) && Array.isArray(value)) {
+      result[camelKey] = Buffer.from(value as number[]);
+    } else if (Array.isArray(value)) {
+      result[camelKey] = value.map((item) => (isPlainObject(item) ? normalizePayload(item) : item));
+    } else if (isPlainObject(value)) {
+      result[camelKey] = normalizePayload(value);
+    } else {
+      result[camelKey] = value;
+    }
   }
   return result;
+}
+
+/**
+ * Runtime `assert_json_contains` semantics (macp-runtime
+ * `tests/conformance_loader.rs`): an expected object is a subset of the
+ * actual one (every expected key present and recursively contained), an
+ * expected array is a prefix of the actual one, anything else is strict
+ * equality. Mirrored exactly so the SDK and runtime read the same fixture
+ * the same way.
+ */
+function expectContains(actual: unknown, expected: unknown, at: string): void {
+  if (isPlainObject(expected)) {
+    expect(isPlainObject(actual), `${at}: expected an object, got ${JSON.stringify(actual)}`).toBe(true);
+    const actualObject = actual as Record<string, unknown>;
+    for (const [key, value] of Object.entries(expected)) {
+      expect(key in actualObject, `${at}: missing key '${key}' in ${JSON.stringify(actual)}`).toBe(true);
+      expectContains(actualObject[key], value, `${at}.${key}`);
+    }
+  } else if (Array.isArray(expected)) {
+    expect(Array.isArray(actual), `${at}: expected an array, got ${JSON.stringify(actual)}`).toBe(true);
+    const actualArray = actual as unknown[];
+    expect(
+      actualArray.length,
+      `${at}: actual array shorter than expected: ${JSON.stringify(actual)} vs ${JSON.stringify(expected)}`,
+    ).toBeGreaterThanOrEqual(expected.length);
+    expected.forEach((item, idx) => expectContains(actualArray[idx], item, `${at}[${idx}]`));
+  } else {
+    expect(actual, at).toEqual(expected);
+  }
+}
+
+// ── expected_mode_state: projection → runtime-shaped views ─────────────
+//
+// `expected_mode_state` is the runtime's serialized `mode_state`, so each key
+// gets an explicit view that renders the projection in the runtime's shape and
+// vocabulary (snake_case, `disposition` enums). A key with no view fails the
+// fixture: adding a key upstream must be a deliberate harness change, never a
+// silent pass.
+
+/** `ProposalRecord.status` → runtime `ProposalDisposition` (Live | Withdrawn). */
+const PROPOSAL_DISPOSITION: Record<ProposalRecord['status'], string> = {
+  open: 'Live',
+  // A terminal Reject ends negotiation (phase TerminalRejected) but does not
+  // retire the proposal: the runtime has no Rejected disposition.
+  rejected: 'Live',
+  withdrawn: 'Withdrawn',
+};
+
+/** `HandoffRecord.status` → runtime `HandoffDisposition` (Offered | Accepted | Declined). */
+const HANDOFF_DISPOSITION: Record<HandoffRecord['status'], string> = {
+  offered: 'Offered',
+  context_sent: 'Offered',
+  accepted: 'Accepted',
+  declined: 'Declined',
+};
+
+type ModeStateView = (projection: unknown) => unknown;
+
+const MODE_STATE_VIEWS: Record<string, Record<string, ModeStateView>> = {
+  [MODE_DECISION]: {
+    phase: (p) => (p as DecisionProjection).phase,
+    proposals: (p) =>
+      Object.fromEntries(
+        [...(p as DecisionProjection).proposals].map(([id, r]) => [
+          id,
+          { proposal_id: r.proposalId, option: r.option, sender: r.sender },
+        ]),
+      ),
+    objections: (p) =>
+      (p as DecisionProjection).objections.map((o) => ({
+        proposal_id: o.proposalId,
+        reason: o.reason,
+        severity: o.severity,
+        sender: o.sender,
+      })),
+    votes: (p) =>
+      Object.fromEntries(
+        [...(p as DecisionProjection).votes].map(([proposalId, bySender]) => [
+          proposalId,
+          Object.fromEntries([...bySender].map(([sender, v]) => [sender, { vote: v.vote, sender: v.sender }])),
+        ]),
+      ),
+  },
+  [MODE_PROPOSAL]: {
+    phase: (p) => (p as ProposalProjection).phase,
+    proposals: (p) =>
+      Object.fromEntries(
+        [...(p as ProposalProjection).proposals].map(([id, r]) => [
+          id,
+          {
+            proposal_id: r.proposalId,
+            title: r.title,
+            proposer: r.sender,
+            disposition: PROPOSAL_DISPOSITION[r.status],
+          },
+        ]),
+      ),
+    // Runtime `accepts` is the live acceptance set: sender → the proposal its
+    // latest Accept targets (RFC-MACP-0008 §5 rule 5). The projection keeps
+    // that in a private map (its public `accepts` is the append-only history).
+    accepts: (p) =>
+      Object.fromEntries(
+        [...(p as unknown as { latestAcceptBySender: Map<string, { proposalId: string }> }).latestAcceptBySender].map(
+          ([sender, a]) => [sender, a.proposalId],
+        ),
+      ),
+  },
+  [MODE_HANDOFF]: {
+    phase: (p) => (p as HandoffProjection).phase,
+    offers: (p) =>
+      Object.fromEntries(
+        [...(p as HandoffProjection).handoffs].map(([id, h]) => [
+          id,
+          {
+            handoff_id: h.handoffId,
+            target_participant: h.targetParticipant,
+            disposition: HANDOFF_DISPOSITION[h.status],
+            implicit: h.implicit ?? false,
+          },
+        ]),
+      ),
+  },
+  [MODE_TASK]: { phase: (p) => (p as TaskProjection).phase },
+  [MODE_QUORUM]: { phase: (p) => (p as QuorumProjection).phase },
+  [MODE_MULTI_ROUND]: {},
+};
+
+/** One envelope to apply: a fixture message, or a synthetic `expected_history` entry. */
+interface ReplayStep {
+  sender: string;
+  messageType: string;
+  /** Fully-qualified payload type; synthetic entries derive it from the fixture mode. */
+  payloadType?: string;
+  payload: Record<string, unknown>;
+  envelope?: EnvelopeOverrides;
+  /** The `expected_history` entry this step must satisfy, if the fixture has one. */
+  history?: ExpectedHistoryEntry;
+}
+
+/**
+ * Validates the spec #192 per-message fields and returns whether the fixture
+ * runs on the acceptance clock. Fails loudly on a contract violation instead of
+ * replaying something the runtime harness would refuse.
+ */
+function validateMessageClock(fixture: Fixture, fixtureName: string): boolean {
+  const withClock = fixture.messages.filter((m) => m.accepted_at_ms !== undefined);
+  for (const msg of fixture.messages) {
+    if (msg.message_type === 'SessionStart') {
+      expect(
+        msg.envelope?.session_id,
+        `${fixtureName}: a SessionStart message must set envelope.session_id (spec #192)`,
+      ).toBeTruthy();
+    }
+  }
+  if (withClock.length === 0) return false;
+  expect(
+    withClock.length,
+    `${fixtureName}: accepted_at_ms is all-or-none — ${withClock.length} of ${fixture.messages.length} messages carry it`,
+  ).toBe(fixture.messages.length);
+  for (let i = 1; i < fixture.messages.length; i++) {
+    expect(
+      fixture.messages[i].accepted_at_ms!,
+      `${fixtureName}: accepted_at_ms must be non-decreasing (message ${i})`,
+    ).toBeGreaterThanOrEqual(fixture.messages[i - 1].accepted_at_ms!);
+  }
+  return true;
+}
+
+/**
+ * The envelopes to apply, in acceptance order. Without `expected_history` that
+ * is the accepted messages. With it, the history is authoritative: each
+ * non-synthetic entry must line up with the next accepted message (same type
+ * and sender), each synthetic entry is applied from its own payload, and no
+ * accepted message may be left over.
+ */
+function replaySteps(fixture: Fixture, fixtureName: string): ReplayStep[] {
+  const accepted = fixture.messages.filter((m) => m.expect === 'accept');
+  const fromMessage = (m: FixtureMessage, history?: ExpectedHistoryEntry): ReplayStep => ({
+    sender: m.sender,
+    messageType: m.message_type,
+    payloadType: m.payload_type,
+    payload: m.payload,
+    envelope: m.envelope,
+    history,
+  });
+  if (!fixture.expected_history) return accepted.map((m) => fromMessage(m));
+
+  const steps: ReplayStep[] = [];
+  let next = 0;
+  fixture.expected_history.forEach((entry, idx) => {
+    if (entry.synthetic) {
+      steps.push({
+        sender: entry.sender,
+        messageType: entry.message_type,
+        payload: entry.payload ?? {},
+        history: entry,
+      });
+      return;
+    }
+    const msg = accepted[next++];
+    expect(msg, `${fixtureName}: expected_history[${idx}] has no matching accepted message`).toBeDefined();
+    expect(
+      `${msg.message_type} from ${msg.sender}`,
+      `${fixtureName}: expected_history[${idx}] does not match the next accepted message`,
+    ).toBe(`${entry.message_type} from ${entry.sender}`);
+    steps.push(fromMessage(msg, entry));
+  });
+  expect(next, `${fixtureName}: accepted messages missing from expected_history`).toBe(accepted.length);
+  return steps;
+}
+
+/**
+ * Replays one fixture through its projection and asserts everything the
+ * fixture states about the result. Throws (via `expect`) on any mismatch, so
+ * the mutation self-tests below can prove each comparison is live.
+ */
+function replayAndCheck(fixture: Fixture, fixtureName: string): ProjectionLike {
+  const projectionFactory = MODE_PROJECTIONS[fixture.mode];
+  expect(projectionFactory, `no projection registered for mode '${fixture.mode}'`).toBeDefined();
+  const projection = projectionFactory();
+  const onAcceptanceClock = validateMessageClock(fixture, fixtureName);
+  const steps = replaySteps(fixture, fixtureName);
+
+  for (const step of steps) {
+    const { mode, messageType } = step.payloadType
+      ? resolvePayloadType(step.payloadType)
+      : { mode: fixture.mode, messageType: step.messageType };
+    const resolvedMode = mode || step.envelope?.mode || fixture.mode;
+    const payloadBytes = registry.encodeKnownPayload(resolvedMode, messageType, normalizePayload(step.payload));
+
+    const envelope = buildEnvelope({
+      mode: step.envelope?.mode ?? fixture.mode,
+      messageType: step.messageType,
+      sessionId: step.envelope?.session_id ?? 'conformance-session',
+      sender: step.sender,
+      payload: payloadBytes,
+      macpVersion: step.envelope?.macp_version,
+      timestampUnixMs: step.envelope?.timestamp_unix_ms ?? (onAcceptanceClock ? 0 : undefined),
+    });
+
+    if (step.history?.payload) {
+      const decoded = registry.decodeKnownPayload(resolvedMode, messageType, payloadBytes);
+      expectContains(decoded, normalizePayload(step.history.payload), `${fixtureName}: expected_history payload`);
+    }
+
+    projection.applyEnvelope(envelope, registry);
+  }
+
+  // Every applied step lands in the transcript, synthetic ones included.
+  const transcript = (projection as unknown as { transcript: unknown[] }).transcript;
+  expect(transcript.length).toBe(steps.length);
+
+  // Commitment presence is driven solely by the terminal state:
+  // RESOLVED ⇒ committed. Identical rule to the python harness.
+  if (fixture.expected_final_state === 'Resolved') {
+    expect(projection.commitment).toBeDefined();
+  } else {
+    expect(projection.commitment).toBeUndefined();
+  }
+
+  // Verify every scalar field of expected_resolution (incl. outcome_positive)
+  if (fixture.expected_resolution && projection.commitment) {
+    const commitment = projection.commitment as Record<string, unknown>;
+    for (const [key, expectedValue] of Object.entries(fixture.expected_resolution)) {
+      expect(commitment[snakeToCamel(key)]).toBe(expectedValue);
+    }
+  }
+
+  // Every expected_mode_state key is compared, or the fixture fails.
+  const expectedState = fixture.expected_mode_state ?? {};
+  const views = MODE_STATE_VIEWS[fixture.mode] ?? {};
+  let compared = 0;
+  for (const [key, expectedValue] of Object.entries(expectedState)) {
+    const view = views[key];
+    expect(
+      view,
+      `${fixtureName}: expected_mode_state.${key} has no comparator for mode '${fixture.mode}' — add one to MODE_STATE_VIEWS`,
+    ).toBeDefined();
+    expectContains(view(projection), expectedValue, `${fixtureName}: expected_mode_state.${key}`);
+    compared++;
+  }
+  expect(compared).toBe(Object.keys(expectedState).length);
+
+  return projection;
 }
 
 const FIXTURE_DIR = path.resolve(__dirname);
@@ -241,30 +573,7 @@ describe('conformance: projection replay', () => {
     }
 
     it(`${fixtureName}: replays accepted messages through projection`, () => {
-      const projection = projectionFactory();
-      const acceptedMessages = fixture.messages.filter((m) => m.expect === 'accept');
-
-      for (const msg of acceptedMessages) {
-        const { mode, messageType } = resolvePayloadType(msg.payload_type);
-        const resolvedMode = mode || fixture.mode;
-        const normalizedPayload = normalizePayload(msg.payload);
-
-        const payloadBytes = registry.encodeKnownPayload(resolvedMode, messageType, normalizedPayload);
-
-        const envelope = buildEnvelope({
-          mode: fixture.mode,
-          messageType: msg.message_type,
-          sessionId: 'conformance-session',
-          sender: msg.sender,
-          payload: payloadBytes,
-        });
-
-        projection.applyEnvelope(envelope, registry);
-      }
-
-      // Verify transcript length matches accepted message count
-      const transcript = (projection as unknown as { transcript: unknown[] }).transcript;
-      expect(transcript.length).toBe(acceptedMessages.length);
+      const projection = replayAndCheck(fixture, fixtureName);
 
       // Phase 6 (issue #55): every canonical fixture must replay with ZERO
       // anomalies. `DecisionProjection`, `QuorumProjection`, `TaskProjection`,
@@ -280,39 +589,6 @@ describe('conformance: projection replay', () => {
         anomalies,
         `${fixtureName}: expected zero projection anomalies, found ${JSON.stringify(anomalies)}`,
       ).toEqual([]);
-
-      // Commitment presence is driven solely by the terminal state:
-      // RESOLVED ⇒ committed. Identical rule to the python harness.
-      if (fixture.expected_final_state === 'Resolved') {
-        expect(projection.commitment).toBeDefined();
-      } else {
-        expect(projection.commitment).toBeUndefined();
-      }
-
-      // Verify every scalar field of expected_resolution (incl. outcome_positive)
-      if (fixture.expected_resolution && projection.commitment) {
-        const commitment = projection.commitment as Record<string, unknown>;
-        for (const [key, expectedValue] of Object.entries(fixture.expected_resolution)) {
-          const camelKey = key.replace(/_([a-z])/g, (_, c: string) => c.toUpperCase());
-          expect(commitment[camelKey]).toBe(expectedValue);
-        }
-      }
-
-      // Verify phase matches expected mode state
-      if (fixture.expected_mode_state?.phase) {
-        expect(projection.phase).toBe(fixture.expected_mode_state.phase);
-      }
-
-      // Verify recorded votes match expected_mode_state.votes (decision mode)
-      const expectedVotes = fixture.expected_mode_state?.votes as ExpectedVotes | undefined;
-      if (expectedVotes) {
-        const votes = (projection as unknown as { votes: Map<string, Map<string, { vote: string }>> }).votes;
-        for (const [proposalId, bySender] of Object.entries(expectedVotes)) {
-          for (const [sender, record] of Object.entries(bySender)) {
-            expect(votes.get(proposalId)?.get(sender)?.vote).toBe(record.vote);
-          }
-        }
-      }
 
       // Phase 6 (issue #55): the log channel is independent of the
       // `anomalies` array above and must be silent too — no
@@ -335,6 +611,143 @@ describe('conformance: projection replay', () => {
 // repo's `schemas/conformance/` directory: `tests/conformance/*.json` here
 // are vendored copies gated bidirectionally by `make verify-fixtures`, so a
 // local edit to quiet this guard would just fail that gate as DRIFT instead.
+// Non-vacuity: each comparison the replay makes must be able to fail. Every
+// case mutates one canonical fixture in a way the runtime would read
+// differently and asserts the replay now rejects it — so a view that
+// silently stops comparing (or a history step that stops applying) reddens
+// here instead of passing every fixture forever.
+describe('conformance: harness self-tests (mutations must fail)', () => {
+  const load = (name: string): Fixture =>
+    JSON.parse(fs.readFileSync(path.join(FIXTURE_DIR, `${name}.json`), 'utf8')) as Fixture;
+  // Just the expected_mode_state paths the mutations below touch.
+  interface MutableModeState {
+    offers: Record<string, { disposition: string }>;
+    proposals: Record<string, Record<string, string>>;
+    accepts: Record<string, string>;
+    objections: Array<Record<string, string>>;
+    votes: Record<string, Record<string, { vote: string }>>;
+    evaluations?: unknown;
+  }
+  const modeState = (f: Fixture) => f.expected_mode_state as unknown as MutableModeState;
+
+  const mutations: Array<[string, string, (f: Fixture) => void]> = [
+    [
+      'dropping the synthetic implicit accept',
+      'handoff_implicit_accept',
+      (f) => {
+        f.expected_history = f.expected_history!.filter((e) => !e.synthetic);
+      },
+    ],
+    [
+      'a history payload the accepted message does not carry',
+      'handoff_implicit_accept',
+      (f) => {
+        f.expected_history![0].payload = { handoff_id: 'h-other' };
+      },
+    ],
+    [
+      'a history entry naming the wrong sender',
+      'handoff_implicit_accept',
+      (f) => {
+        f.expected_history![0].sender = 'agent://someone-else';
+      },
+    ],
+    [
+      'accepted_at_ms on only some messages',
+      'handoff_implicit_accept',
+      (f) => {
+        delete f.messages[f.messages.length - 1].accepted_at_ms;
+      },
+    ],
+    [
+      'a decreasing accepted_at_ms',
+      'handoff_implicit_accept',
+      (f) => {
+        f.messages[f.messages.length - 1].accepted_at_ms = 0;
+        f.messages[0].accepted_at_ms = 5000;
+      },
+    ],
+    [
+      'a SessionStart without envelope.session_id',
+      'session_start_reject_paths',
+      (f) => {
+        delete f.messages.find((m) => m.message_type === 'SessionStart')!.envelope!.session_id;
+      },
+    ],
+    [
+      'an offer disposition',
+      'handoff_reject_paths',
+      (f) => {
+        modeState(f).offers.h1.disposition = 'Accepted';
+      },
+    ],
+    [
+      'a proposal disposition',
+      'proposal_reject_paths',
+      (f) => {
+        modeState(f).proposals.p2.disposition = 'Live';
+      },
+    ],
+    [
+      'a proposal proposer',
+      'proposal_happy_path',
+      (f) => {
+        modeState(f).proposals.p1.proposer = 'agent://buyer';
+      },
+    ],
+    [
+      'an accepts entry',
+      'proposal_happy_path',
+      (f) => {
+        modeState(f).accepts['agent://buyer'] = 'p2';
+      },
+    ],
+    [
+      'an objection severity',
+      'decision_happy_path',
+      (f) => {
+        modeState(f).objections[0].severity = 'low';
+      },
+    ],
+    [
+      'an extra objection',
+      'decision_happy_path',
+      (f) => {
+        modeState(f).objections.push({ proposal_id: 'p1', severity: 'critical', sender: 'agent://c' });
+      },
+    ],
+    [
+      'a decision proposal sender',
+      'decision_happy_path',
+      (f) => {
+        modeState(f).proposals.p1.sender = 'agent://a';
+      },
+    ],
+    [
+      'a vote value',
+      'decision_happy_path',
+      (f) => {
+        modeState(f).votes.p1['agent://a'].vote = 'REJECT';
+      },
+    ],
+    [
+      'a key with no comparator',
+      'decision_happy_path',
+      (f) => {
+        modeState(f).evaluations = {};
+      },
+    ],
+  ];
+
+  it.each(mutations)('rejects %s (%s)', (_label, name, mutate) => {
+    const pristine = load(name);
+    expect(() => replayAndCheck(pristine, name)).not.toThrow();
+    const mutated = load(name);
+    mutate(mutated);
+    expect(() => replayAndCheck(mutated, name)).toThrow();
+  });
+});
+
 describe('conformance: no duplicate accepted vote or ballot', () => {
   for (const file of fixtureFiles) {
     const fixtureName = path.basename(file, '.json');
