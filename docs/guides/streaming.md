@@ -169,6 +169,21 @@ for await (const envelope of watcher.signals()) {
 }
 ```
 
+> **Authenticated senders (runtime 0.9.0).** `signals()` yields bare envelopes
+> and cannot tell you whether the runtime authenticated a Signal's `sender`.
+> Wherever a Signal can drive a decision, iterate `events()` instead: it
+> yields `SignalEvent` (`{ envelope, senderAuthenticated }`).
+> `senderAuthenticated` is `true` only under JWT or static-token auth. It is
+> `false` in dev mode and on runtimes older than 0.9.0, and per RFC-MACP-0004
+> §4.1 such a Signal MUST NOT influence operational decisions.
+>
+> ```typescript
+> for await (const { envelope, senderAuthenticated } of watcher.events()) {
+>   if (!senderAuthenticated) continue; // informational only
+>   act(envelope);
+> }
+> ```
+
 > **Auth required (runtime 0.5.0).** `WatchSignals` is an authenticated RPC:
 > if neither the watcher nor the client has a credential, iterating
 > `signals()` throws immediately client-side. A rejected credential surfaces
