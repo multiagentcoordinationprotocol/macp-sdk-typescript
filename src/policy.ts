@@ -150,9 +150,64 @@ export interface HandoffPolicyRulesInput {
   commitment?: CommitmentRules;
 }
 
+// ── Rule value domains ──────────────────────────────────────────────
+// Runtime 0.9.0 validates every rule object against the canonical
+// spec `schemas/json/policy/*-rules.schema.json` and refuses an off-domain
+// value at RegisterPolicy with INVALID_POLICY_DEFINITION; the builders refuse
+// it client-side first. Same sets as macp-sdk-python's `macp_sdk.policy`;
+// tests/unit/policy-schema-parity.test.ts pins them against the schemas.
+// Typed against the rule-input unions so a widened union without a matching
+// set entry is a tsc error.
+
+/** `/properties/commitment/properties/authority` (all five modes). */
+export const COMMITMENT_AUTHORITIES: ReadonlySet<NonNullable<CommitmentRules['authority']>> = new Set([
+  'initiator_only',
+  'any_participant',
+  'designated_role',
+]);
+/** quorum-rules `/properties/abstention/properties/interpretation`. */
+export const ABSTENTION_INTERPRETATIONS: ReadonlySet<NonNullable<AbstentionRules['interpretation']>> = new Set([
+  'neutral',
+  'implicit_reject',
+  'ignored',
+]);
+/** proposal-rules `/properties/acceptance/properties/criterion`. */
+export const PROPOSAL_ACCEPTANCE_CRITERIA: ReadonlySet<NonNullable<ProposalAcceptanceRules['criterion']>> = new Set([
+  'all_parties',
+  'counterparty',
+  'initiator',
+]);
+/** decision-rules `/properties/objection_handling/properties/critical_objection_action`. */
+export const CRITICAL_OBJECTION_ACTIONS: ReadonlySet<NonNullable<ObjectionHandlingRules['criticalObjectionAction']>> =
+  new Set(['deny', 'finalize_decline', 'hold']);
+
+// decision-rules `/properties/voting/properties/quorum/properties/type`.
+const VOTING_QUORUM_TYPES: ReadonlySet<string> = new Set(['count', 'percentage']);
+
+function checkEnum(fieldName: string, value: unknown, allowed: ReadonlySet<string>): void {
+  if (typeof value !== 'string' || !allowed.has(value)) {
+    throw new MacpSessionError(
+      `${fieldName} must be one of ${[...allowed].sort().join(', ')}, got ${JSON.stringify(value)}`,
+    );
+  }
+}
+
+// Number.isInteger rejects booleans, NaN and ±Infinity, so unlike Python's
+// `_check_min_int` no separate bool guard is needed.
+function checkMinInt(fieldName: string, value: unknown, minimum: number): void {
+  if (!Number.isInteger(value) || (value as number) < minimum) {
+    throw new MacpSessionError(`${fieldName} must be an integer >= ${minimum}, got ${JSON.stringify(value)}`);
+  }
+}
+
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value);
+}
+
 // ── Builder helpers ─────────────────────────────────────────────────
 
 function serializeCommitment(commitment?: CommitmentRules): Record<string, unknown> {
+  checkEnum('commitment.authority', commitment?.authority ?? 'initiator_only', COMMITMENT_AUTHORITIES);
   // `authority: 'designated_role'` with an empty (or unset) `designatedRoles`
   // names no one, so no sender could ever satisfy it. All five rule schemas
   // reject this combination at admission (spec PR #121) via a root-level
@@ -312,6 +367,30 @@ export function buildDecisionPolicy(
     }
   }
 
+  // Value domains the runtime enforces since 0.9.0 (decision-rules.schema.json).
+  // Same order as macp-sdk-python's build_decision_policy.
+  const quorum = rules.voting?.quorum;
+  if (quorum !== undefined) {
+    checkEnum('voting.quorum_type', quorum.type, VOTING_QUORUM_TYPES);
+    if (!isFiniteNumber(quorum.value) || quorum.value < 0) {
+      throw new MacpSessionError(
+        `voting.quorum_value must be a finite number >= 0, got ${JSON.stringify(quorum.value)}`,
+      );
+    }
+  }
+  checkMinInt('objection_handling.veto_threshold', rules.objectionHandling?.vetoThreshold ?? 1, 1);
+  checkEnum(
+    'objection_handling.critical_objection_action',
+    rules.objectionHandling?.criticalObjectionAction ?? 'deny',
+    CRITICAL_OBJECTION_ACTIONS,
+  );
+  const minimumConfidence = rules.evaluation?.minimumConfidence ?? 0;
+  if (!isFiniteNumber(minimumConfidence) || minimumConfidence < 0 || minimumConfidence > 1) {
+    throw new MacpSessionError(
+      `evaluation.minimum_confidence must be in [0.0, 1.0], got ${JSON.stringify(minimumConfidence)}`,
+    );
+  }
+
   // Decision-only: extend the shared commitment rules with the two keys
   // decision-rules.schema.json's commitment object allows and the other four
   // modes' commitment schemas do not -- `require_vote_quorum` and the
@@ -393,6 +472,7 @@ export function buildQuorumPolicy(
       );
     }
   }
+  checkEnum('abstention.interpretation', rules.abstention?.interpretation ?? 'neutral', ABSTENTION_INTERPRETATIONS);
   const rulesJson: Record<string, unknown> = {
     threshold: {
       type: rules.threshold?.type ?? 'n_of_m',
@@ -498,6 +578,8 @@ export function buildProposalPolicy(
   description: string,
   rules: ProposalPolicyRulesInput,
 ): PolicyDescriptor {
+  checkEnum('acceptance.criterion', rules.acceptance?.criterion ?? 'all_parties', PROPOSAL_ACCEPTANCE_CRITERIA);
+  checkMinInt('counter_proposal.max_rounds', rules.counterProposal?.maxRounds ?? 0, 0);
   const rulesJson: Record<string, unknown> = {
     acceptance: {
       criterion: rules.acceptance?.criterion ?? 'all_parties',
@@ -543,6 +625,7 @@ export function buildHandoffPolicy(
   description: string,
   rules: HandoffPolicyRulesInput,
 ): PolicyDescriptor {
+  checkMinInt('acceptance.implicit_accept_timeout_ms', rules.acceptance?.implicitAcceptTimeoutMs ?? 0, 0);
   const rulesJson: Record<string, unknown> = {
     acceptance: {
       implicit_accept_timeout_ms: rules.acceptance?.implicitAcceptTimeoutMs ?? 0,

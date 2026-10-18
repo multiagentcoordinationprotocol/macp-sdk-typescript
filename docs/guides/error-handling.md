@@ -9,7 +9,7 @@ Error
     │   ├── MacpTimeoutError         stream.read(timeoutMs) elapsed
     │   └── MacpRetryError           retrySend() exhausted its retry budget
     ├── MacpAckError                 Runtime rejected the message (nack)
-    ├── MacpSessionError             Client-side payload/session validation failed (invalid session id, vote value, confidence, …)
+    ├── MacpSessionError             Client-side payload/session/policy-rule validation failed (invalid session id, vote value, confidence, off-domain rule value, …)
     └── MacpIdentityMismatchError    Explicit sender conflicts with auth.expectedSender
 ```
 

@@ -18,6 +18,40 @@ interface PolicyDescriptor {
 
 ## Builder Functions
 
+### Value domains (runtime ≥ 0.9.0)
+
+Runtime 0.9.0 validates every rule object against the canonical
+`schemas/json/policy/*-rules.schema.json` and refuses an off-domain value at
+`RegisterPolicy`. Every builder refuses the same values client-side first,
+throwing `MacpSessionError` with a message that names the field:
+
+| Field | Builder | Domain |
+|-------|---------|--------|
+| `commitment.authority` | all five | one of `COMMITMENT_AUTHORITIES` |
+| `voting.quorum_type` | decision | `count` or `percentage` (checked only when `voting.quorum` is set) |
+| `voting.quorum_value` | decision | finite number `>= 0` |
+| `objection_handling.veto_threshold` | decision | integer `>= 1` |
+| `objection_handling.critical_objection_action` | decision | one of `CRITICAL_OBJECTION_ACTIONS` |
+| `evaluation.minimum_confidence` | decision | finite number in `[0, 1]` |
+| `abstention.interpretation` | quorum | one of `ABSTENTION_INTERPRETATIONS` |
+| `acceptance.criterion` | proposal | one of `PROPOSAL_ACCEPTANCE_CRITERIA` |
+| `counter_proposal.max_rounds` | proposal | integer `>= 0` |
+| `acceptance.implicit_accept_timeout_ms` | handoff | integer `>= 0` |
+
+Booleans, `NaN` and `±Infinity` are refused wherever a number is expected. The
+four sets are exported (`ReadonlySet<string>`), with the same members as
+`macp-sdk-python`'s frozensets. These checks are what the runtime would refuse
+anyway, so a descriptor the builders accept is unchanged byte-for-byte.
+
+> **Breaking for untyped callers.** A JavaScript/JSON caller passing an
+> off-domain value used to get a descriptor that registered on a pre-0.9.0
+> runtime; it now throws at build time.
+
+When the runtime itself refuses a descriptor, `registerPolicy()` does **not**
+throw: admission failures come back in-band as
+`{ ok: false, error: 'INVALID_POLICY_DEFINITION: ...' }`, not as a gRPC
+status. Check `ok`.
+
 ### `buildDecisionPolicy(policyId, description, rules, options?)`
 
 Creates a `PolicyDescriptor` targeting `macp.mode.decision.v1`. The only
