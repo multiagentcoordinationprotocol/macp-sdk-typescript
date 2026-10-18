@@ -54,10 +54,11 @@ describe('ModeRegistryWatcher', () => {
     const iter = watcher.changes();
     const next = iter.next();
 
-    stream.emitData({ observedAtUnixMs: 100 });
+    // Real wire shape: WatchModeRegistryResponse { change: RegistryChanged } (issue #163).
+    stream.emitData({ change: { registry: 'modes', observedAtUnixMs: '100' } });
     const first = await next;
     expect(first.done).toBe(false);
-    expect(first.value).toEqual({ observedAtUnixMs: 100 });
+    expect(first.value).toEqual({ registry: 'modes', observedAtUnixMs: '100' });
 
     stream.emitEnd();
     const done = await iter.next();
@@ -118,9 +119,9 @@ describe('ModeRegistryWatcher', () => {
     const watcher = new ModeRegistryWatcher(makeClientWith('watchModeRegistry', stream));
 
     const pending = watcher.nextChange();
-    stream.emitData({ observedAtUnixMs: 42 });
+    stream.emitData({ change: { registry: 'modes', observedAtUnixMs: '42' } });
     const change = await pending;
-    expect(change).toEqual({ observedAtUnixMs: 42 });
+    expect(change).toEqual({ registry: 'modes', observedAtUnixMs: '42' });
     // Generator.return() is invoked via nextChange → triggers stream.cancel().
     expect(stream.cancel).toHaveBeenCalledTimes(1);
   });
@@ -144,18 +145,30 @@ describe('ModeRegistryWatcher', () => {
   it('watch() drives the handler for each change', async () => {
     const stream = new FakeReadableStream();
     const watcher = new ModeRegistryWatcher(makeClientWith('watchModeRegistry', stream));
-    const seen: number[] = [];
+    const seen: string[] = [];
 
     const promise = watcher.watch((change) => {
       seen.push(change.observedAtUnixMs);
     });
 
-    stream.emitData({ observedAtUnixMs: 1 });
-    stream.emitData({ observedAtUnixMs: 2 });
+    stream.emitData({ change: { registry: 'modes', observedAtUnixMs: '1' } });
+    stream.emitData({ change: { registry: 'modes', observedAtUnixMs: '2' } });
     stream.emitEnd();
     await promise;
 
-    expect(seen).toEqual([1, 2]);
+    expect(seen).toEqual(['1', '2']);
+  });
+
+  // proto-loader `defaults: true` decodes an absent message field as null.
+  it('skips frames that carry no change', async () => {
+    const stream = new FakeReadableStream();
+    const watcher = new ModeRegistryWatcher(makeClientWith('watchModeRegistry', stream));
+
+    const pending = watcher.nextChange();
+    stream.emitData({ change: null });
+    stream.emitData({});
+    stream.emitData({ change: { registry: 'modes', observedAtUnixMs: '7' } });
+    await expect(pending).resolves.toEqual({ registry: 'modes', observedAtUnixMs: '7' });
   });
 });
 
@@ -166,13 +179,24 @@ describe('RootsWatcher', () => {
 
     const iter = watcher.changes();
     const pending = iter.next();
-    stream.emitData({ roots: [{ uri: 'file:///x', name: 'x' }], observedAtUnixMs: 10 });
+    // Real wire shape: WatchRootsResponse { change: RootsChanged } (issue #163).
+    stream.emitData({ change: { observedAtUnixMs: '10' } });
     const first = await pending;
-    expect(first.value).toMatchObject({ observedAtUnixMs: 10 });
+    expect(first.value).toEqual({ observedAtUnixMs: '10' });
 
     stream.emitEnd();
     const done = await iter.next();
     expect(done.done).toBe(true);
+  });
+
+  it('skips frames that carry no change', async () => {
+    const stream = new FakeReadableStream();
+    const watcher = new RootsWatcher(makeClientWith('watchRoots', stream));
+
+    const pending = watcher.nextChange();
+    stream.emitData({ change: null });
+    stream.emitData({ change: { observedAtUnixMs: '11' } });
+    await expect(pending).resolves.toEqual({ observedAtUnixMs: '11' });
   });
 
   it('surfaces transport errors', async () => {

@@ -134,11 +134,17 @@ export class ModeRegistryWatcher {
   }
 
   async *changes(signal?: AbortSignal): AsyncGenerator<RegistryChanged, void, void> {
-    const stream = this.client.watchModeRegistry(this.auth) as grpc.ClientReadableStream<RegistryChanged>;
+    // The wire frame is `WatchModeRegistryResponse { RegistryChanged change = 1; }` — unwrap it
+    // (issue #163; yielding the frame itself left every field undefined).
+    const stream = this.client.watchModeRegistry(this.auth) as grpc.ClientReadableStream<{
+      change?: RegistryChanged | null;
+    }>;
     if (signal) {
       signal.addEventListener('abort', () => stream.cancel(), { once: true });
     }
-    yield* serverStreamToAsyncGenerator(stream);
+    for await (const response of serverStreamToAsyncGenerator(stream)) {
+      if (response.change) yield response.change;
+    }
   }
 
   async watch(handler: (change: RegistryChanged) => void | Promise<void>): Promise<void> {
@@ -166,11 +172,15 @@ export class RootsWatcher {
   }
 
   async *changes(signal?: AbortSignal): AsyncGenerator<RootsChanged, void, void> {
-    const stream = this.client.watchRoots(this.auth) as grpc.ClientReadableStream<RootsChanged>;
+    // The wire frame is `WatchRootsResponse { RootsChanged change = 1; }` — unwrap it
+    // (issue #163; yielding the frame itself left every field undefined).
+    const stream = this.client.watchRoots(this.auth) as grpc.ClientReadableStream<{ change?: RootsChanged | null }>;
     if (signal) {
       signal.addEventListener('abort', () => stream.cancel(), { once: true });
     }
-    yield* serverStreamToAsyncGenerator(stream);
+    for await (const response of serverStreamToAsyncGenerator(stream)) {
+      if (response.change) yield response.change;
+    }
   }
 
   async watch(handler: (change: RootsChanged) => void | Promise<void>): Promise<void> {
