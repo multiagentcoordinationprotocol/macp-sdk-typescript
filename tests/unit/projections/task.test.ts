@@ -71,13 +71,126 @@ describe('TaskProjection', () => {
     expect(projection.getTask('t1')?.assignee).not.toBe('worker-b');
   });
 
-  it('tracks task rejection', () => {
+  it('a reject by the active assignee marks the task rejected', () => {
     projection.applyEnvelope(makeEnvelope('TaskRequest', { taskId: 't1', title: 'X', instructions: 'do' }), registry);
+    projection.applyEnvelope(makeEnvelope('TaskAccept', { taskId: 't1', assignee: 'worker' }, 'worker'), registry);
     projection.applyEnvelope(
       makeEnvelope('TaskReject', { taskId: 't1', assignee: 'worker', reason: 'too busy' }, 'worker'),
       registry,
     );
     expect(projection.getTask('t1')?.status).toBe('rejected');
+  });
+
+  // RFC-MACP-0009 §5 rule 2a (runtime ≥ 0.9.0): a TaskReject before anyone
+  // accepted is a personal decline — the decliner is out, the task is not.
+  describe('rule 2a personal decline', () => {
+    const request = (requestedAssignee?: string) =>
+      projection.applyEnvelope(
+        makeEnvelope('TaskRequest', { taskId: 't1', title: 'X', instructions: 'do', requestedAssignee }),
+        registry,
+      );
+    const accept = (who: string) =>
+      projection.applyEnvelope(makeEnvelope('TaskAccept', { taskId: 't1', assignee: who }, who), registry);
+    const reject = (who: string, assignee = who) =>
+      projection.applyEnvelope(makeEnvelope('TaskReject', { taskId: 't1', assignee, reason: 'no' }, who), registry);
+
+    it('a pre-assignment reject leaves the task requested and open to others', () => {
+      request();
+      reject('w1');
+      expect(projection.getTask('t1')?.status).toBe('requested');
+      expect(projection.activeTasks().map((t) => t.taskId)).toEqual(['t1']);
+      expect(projection.rejections[0].whileAssigned).toBe(false);
+      expect(projection.hasDeclined('w1')).toBe(true);
+      expect(projection.canAccept('w1')).toBe(false);
+      expect(projection.canAccept('w2')).toBe(true);
+    });
+
+    it('another participant can still take the task after a decline', () => {
+      request();
+      reject('w1');
+      accept('w2');
+      expect(projection.getTask('t1')).toMatchObject({ status: 'accepted', assignee: 'w2' });
+      expect(projection.canAccept('w2')).toBe(false); // slot now held
+      expect(projection.canAccept('w3')).toBe(false);
+    });
+
+    it('a reject by the active assignee is whileAssigned, frees the slot, and still bars the rejecter', () => {
+      request();
+      accept('w1');
+      reject('w1');
+      expect(projection.rejections[0].whileAssigned).toBe(true);
+      expect(projection.getTask('t1')).toMatchObject({ status: 'rejected', assignee: undefined });
+      expect(projection.canAccept('w1')).toBe(false);
+      expect(projection.canAccept('w2')).toBe(true);
+    });
+
+    it('a non-assignee reject while the slot is held is not whileAssigned', () => {
+      request();
+      accept('w1');
+      reject('w2');
+      expect(projection.rejections[0].whileAssigned).toBe(false);
+      expect(projection.getTask('t1')).toMatchObject({ status: 'accepted', assignee: 'w1' });
+    });
+
+    it('declinedParticipants() is in arrival order and de-duplicated', () => {
+      request();
+      reject('w2');
+      reject('w1');
+      reject('w2');
+      expect(projection.declinedParticipants()).toEqual(['w2', 'w1']);
+    });
+
+    it('an empty payload assignee falls back to the sender for the decline helpers', () => {
+      request();
+      reject('w1', '');
+      expect(projection.rejections[0].assignee).toBeFalsy(); // proto3 drops the empty string
+      expect(projection.hasDeclined('w1')).toBe(true);
+      expect(projection.declinedParticipants()).toEqual(['w1']);
+    });
+
+    it('negativeCommitEligible(): unknown task is false', () => {
+      expect(projection.negativeCommitEligible('nope')).toBe(false);
+    });
+
+    it('negativeCommitEligible(): the requested assignee declining before acceptance makes it eligible', () => {
+      request('w1');
+      expect(projection.negativeCommitEligible('t1')).toBe(false);
+      reject('w1');
+      expect(projection.negativeCommitEligible('t1')).toBe(true);
+    });
+
+    it('negativeCommitEligible(): a decline by anyone other than the requested assignee is not enough', () => {
+      request('w1');
+      reject('w2');
+      expect(projection.negativeCommitEligible('t1')).toBe(false);
+    });
+
+    it('negativeCommitEligible(): no requested assignee means a decline is never enough', () => {
+      request();
+      reject('w1');
+      expect(projection.negativeCommitEligible('t1')).toBe(false);
+    });
+
+    it('negativeCommitEligible(): false while someone holds the slot', () => {
+      request('w1');
+      reject('w1');
+      accept('w2');
+      expect(projection.negativeCommitEligible('t1')).toBe(false);
+    });
+
+    it('negativeCommitEligible(): the requested assignee giving the task back (rule 3c) does not count', () => {
+      request('w1');
+      accept('w1');
+      reject('w1');
+      expect(projection.negativeCommitEligible('t1')).toBe(false);
+    });
+
+    it.each(['TaskComplete', 'TaskFail'])('negativeCommitEligible(): a %s makes it eligible', (messageType) => {
+      request();
+      accept('w1');
+      projection.applyEnvelope(makeEnvelope(messageType, { taskId: 't1', assignee: 'w1' }, 'w1'), registry);
+      expect(projection.negativeCommitEligible('t1')).toBe(true);
+    });
   });
 
   // Issue #151: TaskProjection gains an audit record for TaskReject, matching

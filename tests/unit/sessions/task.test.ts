@@ -124,14 +124,27 @@ describe('TaskSession — projection roundtrip', () => {
     expect(session.projection.isAccepted('t1')).toBe(true);
   });
 
-  it('rejectTask() flips status to rejected', async () => {
+  it('rejectTask() before acceptance records a personal decline and leaves the task requested', async () => {
     const client = makeClient();
     const session = new TaskSession(client);
     vi.spyOn(client, 'send').mockResolvedValue({ ok: true });
 
     await session.requestTask({ taskId: 't1', title: 'review', instructions: 'x' });
     await session.rejectTask({ taskId: 't1', assignee: 'bob', reason: 'overloaded' });
+    expect(session.projection.getTask('t1')?.status).toBe('requested');
+    expect(session.projection.hasDeclined('bob')).toBe(true);
+  });
+
+  it('rejectTask() by the active assignee flips status to rejected', async () => {
+    const client = makeClient();
+    const session = new TaskSession(client);
+    vi.spyOn(client, 'send').mockResolvedValue({ ok: true });
+
+    await session.requestTask({ taskId: 't1', title: 'review', instructions: 'x' });
+    await session.acceptTask({ taskId: 't1', assignee: 'bob' });
+    await session.rejectTask({ taskId: 't1', assignee: 'bob', reason: 'overloaded' });
     expect(session.projection.getTask('t1')?.status).toBe('rejected');
+    expect(session.projection.rejections[0].whileAssigned).toBe(true);
   });
 
   it('updateTask() records progress and flips task to in_progress', async () => {

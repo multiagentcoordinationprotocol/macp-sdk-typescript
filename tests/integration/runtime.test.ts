@@ -363,7 +363,14 @@ describe('Task mode — reject path', () => {
       auth: agentBob,
     });
     expect(ack.ok).toBe(true);
-    expect(session.projection.tasks.get('tr1')?.status).toBe('rejected');
+    // RFC-MACP-0009 §5 rule 2a (runtime ≥ 0.9.0): no one had accepted, so
+    // this is bob's personal decline — the task stays open. Bob was the
+    // requested assignee, so a negative Commitment is now eligible.
+    expect(session.projection.tasks.get('tr1')?.status).toBe('requested');
+    expect(session.projection.rejections[0].whileAssigned).toBe(false);
+    expect(session.projection.declinedParticipants()).toEqual(['bob']);
+    expect(session.projection.canAccept('bob')).toBe(false);
+    expect(session.projection.negativeCommitEligible('tr1')).toBe(true);
   });
 });
 
