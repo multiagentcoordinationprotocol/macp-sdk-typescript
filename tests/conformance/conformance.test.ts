@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
 import { buildEnvelope } from '../../src/envelope';
 import { _resetLoggingForTests, configureLogging, type LogSink } from '../../src/logging';
 import { ProtoRegistry } from '../../src/proto-registry';
+import { effectiveQuorumThreshold } from '../../src/policy';
 import { duplicateAcceptedBallots } from './duplicate-ballots';
 import {
   MODE_DECISION,
@@ -791,6 +792,56 @@ describe('conformance: handoff rule 3a declined-target bar', () => {
     const projection = replayAndCheck(load(), 'handoff_reject_paths') as unknown as HandoffProjection;
     expect(projection.declinedTargets()).toEqual(['agent://target']);
     expect(projection.getHandoff('h2')).toBeUndefined();
+  });
+});
+
+// RFC-MACP-0011 §5 rule 6 (runtime ≥ 0.9.0): a policy `threshold` replaces
+// `required_approvals`. At every negative Commitment in each override fixture,
+// isThresholdUnreachable() under effectiveQuorumThreshold() must predict the
+// runtime's verdict: unreachable ⇔ the negative Commitment is accepted. Same
+// check as macp-sdk-python's conformance replay.
+describe('conformance: quorum policy threshold override', () => {
+  it.each(['quorum_unreachable_override', 'quorum_percentage_override_reachable'])('%s', (name) => {
+    const fixture = JSON.parse(fs.readFileSync(path.join(FIXTURE_DIR, `${name}.json`), 'utf8')) as Fixture;
+    const n = fixture.participants.length;
+    const projection = new QuorumProjection();
+    let checked = 0;
+    for (const msg of fixture.messages) {
+      const payload = normalizePayload(msg.payload);
+      if (msg.message_type === 'Commitment' && String(payload.action).endsWith('rejected')) {
+        const request = projection.requests.get('r1')!;
+        const effectiveThreshold = effectiveQuorumThreshold(
+          fixture.policy?.rules as Record<string, unknown>,
+          n,
+          request.requiredApprovals,
+        );
+        expect(
+          projection.isThresholdUnreachable('r1', n, { effectiveThreshold }),
+          `${name}: negative Commitment ${String(payload.commitmentId)} expected to ${msg.expect}`,
+        ).toBe(msg.expect === 'accept');
+        checked++;
+      }
+      if (msg.expect !== 'accept') continue;
+      const { mode, messageType } = resolvePayloadType(msg.payload_type);
+      projection.applyEnvelope(
+        buildEnvelope({
+          mode: fixture.mode,
+          messageType: msg.message_type,
+          sessionId: 'conformance-session',
+          sender: msg.sender,
+          payload: registry.encodeKnownPayload(mode || fixture.mode, messageType, payload),
+        }),
+        registry,
+      );
+    }
+    expect(checked).toBeGreaterThan(0);
+  });
+
+  it('quorum_unreachable_override: the effective bar is the override as given (5 of 3)', () => {
+    const fixture = JSON.parse(
+      fs.readFileSync(path.join(FIXTURE_DIR, 'quorum_unreachable_override.json'), 'utf8'),
+    ) as Fixture;
+    expect(effectiveQuorumThreshold(fixture.policy?.rules as Record<string, unknown>, 3, 2)).toBe(5);
   });
 });
 
