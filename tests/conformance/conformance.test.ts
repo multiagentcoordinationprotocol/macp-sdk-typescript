@@ -768,6 +768,32 @@ describe('conformance: task rule 2a personal decline', () => {
   });
 });
 
+// RFC-MACP-0010 §5 rule 3a (runtime ≥ 0.9.0): in handoff_reject_paths the
+// re-offer h2 to the target that declined h1 is refused, while target2 can
+// still be offered — exactly what canOfferTo() predicts mid-replay.
+describe('conformance: handoff rule 3a declined-target bar', () => {
+  const load = () =>
+    JSON.parse(fs.readFileSync(path.join(FIXTURE_DIR, 'handoff_reject_paths.json'), 'utf8')) as Fixture;
+
+  it('handoff_reject_paths: after the decline, target is barred and target2 is not', () => {
+    const fixture = load();
+    const declineAt = fixture.messages.findIndex((m) => m.message_type === 'HandoffDecline');
+    const reoffer = fixture.messages[declineAt + 1];
+    expect(reoffer).toMatchObject({ message_type: 'HandoffOffer', expect: 'reject' });
+    fixture.messages = fixture.messages.slice(0, declineAt + 1);
+    delete fixture.expected_mode_state;
+    const projection = replayAndCheck(fixture, 'handoff_reject_paths') as unknown as HandoffProjection;
+    expect(projection.canOfferTo(String(reoffer.payload.target_participant))).toBe(false);
+    expect(projection.canOfferTo('agent://target2')).toBe(true);
+  });
+
+  it('handoff_reject_paths: the refused re-offer never reaches history', () => {
+    const projection = replayAndCheck(load(), 'handoff_reject_paths') as unknown as HandoffProjection;
+    expect(projection.declinedTargets()).toEqual(['agent://target']);
+    expect(projection.getHandoff('h2')).toBeUndefined();
+  });
+});
+
 describe('conformance: no duplicate accepted vote or ballot', () => {
   for (const file of fixtureFiles) {
     const fixtureName = path.basename(file, '.json');
