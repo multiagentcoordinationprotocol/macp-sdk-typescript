@@ -25,6 +25,8 @@ concurrency:
 
 permissions:
   contents: read
+  # npm ci pulls @multiagentcoordinationprotocol/proto from GitHub Packages.
+  packages: read
 
 jobs:
   verify-fixtures:
@@ -48,3 +50,20 @@ jobs:
 
       - name: Lint canonical fixtures for internal consistency
         run: python3 "$GITHUB_WORKSPACE/_spec/schemas/conformance/lint_fixtures.py"
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          registry-url: 'https://npm.pkg.github.com'
+          scope: '@multiagentcoordinationprotocol'
+          cache: npm
+
+      - run: npm ci
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Skipped (not failed) everywhere else: it needs this job's spec checkout.
+      - name: Policy builder domains match canonical rule schemas
+        env:
+          MACP_POLICY_SCHEMAS_DIR: ${{ github.workspace }}/_spec/schemas/json/policy
+        run: npx vitest run tests/unit/policy-schema-parity.test.ts
