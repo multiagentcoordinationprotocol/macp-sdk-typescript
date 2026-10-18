@@ -102,6 +102,22 @@ export interface AgentManifest {
   transportEndpoints?: TransportEndpoint[];
 }
 
+/**
+ * `capabilities.policyRegistry` (`macp.v1.PolicyRegistryCapability`) as
+ * `InitializeResult.capabilities` carries it.
+ */
+export interface PolicyRegistryCapability {
+  registerPolicy?: boolean;
+  listPolicies?: boolean;
+  listChanged?: boolean;
+  /**
+   * Vendor-extension keys (RFC-MACP-0012 §4) this runtime implements, by full
+   * key name. Any other `x-` key is refused at RegisterPolicy. Advisory:
+   * admission, not this list, is authoritative. Runtime ≥ 0.9.0.
+   */
+  ruleExtensions?: string[];
+}
+
 export interface InitializeResult {
   selectedProtocolVersion: string;
   runtimeInfo?: {

@@ -11,6 +11,7 @@ import {
   buildProposalPolicy,
   buildQuorumPolicy,
   buildTaskPolicy,
+  type PolicyRuleExtras,
 } from '../../src/policy';
 
 // Policy-builder value domains vs the canonical rule schemas: the SDK analogue
@@ -36,9 +37,33 @@ const BUILD = {
   handoff: () => buildHandoffPolicy('p', 'd', {}),
 };
 
+const BUILD_WITH_EXTRAS = {
+  decision: (extras: PolicyRuleExtras) => buildDecisionPolicy('p', 'd', {}, extras),
+  quorum: (extras: PolicyRuleExtras) => buildQuorumPolicy('p', 'd', {}, extras),
+  proposal: (extras: PolicyRuleExtras) => buildProposalPolicy('p', 'd', {}, extras),
+  task: (extras: PolicyRuleExtras) => buildTaskPolicy('p', 'd', {}, extras),
+  handoff: (extras: PolicyRuleExtras) => buildHandoffPolicy('p', 'd', {}, extras),
+};
+
 describe.skipIf(!DIR)('policy builder domains match the canonical rule schemas', () => {
   it.each(MODES)('%s commitment.authority', (mode) => {
     expect(sorted(prop(schema(mode), 'commitment', 'authority').enum!)).toEqual(sorted(COMMITMENT_AUTHORITIES));
+  });
+
+  it.each(MODES)('%s extension and annotation key patterns', (mode) => {
+    // The builders' private EXTENSION_KEY_RE/ANNOTATION_KEY_RE sources.
+    const patterns = Object.keys(schema(mode).patternProperties as Record<string, unknown>);
+    expect(patterns).toContain('^x-[a-z0-9]+(\\.[a-z0-9-]+)+$');
+    expect(patterns).toContain('^[_$]');
+    const rules = JSON.parse(
+      BUILD_WITH_EXTRAS[mode]({ extensions: { 'x-com.acme.audit': {} }, annotations: { _note: 1 } }).rules,
+    );
+    for (const key of ['x-com.acme.audit', '_note']) {
+      expect(
+        patterns.some((p) => new RegExp(p).test(key)),
+        key,
+      ).toBe(true);
+    }
   });
 
   it('decision enums and bounds', () => {

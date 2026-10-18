@@ -47,6 +47,38 @@ anyway, so a descriptor the builders accept is unchanged byte-for-byte.
 > off-domain value used to get a descriptor that registered on a pre-0.9.0
 > runtime; it now throws at build time.
 
+### Extension and annotation keys
+
+Every builder takes an optional last argument, `PolicyRuleExtras`. For
+`buildDecisionPolicy` it is `DecisionPolicyOptions`, which extends it. It adds
+the two extra top-level key classes RFC-MACP-0012 §4 allows beside the
+standard sections:
+
+```typescript
+const descriptor = buildQuorumPolicy(
+  'release-gate',
+  'two approvals',
+  { threshold: { type: 'n_of_m', value: 2 } },
+  {
+    extensions: { 'x-com.acme.audit': { level: 2 } }, // object-valued, ^x-[a-z0-9]+(\.[a-z0-9-]+)+$
+    annotations: { _owner: 'release-eng' },           // any value, key starts with _ or $
+  },
+);
+```
+
+- Both are emitted after the standard sections, in insertion order.
+- A key that collides with a standard section, has the wrong shape, or (for
+  an extension) has a non-object value throws `MacpSessionError`.
+- Omitted or empty, the `rules` bytes are unchanged. A golden test pins them.
+- The runtime ignores annotations.
+- The runtime admits an `x-` key only if the embedder registered it. The
+  stock server registers none, so an extension is refused at `RegisterPolicy`
+  (`ok: false`, `INVALID_POLICY_DEFINITION`).
+- `policyRuleExtensions(await client.initialize())` returns the keys a
+  runtime advertises in `capabilities.policyRegistry.ruleExtensions`. It is
+  `[]` on the stock server and on runtimes older than 0.9.0. It is advisory:
+  admission decides.
+
 When the runtime itself refuses a descriptor, `registerPolicy()` does **not**
 throw: admission failures come back in-band as
 `{ ok: false, error: 'INVALID_POLICY_DEFINITION: ...' }`, not as a gRPC

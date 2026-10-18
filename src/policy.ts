@@ -1,5 +1,5 @@
 import { MacpSessionError } from './errors';
-import type { PolicyDescriptor } from './types';
+import type { InitializeResult, PolicyDescriptor, PolicyRegistryCapability } from './types';
 
 // ── Named policy rule types ─────────────────────────────────────────
 // Names are unprefixed to match python-sdk's `macp_sdk.policy` exports
@@ -184,6 +184,82 @@ export const CRITICAL_OBJECTION_ACTIONS: ReadonlySet<NonNullable<ObjectionHandli
 // decision-rules `/properties/voting/properties/quorum/properties/type`.
 const VOTING_QUORUM_TYPES: ReadonlySet<string> = new Set(['count', 'percentage']);
 
+// RFC-MACP-0012 §4 key classes legal at the rules top level besides the
+// standard sections: `x-` vendor extensions (object-valued) and `_`/`$`
+// annotations (any value). Same patterns as the schemas' patternProperties.
+const EXTENSION_KEY_RE = /^x-[a-z0-9]+(\.[a-z0-9-]+)+$/;
+const ANNOTATION_KEY_RE = /^[_$]/;
+
+/**
+ * Extra top-level `rules` keys every builder accepts (RFC-MACP-0012 §4),
+ * emitted after the standard sections in insertion order. Omitted or empty,
+ * the `rules` bytes are exactly what they were before these existed.
+ */
+export interface PolicyRuleExtras {
+  /**
+   * `x-` vendor-extension sections, e.g. `{ 'x-com.acme.audit': { level: 2 } }`.
+   * Keys must match `^x-[a-z0-9]+(\.[a-z0-9-]+)+$` and values must be objects.
+   * The runtime admits a key only if an embedder registered it (see
+   * `policyRuleExtensions()`; the stock server registers none), so the builder
+   * checks the key's shape, not whether this runtime will admit it.
+   */
+  extensions?: Record<string, Record<string, unknown>>;
+  /** `_`- or `$`-prefixed annotation keys, any JSON value; the runtime ignores them. */
+  annotations?: Record<string, unknown>;
+}
+
+// An own enumerable key even for `__proto__` (a legal annotation name),
+// which plain assignment would turn into a prototype swap that
+// JSON.stringify then drops.
+function defineKey(rules: Record<string, unknown>, key: string, value: unknown): void {
+  Object.defineProperty(rules, key, { value, enumerable: true, writable: true, configurable: true });
+}
+
+function addExtraKeys(rules: Record<string, unknown>, extras?: PolicyRuleExtras): void {
+  for (const [key, value] of Object.entries(extras?.extensions ?? {})) {
+    if (Object.hasOwn(rules, key)) {
+      throw new MacpSessionError(`extension key '${key}' collides with a standard rule section`);
+    }
+    if (!EXTENSION_KEY_RE.test(key)) {
+      throw new MacpSessionError(
+        `extension key '${key}' must match ${EXTENSION_KEY_RE.source} (e.g. 'x-com.acme.audit')`,
+      );
+    }
+    if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+      throw new MacpSessionError(`extension '${key}' must be an object, got ${JSON.stringify(value)}`);
+    }
+    defineKey(rules, key, { ...value });
+  }
+  for (const [name, note] of Object.entries(extras?.annotations ?? {})) {
+    if (Object.hasOwn(rules, name)) {
+      throw new MacpSessionError(`annotation key '${name}' collides with a standard rule section`);
+    }
+    if (!ANNOTATION_KEY_RE.test(name)) {
+      throw new MacpSessionError(`annotation key '${name}' must start with '_' or '$'`);
+    }
+    defineKey(rules, name, note);
+  }
+}
+
+/**
+ * The `x-` rule-extension keys a runtime advertises
+ * (`capabilities.policyRegistry.ruleExtensions`), or `[]` when it advertises
+ * none, including runtimes older than 0.9.0. Advisory: a descriptor carrying
+ * an unlisted key is refused at RegisterPolicy, but admission is what
+ * decides. Accepts the `initialize()` result or its `capabilities`.
+ */
+export function policyRuleExtensions(
+  source: InitializeResult | InitializeResult['capabilities'] | null | undefined,
+): string[] {
+  const capabilities: Record<string, unknown> | undefined =
+    source && 'selectedProtocolVersion' in source
+      ? (source as InitializeResult).capabilities
+      : ((source as Record<string, unknown> | null | undefined) ?? undefined);
+  const registry = capabilities?.policyRegistry as PolicyRegistryCapability | undefined;
+  const keys = registry?.ruleExtensions;
+  return Array.isArray(keys) ? keys.filter((k): k is string => typeof k === 'string') : [];
+}
+
 function checkEnum(fieldName: string, value: unknown, allowed: ReadonlySet<string>): void {
   if (typeof value !== 'string' || !allowed.has(value)) {
     throw new MacpSessionError(
@@ -263,7 +339,7 @@ const DECISION_ALGORITHMS: ReadonlySet<NonNullable<VotingRules['algorithm']>> = 
 // _DECISION_SCHEMA_VERSIONS.
 const DECISION_SCHEMA_VERSIONS: ReadonlySet<1 | 2 | 3> = new Set([1, 2, 3]);
 
-export interface DecisionPolicyOptions {
+export interface DecisionPolicyOptions extends PolicyRuleExtras {
   /**
    * RFC-MACP-0012 rule schema version the runtime evaluates this policy
    * under (validated, never re-validated, at admission -- RFC-MACP-0012 §8
@@ -419,6 +495,7 @@ export function buildDecisionPolicy(
     },
     commitment: commitmentSection,
   };
+  addExtraKeys(rulesJson, options);
   return {
     policyId,
     mode: 'macp.mode.decision.v1',
@@ -432,6 +509,7 @@ export function buildQuorumPolicy(
   policyId: string,
   description: string,
   rules: QuorumPolicyRulesInput,
+  options?: PolicyRuleExtras,
 ): PolicyDescriptor {
   const threshold = rules.threshold;
   if (threshold) {
@@ -484,6 +562,7 @@ export function buildQuorumPolicy(
     },
     commitment: serializeCommitment(rules.commitment),
   };
+  addExtraKeys(rulesJson, options);
   return {
     policyId,
     mode: 'macp.mode.quorum.v1',
@@ -577,6 +656,7 @@ export function buildProposalPolicy(
   policyId: string,
   description: string,
   rules: ProposalPolicyRulesInput,
+  options?: PolicyRuleExtras,
 ): PolicyDescriptor {
   checkEnum('acceptance.criterion', rules.acceptance?.criterion ?? 'all_parties', PROPOSAL_ACCEPTANCE_CRITERIA);
   checkMinInt('counter_proposal.max_rounds', rules.counterProposal?.maxRounds ?? 0, 0);
@@ -592,6 +672,7 @@ export function buildProposalPolicy(
     },
     commitment: serializeCommitment(rules.commitment),
   };
+  addExtraKeys(rulesJson, options);
   return {
     policyId,
     mode: 'macp.mode.proposal.v1',
@@ -601,7 +682,12 @@ export function buildProposalPolicy(
   };
 }
 
-export function buildTaskPolicy(policyId: string, description: string, rules: TaskPolicyRulesInput): PolicyDescriptor {
+export function buildTaskPolicy(
+  policyId: string,
+  description: string,
+  rules: TaskPolicyRulesInput,
+  options?: PolicyRuleExtras,
+): PolicyDescriptor {
   const rulesJson: Record<string, unknown> = {
     assignment: {
       allow_reassignment_on_reject: rules.assignment?.allowReassignmentOnReject ?? false,
@@ -611,6 +697,7 @@ export function buildTaskPolicy(policyId: string, description: string, rules: Ta
     },
     commitment: serializeCommitment(rules.commitment),
   };
+  addExtraKeys(rulesJson, options);
   return {
     policyId,
     mode: 'macp.mode.task.v1',
@@ -624,6 +711,7 @@ export function buildHandoffPolicy(
   policyId: string,
   description: string,
   rules: HandoffPolicyRulesInput,
+  options?: PolicyRuleExtras,
 ): PolicyDescriptor {
   checkMinInt('acceptance.implicit_accept_timeout_ms', rules.acceptance?.implicitAcceptTimeoutMs ?? 0, 0);
   const rulesJson: Record<string, unknown> = {
@@ -632,6 +720,7 @@ export function buildHandoffPolicy(
     },
     commitment: serializeCommitment(rules.commitment),
   };
+  addExtraKeys(rulesJson, options);
   return {
     policyId,
     mode: 'macp.mode.handoff.v1',

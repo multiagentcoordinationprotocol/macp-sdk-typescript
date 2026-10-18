@@ -30,6 +30,7 @@ import {
   buildDecisionPolicy,
   buildHandoffPolicy,
   newSessionId,
+  policyRuleExtensions,
 } from '../../src/index';
 import { GrpcTransportAdapter } from '../../src/agent/transports';
 
@@ -80,6 +81,9 @@ describe('MacpClient', () => {
     const result = await client.initialize(5000);
     expect(result.selectedProtocolVersion).toBe('1.0');
     expect(result.runtimeInfo).toBeDefined();
+    // Runtime ≥ 0.9.0 advertises the x- rule extensions it implements; the
+    // stock server registers none.
+    expect(policyRuleExtensions(result)).toEqual([]);
   });
 
   it('listModes returns built-in modes', async () => {
@@ -1213,6 +1217,38 @@ describe('Policy lifecycle', () => {
     const result = await client.registerPolicy(descriptor, { auth: agentAlice });
     expect(result.ok).toBe(true);
     await client.unregisterPolicy(v3PolicyId, { auth: agentAlice });
+  });
+
+  it('admits annotation keys and returns them in the stored rules', async () => {
+    const annotatedId = `${policyId}-annotated`;
+    const descriptor = buildDecisionPolicy(
+      annotatedId,
+      'Integration test policy (annotations)',
+      { voting: { algorithm: 'majority', threshold: 0.5 } },
+      { annotations: { _owner: 'team-a', $comment: 'integration' } },
+    );
+    try {
+      expect(await client.registerPolicy(descriptor, { auth: agentAlice })).toEqual({ ok: true, error: '' });
+      const stored = await client.getPolicy(annotatedId, { auth: agentAlice });
+      expect(JSON.parse(Buffer.from(stored.rules as unknown as Uint8Array).toString('utf8'))).toMatchObject({
+        _owner: 'team-a',
+        $comment: 'integration',
+      });
+    } finally {
+      await client.unregisterPolicy(annotatedId, { auth: agentAlice }).catch(() => undefined);
+    }
+  });
+
+  it('refuses an unregistered x- extension in-band, not as a gRPC status', async () => {
+    const descriptor = buildDecisionPolicy(
+      `${policyId}-ext`,
+      'Integration test policy (extension)',
+      { voting: { algorithm: 'majority', threshold: 0.5 } },
+      { extensions: { 'x-com.acme.audit': { level: 2 } } },
+    );
+    const result = await client.registerPolicy(descriptor, { auth: agentAlice });
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/^INVALID_POLICY_DEFINITION/);
   });
 
   it('retrieves the policy', async () => {

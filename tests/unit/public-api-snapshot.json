@@ -120,6 +120,7 @@
   "newSessionId",
   "nowUnixMs",
   "parseErrorDetails",
+  "policyRuleExtensions",
   "retrySend",
   "serializeMessage",
   "toProtoPayload",
