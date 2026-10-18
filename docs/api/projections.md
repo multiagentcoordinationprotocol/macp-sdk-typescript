@@ -398,7 +398,7 @@ docstring, which documents the same exception.
 | `updates` | `TaskUpdateRecord[]` |
 | `completions` | `TaskCompleteRecord[]` |
 | `failures` | `TaskFailRecord[]` |
-| `rejections` | `TaskRejectRecord[]` — unconditional audit record of every `TaskReject`, same convention as `updates`/`completions`/`failures` above |
+| `rejections` | `TaskRejectRecord[]` — unconditional audit record of every `TaskReject`, same convention as `updates`/`completions`/`failures` above. `whileAssigned` is `true` only when the rejecter held the active assignment (rule 3c); `false` is a pre-assignment personal decline (rule 2a) |
 
 > **Migrating from 0.12.x**: `TaskProjection.isComplete(taskId)` and the
 > `TaskCompletionRecord`/`TaskFailureRecord` type aliases were deprecated in `0.12.0` and
@@ -416,6 +416,29 @@ docstring, which documents the same exception.
 | `isAccepted(taskId)` | `boolean` | Status is accepted or in_progress |
 | `activeTasks()` | `TaskRecord[]` | Tasks in requested/accepted/in_progress |
 | `latestProgress()` | `number \| undefined` | Progress of the most recent TaskUpdate |
+| `hasDeclined(participant)` | `boolean` | `participant` sent a `TaskReject` (either kind) |
+| `declinedParticipants()` | `string[]` | Rejecters, in arrival order, de-duplicated |
+| `canAccept(participant)` | `boolean` | Slot free and `participant` has not declined. Does not evaluate `allow_reassignment_on_reject` |
+| `negativeCommitEligible(taskId)` | `boolean` | A terminal report exists, or the named `requestedAssignee` declined before accepting and the slot is free |
+
+### Personal decline (rule 2a, runtime ≥ 0.9.0)
+
+A `TaskReject` sent before anyone accepted is a **personal decline**
+(RFC-MACP-0009 §5 rule 2a): the decliner can never accept, but the task stays
+`'requested'` and open to everyone else. Only the active assignee's reject
+(rule 3c) marks the task `'rejected'` and frees the slot. If the named
+`requestedAssignee` declines, a negative Commitment becomes eligible without a
+terminal report.
+
+> **Breaking in 0.17.0**: before, every `TaskReject` set the task's `status` to
+> `'rejected'`, which also dropped it from `activeTasks()`. A pre-assignment
+> reject now leaves it `'requested'`.
+
+The four helpers above are **advisory**: they model the runtime's rules from
+what this projection has seen (a projection that joined mid-session may be
+partial; sessions started on a runtime < 0.9.0 keep the earlier rule). Nothing
+refuses client-side — `TaskSession.acceptTask()` still sends, and the runtime's
+NACK is authoritative. Same names and semantics as `macp-sdk-python`.
 
 ### Task assignee lifecycle
 

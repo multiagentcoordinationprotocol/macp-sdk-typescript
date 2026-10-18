@@ -44,6 +44,13 @@ export interface TaskRejectRecord {
   assignee: string;
   reason?: string;
   sender: string;
+  /**
+   * `true` when the rejecter held the session's active assignment (RFC-MACP-0009
+   * §5 rule 3c: the assignee gave the task back). `false` for a pre-assignment
+   * personal decline (rule 2a, runtime ≥ 0.9.0), which leaves the task open to
+   * the other participants. Mirrors the runtime's `TaskRejectRecord.while_assigned`.
+   */
+  whileAssigned: boolean;
 }
 
 export class TaskProjection extends BaseProjection {
@@ -169,9 +176,17 @@ export class TaskProjection extends BaseProjection {
         // `p.assignee or envelope.sender` does: TaskComplete/TaskFail below
         // spread the payload's `assignee` as-is with no such fallback, and
         // intra-SDK consistency wins over replicating Python's nuance here.
-        this.rejections.push({ ...record, sender: envelope.sender });
+        //
+        // `whileAssigned` is computed before the slot is freed (runtime
+        // `task.rs`, same order). Only the active assignee's reject (rule 3c)
+        // marks the task 'rejected'; a pre-assignment reject is a personal
+        // decline (RFC-MACP-0009 §5 rule 2a, runtime ≥ 0.9.0) that leaves the
+        // task 'requested' for everyone else.
+        const slot = this.activeAssignment;
+        const whileAssigned = slot?.sender === envelope.sender;
+        this.rejections.push({ ...record, sender: envelope.sender, whileAssigned });
         const task = this.tasks.get(record.taskId);
-        if (task) task.status = 'rejected';
+        if (task && whileAssigned) task.status = 'rejected';
         // RFC-MACP-0009 §5 rule 3c (`:72`): "When policy sets
         // `allow_reassignment_on_reject: true` and the active assignee sends
         // `TaskReject`, the session returns to the pre-assignment state. Other
@@ -193,8 +208,8 @@ export class TaskProjection extends BaseProjection {
         // cannot diverge from the runtime on any real transcript, and it needs
         // no new API surface (threading a `PolicyDefinition` into the
         // constructor would). Issue #70, option 2.
-        if (this.activeAssignment?.sender === envelope.sender) {
-          const held = this.tasks.get(this.activeAssignment.taskId);
+        if (slot && whileAssigned) {
+          const held = this.tasks.get(slot.taskId);
           if (held) held.assignee = undefined;
           this.activeAssignment = undefined;
         }
@@ -275,4 +290,62 @@ export class TaskProjection extends BaseProjection {
   latestProgress(): number | undefined {
     return this.updates[this.updates.length - 1]?.progress;
   }
+
+  // Advisory: the helpers below model the runtime's rev-4 rules (RFC-MACP-0009
+  // §5 rule 2a, runtime ≥ 0.9.0) from what this projection has seen. A
+  // projection that joined mid-session may be partial, and sessions started on
+  // a runtime < 0.9.0 keep the earlier rule (any prior reject gates every later
+  // accept). None of them refuse anything: `TaskSession.acceptTask()` still
+  // sends, and the runtime's NACK stays authoritative. Same names and semantics
+  // as macp-sdk-python's `TaskProjection`.
+
+  /** True if `participant` has sent a `TaskReject` (either kind). */
+  hasDeclined(participant: string): boolean {
+    return this.rejections.some((r) => rejecterOf(r) === participant);
+  }
+
+  /** Participants that sent a `TaskReject`, in arrival order, de-duplicated. */
+  declinedParticipants(): string[] {
+    return [...new Set(this.rejections.map(rejecterOf))];
+  }
+
+  /**
+   * True if `participant` may still send `TaskAccept`: the session's assignee
+   * slot is free and `participant` has not declined (rule 2a). Does not
+   * evaluate the bound policy's `allow_reassignment_on_reject`, which the
+   * runtime also requires after an active assignee gave the task back.
+   */
+  canAccept(participant: string): boolean {
+    return this.activeAssignment === undefined && !this.hasDeclined(participant);
+  }
+
+  /**
+   * True if a negative Commitment is eligible for `taskId`: a terminal report
+   * (`TaskComplete`/`TaskFail`) exists, or the named `requestedAssignee`
+   * declined before accepting and no one holds the slot (rule 2a), leaving no
+   * eligible assignee.
+   */
+  negativeCommitEligible(taskId: string): boolean {
+    const task = this.tasks.get(taskId);
+    if (!task) return false;
+    if (this.completions.some((c) => c.taskId === taskId) || this.failures.some((f) => f.taskId === taskId)) {
+      return true;
+    }
+    const requested = task.requestedAssignee;
+    return (
+      !!requested &&
+      this.activeAssignment === undefined &&
+      this.rejections.some((r) => rejecterOf(r) === requested && !r.whileAssigned)
+    );
+  }
+}
+
+/**
+ * Who a rejection is about: the payload's `assignee`, falling back to the
+ * envelope sender when the payload leaves it empty (Python's
+ * `p.assignee or envelope.sender`). Applied here, not to the stored record, so
+ * `TaskRejectRecord.assignee` keeps its as-sent value like TaskComplete/TaskFail.
+ */
+function rejecterOf(r: TaskRejectRecord): string {
+  return r.assignee || r.sender;
 }

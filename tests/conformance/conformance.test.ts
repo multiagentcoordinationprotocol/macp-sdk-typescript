@@ -748,6 +748,26 @@ describe('conformance: harness self-tests (mutations must fail)', () => {
   });
 });
 
+// RFC-MACP-0009 §5 rule 2a (runtime ≥ 0.9.0): in task_reject_paths, w1's
+// TaskReject lands before anyone accepted, so it is a personal decline — w1 is
+// out, the task stays open, and w2 takes it. Same assertions as
+// macp-sdk-python's conformance replay (issue #177).
+describe('conformance: task rule 2a personal decline', () => {
+  it('task_reject_paths: w1 declines, w2 holds the task', () => {
+    const fixture = JSON.parse(fs.readFileSync(path.join(FIXTURE_DIR, 'task_reject_paths.json'), 'utf8')) as Fixture;
+    const projection = replayAndCheck(fixture, 'task_reject_paths') as unknown as TaskProjection;
+    expect(projection.declinedParticipants()).toEqual(['agent://w1']);
+    expect(projection.rejections[0].whileAssigned).toBe(false);
+    expect((projection as unknown as { activeAssignment: unknown }).activeAssignment).toEqual({
+      sender: 'agent://w2',
+      taskId: 't1',
+    });
+    expect(projection.canAccept('agent://w1')).toBe(false);
+    expect(projection.getTask('t1')?.status).toBe('in_progress');
+    expect(projection.updates.map((u) => u.sender)).toEqual(['agent://w2']);
+  });
+});
+
 describe('conformance: no duplicate accepted vote or ballot', () => {
   for (const file of fixtureFiles) {
     const fixtureName = path.basename(file, '.json');
