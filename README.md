@@ -467,6 +467,19 @@ npm run test:integration
 docker rm -f macp-runtime-test
 ```
 
+## Runtime Compatibility
+
+This SDK requires **macp-runtime ≥ 0.9.0**. CI gates every PR on the
+integration suite against `macp-runtime:0.9.0`, the same pin as
+`macp-sdk-python`, and runs a non-blocking canary against `:latest`. Against
+an older runtime, the 0.9.0 behaviors the SDK models will not match. Examples:
+
+- the quorum policy-threshold override (`effectiveQuorumThreshold`);
+- task rule 2a personal declines;
+- the handoff rule 3a re-offer bar;
+- policy rule-domain admission and `ruleExtensions`;
+- `macp-error-code` statuses.
+
 ## Runtime Boundary
 
 This SDK is a **client** for the MACP Rust runtime. The runtime handles session state, message ordering, deduplication, TTL enforcement, and mode-specific validation. The SDK provides typed helpers for building and sending envelopes, and local projections for tracking state client-side.
