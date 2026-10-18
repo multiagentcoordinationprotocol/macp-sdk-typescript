@@ -4,6 +4,14 @@ All notable changes to `macp-sdk-typescript` are documented here. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the
 project uses [Semantic Versioning](https://semver.org/).
 
+## [0.16.1](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/compare/v0.16.0...v0.16.1) (2026-10-18)
+
+
+### Bug Fixes
+
+* **watchers:** type PolicyChange.observedAtUnixMs as string ([#175](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/issues/175)) ([3ff812b](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/commit/3ff812b00b96c2088364c9e521a1440eee91ca0a))
+* **watchers:** unwrap .change in ModeRegistryWatcher/RootsWatcher ([#163](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/issues/163)) ([#174](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/issues/174)) ([98cb23e](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/commit/98cb23e9736ffd9c6eef24b85714f6faf5880b39))
+
 ## [0.16.0](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/compare/v0.15.0...v0.16.0) (2026-10-18)
 
 
