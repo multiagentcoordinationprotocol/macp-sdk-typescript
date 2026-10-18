@@ -165,6 +165,31 @@ session.projection.isCommitted;                  // true once a Commitment is ap
 session.projection.isPositiveOutcome;            // undefined until committed; then outcomePositive
 ```
 
+### Policy threshold override (runtime ≥ 0.9.0)
+
+When the session's bound policy has a `threshold`, it **replaces** the
+payload's `requiredApprovals` (RFC-MACP-0011 §5 rule 6) — as given, even above
+the participant count. An override the participants can never reach makes a
+negative Commitment eligible at once, before any ballot. The projection doesn't
+see the policy, so compute the bar with `effectiveQuorumThreshold()` and pass
+it to any threshold helper:
+
+```typescript
+import { effectiveQuorumThreshold } from 'macp-sdk-typescript';
+
+const req = session.projection.requests.get('r1')!;
+const effectiveThreshold = effectiveQuorumThreshold(policyDescriptor, participants.length, req.requiredApprovals);
+session.projection.isThresholdUnreachable('r1', participants.length, { effectiveThreshold });
+session.projection.hasQuorum('r1', { effectiveThreshold });
+```
+
+`n_of_m` (or `count`) gives `max(1, ceil(value))`; `percentage` gives
+`max(1, ceil(value × n / 100))` in exact integer arithmetic. No threshold, or
+a `value ≤ 0`, keeps `requiredApprovals`. `null` means unsatisfiable
+(`percentage` with no participants, or an unknown `type`) and the helpers
+treat it as an infinite bar: `hasQuorum` is false, `isThresholdUnreachable`
+true. Omitting the option keeps the pre-0.9.0 behaviour.
+
 ## RFC Validation Rules
 
 The runtime enforces the cross-message rules — at most one `ApprovalRequest`

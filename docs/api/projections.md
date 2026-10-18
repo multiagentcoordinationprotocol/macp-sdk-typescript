@@ -543,9 +543,11 @@ do not enforce rule 3a. Same names and semantics as `macp-sdk-python`.
 | `approvalCount(requestId)` | `number` | Count of approve ballots, computed from `ballots` — a discarded duplicate is never counted; see the `ballots` row above and [Anomalies](#anomalies) |
 | `rejectionCount(requestId)` | `number` | Count of reject ballots, computed from `ballots` — same duplicate exclusion as `approvalCount` |
 | `abstentionCount(requestId)` | `number` | Count of abstain ballots, computed from `ballots` — same duplicate exclusion as `approvalCount` |
-| `hasQuorum(requestId)` | `boolean` | Approvals >= required threshold |
-| `threshold(requestId)` | `number` | Required approvals for this request |
-| `remainingVotesNeeded(requestId)` | `number` | max(0, required - approvalCount) — derived from `approvalCount`, so it inherits the same duplicate exclusion; see the `ballots` row above and [Anomalies](#anomalies) |
+| `hasQuorum(requestId, options?)` | `boolean` | Approvals >= required threshold |
+| `threshold(requestId, options?)` | `number` | Required approvals for this request (`Infinity` for an unsatisfiable override) |
+| `remainingVotesNeeded(requestId, options?)` | `number` | max(0, required - approvalCount) — derived from `approvalCount`, so it inherits the same duplicate exclusion; see the `ballots` row above and [Anomalies](#anomalies) |
 | `votedSenders(requestId)` | `string[]` | Senders who have voted |
-| `commitmentReady(requestId)` | `boolean` | Quorum reached and not yet committed |
-| `isThresholdUnreachable(requestId, totalEligible)` | `boolean` | Even if all remaining eligible voters approve, the threshold cannot be met |
+| `commitmentReady(requestId, options?)` | `boolean` | Quorum reached and not yet committed |
+| `isThresholdUnreachable(requestId, totalEligible, options?)` | `boolean` | Even if all remaining eligible voters approve, the threshold cannot be met |
+
+`options` is `QuorumThresholdOptions` — `{ effectiveThreshold?: number \| null }`, the result of `effectiveQuorumThreshold()`. A number replaces the payload's `requiredApprovals` (a bound policy's `threshold`, runtime ≥ 0.9.0); `null` is an unsatisfiable bar (treated as infinite); omitted keeps the payload value. An unknown `requestId` returns `false`/`0` regardless. See [Quorum mode › Policy threshold override](../modes/quorum.md#policy-threshold-override-runtime--090).

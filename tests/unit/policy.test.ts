@@ -5,6 +5,7 @@ import {
   buildProposalPolicy,
   buildTaskPolicy,
   buildHandoffPolicy,
+  effectiveQuorumThreshold,
 } from '../../src/policy';
 import { MacpSessionError } from '../../src/errors';
 import type { CommitmentRules } from '../../src/policy';
@@ -645,5 +646,95 @@ describe('policy builders', () => {
       const descriptor = buildDecisionPolicy('p1', 'desc', {});
       expect(descriptor.registeredAtUnixMs).toBeUndefined();
     });
+  });
+});
+
+// Runtime `QuorumThreshold::effective` (crates/macp-core/src/policy/rules.rs)
+// + `QuorumMode::effective_threshold`; same table as macp-sdk-python's
+// `effective_quorum_threshold` tests.
+describe('effectiveQuorumThreshold', () => {
+  const th = (type: unknown, value: unknown) => ({ threshold: { type, value } });
+
+  it.each([
+    ['no rules', undefined],
+    ['null rules', null],
+    ['empty string', ''],
+    ['invalid JSON', '{nope'],
+    ['no threshold', { abstention: {} }],
+    ['threshold not an object', { threshold: 3 }],
+    ['value 0', th('n_of_m', 0)],
+    ['negative value', th('n_of_m', -2)],
+    ['NaN value', th('n_of_m', NaN)],
+    ['boolean value', th('n_of_m', true)],
+    ['string value', th('n_of_m', '3')],
+    ['null value', th('n_of_m', null)],
+    ['missing value', { threshold: { type: 'n_of_m' } }],
+    ['non-string type', th(7, 3)],
+    ['null type', th(null, 3)],
+  ])('%s: requiredApprovals unchanged', (_label, rules) => {
+    expect(effectiveQuorumThreshold(rules as never, 3, 2)).toBe(2);
+  });
+
+  it('a non-positive requiredApprovals is returned as given (no clamp on the inert path)', () => {
+    expect(effectiveQuorumThreshold(undefined, 3, 0)).toBe(0);
+  });
+
+  it.each([
+    ['n_of_m', 5, 5],
+    ['n_of_m', 0.2, 1],
+    ['n_of_m', 2.1, 3],
+    ['count', 4, 4],
+  ])('%s %s → %s', (type, value, expected) => {
+    expect(effectiveQuorumThreshold(th(type, value), 3, 2)).toBe(expected);
+  });
+
+  it('a missing type defaults to n_of_m', () => {
+    expect(effectiveQuorumThreshold({ threshold: { value: 4 } }, 3, 2)).toBe(4);
+  });
+
+  it('an override above the participant count is returned as given', () => {
+    expect(effectiveQuorumThreshold(th('n_of_m', 5), 3, 2)).toBe(5);
+  });
+
+  it('integer percentage is exact ceil(value * n / 100), floored at 1, on the 1/50/67/100 × n=1..7 grid', () => {
+    for (const value of [1, 50, 67, 100]) {
+      for (let n = 1; n <= 7; n++) {
+        expect(effectiveQuorumThreshold(th('percentage', value), n, 99), `${value}% of ${n}`).toBe(
+          Math.max(1, Math.floor((value * n + 99) / 100)),
+        );
+      }
+    }
+  });
+
+  it('integer percentage avoids the binary64 traps the runtime fixed (7% of 100, 28% of 25)', () => {
+    expect(effectiveQuorumThreshold(th('percentage', 7), 100, 0)).toBe(7);
+    expect(effectiveQuorumThreshold(th('percentage', 28), 25, 0)).toBe(7);
+  });
+
+  it('fractional percentage is ceil(value * n / 100)', () => {
+    expect(effectiveQuorumThreshold(th('percentage', 66.5), 3, 2)).toBe(2);
+    expect(effectiveQuorumThreshold(th('percentage', 0.1), 3, 2)).toBe(1);
+  });
+
+  it('percentage over zero participants is unsatisfiable', () => {
+    expect(effectiveQuorumThreshold(th('percentage', 50), 0, 2)).toBeNull();
+  });
+
+  it('an unknown type is unsatisfiable', () => {
+    expect(effectiveQuorumThreshold(th('weighted', 3), 3, 2)).toBeNull();
+  });
+
+  it('saturates at 2^32 - 1', () => {
+    expect(effectiveQuorumThreshold(th('n_of_m', 1e12), 3, 2)).toBe(2 ** 32 - 1);
+    expect(effectiveQuorumThreshold(th('n_of_m', Infinity), 3, 2)).toBe(2 ** 32 - 1);
+    expect(effectiveQuorumThreshold(th('percentage', 1e15), 10, 2)).toBe(2 ** 32 - 1);
+    expect(effectiveQuorumThreshold(th('percentage', Infinity), 10, 2)).toBe(2 ** 32 - 1);
+  });
+
+  it('accepts a PolicyDescriptor, its JSON string, or its bytes', () => {
+    const descriptor = buildQuorumPolicy('q', 'd', { threshold: { type: 'percentage', value: 100 } });
+    expect(effectiveQuorumThreshold(descriptor, 3, 1)).toBe(3);
+    expect(effectiveQuorumThreshold(descriptor.rules, 3, 1)).toBe(3);
+    expect(effectiveQuorumThreshold(Buffer.from(descriptor.rules), 3, 1)).toBe(3);
   });
 });

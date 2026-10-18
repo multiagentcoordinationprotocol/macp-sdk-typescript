@@ -148,6 +148,21 @@ interface QuorumPolicyRulesInput {
 }
 ```
 
+### `effectiveQuorumThreshold(rules, participantCount, requiredApprovals)`
+
+Returns the approval bar a Quorum session actually needs on runtime ≥ 0.9.0,
+where a policy `threshold` replaces `ApprovalRequest.requiredApprovals`
+(RFC-MACP-0011 §5 rule 6). A port of the runtime's `QuorumThreshold::effective`,
+same results as `macp-sdk-python`'s `effective_quorum_threshold`.
+
+`rules` is a `PolicyDescriptor`, its JSON `rules` string/bytes, or the decoded
+object. Returns `requiredApprovals` unchanged when no override applies (no
+policy or threshold, `value ≤ 0`/NaN, non-numeric value, unparsable rules),
+`null` when unsatisfiable (`percentage` with zero participants, unknown
+`type`), otherwise `max(1, ceil(...))` saturated at `2^32 − 1`. Pass the result
+to the `QuorumProjection` helpers as `{ effectiveThreshold }` — see
+[Quorum mode](../modes/quorum.md#policy-threshold-override-runtime--090).
+
 ### `buildProposalPolicy(policyId, description, rules)`
 
 Creates a `PolicyDescriptor` targeting `macp.mode.proposal.v1` (RFC-MACP-0012 §4.3).

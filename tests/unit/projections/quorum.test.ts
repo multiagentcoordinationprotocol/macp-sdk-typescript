@@ -598,3 +598,65 @@ describe('QuorumProjection', () => {
     expect(projection.phase).toBe('Committed');
   });
 });
+
+// Runtime ≥ 0.9.0 (RFC-MACP-0011 §5 rule 6): a policy threshold replaces
+// requiredApprovals when the caller passes `{ effectiveThreshold }`.
+describe('QuorumProjection effectiveThreshold override', () => {
+  let projection: QuorumProjection;
+  const ballot = (type: 'Approve' | 'Reject' | 'Abstain', sender: string) =>
+    projection.applyEnvelope(makeEnvelope(type, { requestId: 'r1' }, sender), registry);
+
+  beforeEach(() => {
+    projection = new QuorumProjection();
+    projection.applyEnvelope(
+      makeEnvelope('ApprovalRequest', { requestId: 'r1', action: 'deploy', summary: 's', requiredApprovals: 2 }),
+      registry,
+    );
+  });
+
+  it('omitting the option keeps the payload bar', () => {
+    ballot('Approve', 'a');
+    ballot('Approve', 'b');
+    expect(projection.hasQuorum('r1')).toBe(true);
+    expect(projection.hasQuorum('r1', {})).toBe(true);
+    expect(projection.threshold('r1')).toBe(2);
+  });
+
+  it('a number replaces the payload bar in every helper', () => {
+    const opts = { effectiveThreshold: 3 };
+    ballot('Approve', 'a');
+    ballot('Approve', 'b');
+    expect(projection.hasQuorum('r1', opts)).toBe(false);
+    expect(projection.commitmentReady('r1', opts)).toBe(false);
+    expect(projection.threshold('r1', opts)).toBe(3);
+    expect(projection.remainingVotesNeeded('r1', opts)).toBe(1);
+    expect(projection.isThresholdUnreachable('r1', 3, opts)).toBe(false);
+    ballot('Approve', 'c');
+    expect(projection.hasQuorum('r1', opts)).toBe(true);
+    expect(projection.commitmentReady('r1', opts)).toBe(true);
+  });
+
+  it('an override above the participant count is unreachable before any ballot', () => {
+    expect(projection.isThresholdUnreachable('r1', 3)).toBe(false);
+    expect(projection.isThresholdUnreachable('r1', 3, { effectiveThreshold: 5 })).toBe(true);
+  });
+
+  it('null (unsatisfiable) is an infinite bar', () => {
+    const opts = { effectiveThreshold: null };
+    ballot('Approve', 'a');
+    expect(projection.hasQuorum('r1', opts)).toBe(false);
+    expect(projection.commitmentReady('r1', opts)).toBe(false);
+    expect(projection.isThresholdUnreachable('r1', 3, opts)).toBe(true);
+    expect(projection.threshold('r1', opts)).toBe(Infinity);
+    expect(projection.remainingVotesNeeded('r1', opts)).toBe(Infinity);
+  });
+
+  it('an unknown request wins over any override', () => {
+    for (const effectiveThreshold of [1, null]) {
+      expect(projection.hasQuorum('nope', { effectiveThreshold })).toBe(false);
+      expect(projection.isThresholdUnreachable('nope', 3, { effectiveThreshold })).toBe(false);
+      expect(projection.threshold('nope', { effectiveThreshold })).toBe(0);
+      expect(projection.remainingVotesNeeded('nope', { effectiveThreshold })).toBe(0);
+    }
+  });
+});

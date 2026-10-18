@@ -18,6 +18,16 @@ export interface BallotRecord {
   sender: string;
 }
 
+/**
+ * Optional policy override for the `QuorumProjection` readiness helpers.
+ * `effectiveThreshold` is `effectiveQuorumThreshold()`'s result: a number
+ * replaces the payload's `requiredApprovals`, `null` means unsatisfiable
+ * (treated as an infinite bar), and omitting it keeps the payload value.
+ */
+export interface QuorumThresholdOptions {
+  effectiveThreshold?: number | null;
+}
+
 export class QuorumProjection extends BaseProjection {
   protected readonly mode = MODE_QUORUM;
   readonly requests = new Map<string, ApprovalRequestRecord>();
@@ -121,14 +131,34 @@ export class QuorumProjection extends BaseProjection {
     return this.countVotes(requestId, 'abstain');
   }
 
-  hasQuorum(requestId: string): boolean {
+  /**
+   * The approval bar for `requestId`: the policy override when one is passed,
+   * else the payload's `requiredApprovals`. `null` (an unsatisfiable override,
+   * see `effectiveQuorumThreshold`) is an infinite bar. `undefined` for an
+   * unknown request.
+   */
+  private required(requestId: string, options?: QuorumThresholdOptions): number | undefined {
     const req = this.requests.get(requestId);
-    if (!req) return false;
-    return this.approvalCount(requestId) >= req.requiredApprovals;
+    if (!req) return undefined;
+    const override = options?.effectiveThreshold;
+    if (override === undefined) return req.requiredApprovals;
+    return override === null ? Infinity : override;
   }
 
-  threshold(requestId: string): number {
-    return this.requests.get(requestId)?.requiredApprovals ?? 0;
+  /**
+   * True once the approval count reaches the bar. Pass `{ effectiveThreshold }`
+   * (from `effectiveQuorumThreshold`) when a bound policy's `threshold`
+   * overrides `requiredApprovals` (runtime ≥ 0.9.0, RFC-MACP-0011 §5 rule 6).
+   */
+  hasQuorum(requestId: string, options?: QuorumThresholdOptions): boolean {
+    const required = this.required(requestId, options);
+    if (required === undefined) return false;
+    return this.approvalCount(requestId) >= required;
+  }
+
+  /** The approval bar, or 0 if the request is unknown. `Infinity` for an unsatisfiable override. */
+  threshold(requestId: string, options?: QuorumThresholdOptions): number {
+    return this.required(requestId, options) ?? 0;
   }
 
   votedSenders(requestId: string): string[] {
@@ -136,21 +166,26 @@ export class QuorumProjection extends BaseProjection {
     return senderMap ? [...senderMap.keys()] : [];
   }
 
-  remainingVotesNeeded(requestId: string): number {
-    const req = this.requests.get(requestId);
-    if (!req) return 0;
-    return Math.max(0, req.requiredApprovals - this.approvalCount(requestId));
+  remainingVotesNeeded(requestId: string, options?: QuorumThresholdOptions): number {
+    const required = this.required(requestId, options);
+    if (required === undefined) return 0;
+    return Math.max(0, required - this.approvalCount(requestId));
   }
 
-  commitmentReady(requestId: string): boolean {
-    return this.hasQuorum(requestId) && this.phase !== 'Committed';
+  commitmentReady(requestId: string, options?: QuorumThresholdOptions): boolean {
+    return this.hasQuorum(requestId, options) && this.phase !== 'Committed';
   }
 
-  isThresholdUnreachable(requestId: string, totalEligible: number): boolean {
-    const req = this.requests.get(requestId);
-    if (!req) return false;
+  /**
+   * True if the remaining possible approvals cannot reach the bar. Under a
+   * policy `threshold` override above the participant count (runtime ≥ 0.9.0)
+   * this is true before any ballot — pass `{ effectiveThreshold }` to see it.
+   */
+  isThresholdUnreachable(requestId: string, totalEligible: number, options?: QuorumThresholdOptions): boolean {
+    const required = this.required(requestId, options);
+    if (required === undefined) return false;
     const remaining = totalEligible - this.votedSenders(requestId).length;
-    return this.approvalCount(requestId) + remaining < req.requiredApprovals;
+    return this.approvalCount(requestId) + remaining < required;
   }
 
   private countVotes(requestId: string, vote: BallotRecord['vote']): number {

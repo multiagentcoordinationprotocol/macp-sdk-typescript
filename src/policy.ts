@@ -413,6 +413,86 @@ export function buildQuorumPolicy(
   };
 }
 
+const U32_MAX = 2 ** 32 - 1;
+
+/**
+ * The approval bar a Quorum session actually needs, or `null` when it is
+ * unsatisfiable.
+ *
+ * Since runtime 0.9.0 (S4, RFC-MACP-0011 §5 rule 6) a bound policy's
+ * `threshold` replaces the `ApprovalRequest.requiredApprovals` payload value
+ * *as given*, even above the participant count, in which case the threshold
+ * is unreachable and a negative Commitment is eligible at once. Pass the
+ * result as `{ effectiveThreshold }` to the `QuorumProjection` readiness
+ * helpers (`null` included — they treat it as unreachable).
+ *
+ * A port of the runtime's `QuorumThreshold::effective` and
+ * `QuorumMode::effective_threshold`, with the same results as
+ * macp-sdk-python's `effective_quorum_threshold`:
+ *
+ * - no policy, no `threshold`, `value <= 0`/NaN, a non-numeric or boolean
+ *   `value`, a non-string `type`, or unparsable rules (the runtime's
+ *   `unwrap_or_default` path): `requiredApprovals`, unchanged;
+ * - `n_of_m` (the default `type`, and the runtime's `count` alias):
+ *   `max(1, ceil(value))`;
+ * - integer `percentage`: `max(1, ceil(value * n / 100))` in exact integer
+ *   arithmetic (RFC-MACP-0012 §4.2 forbids float division); fractional
+ *   `percentage`: `max(1, ceil(value * n / 100))`;
+ * - `percentage` with no participants, or an unknown `type`: `null`;
+ * - every result saturates at `2^32 - 1` (an infinite value included).
+ *
+ * `rules` may be a `PolicyDescriptor`, its JSON `rules` string/bytes, or the
+ * decoded object.
+ */
+export function effectiveQuorumThreshold(
+  rules: PolicyDescriptor | string | Uint8Array | Record<string, unknown> | null | undefined,
+  participantCount: number,
+  requiredApprovals: number,
+): number | null {
+  let parsed: unknown = rules;
+  if (isPolicyDescriptor(parsed)) parsed = parsed.rules;
+  if (typeof parsed === 'string' || parsed instanceof Uint8Array) {
+    const text = typeof parsed === 'string' ? parsed : Buffer.from(parsed).toString('utf8');
+    if (!text) return requiredApprovals;
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      return requiredApprovals;
+    }
+  }
+  if (!isPlainRecord(parsed)) return requiredApprovals;
+  const threshold = parsed.threshold;
+  if (!isPlainRecord(threshold)) return requiredApprovals;
+  const type = threshold.type === undefined ? 'n_of_m' : threshold.type;
+  const value = threshold.value === undefined ? 0 : threshold.value;
+  if (typeof type !== 'string' || typeof value !== 'number') return requiredApprovals;
+  // NaN, 0 and negatives are all inert (the runtime's partial_cmp guard).
+  if (!(value > 0)) return requiredApprovals;
+  let raw: number;
+  if (type === 'percentage') {
+    if (participantCount === 0) return null;
+    if (Number.isInteger(value)) {
+      const required = (BigInt(value) * BigInt(participantCount) + 99n) / 100n;
+      return Number(required > BigInt(U32_MAX) ? BigInt(U32_MAX) : required < 1n ? 1n : required);
+    }
+    raw = (value * participantCount) / 100;
+  } else if (type === 'n_of_m' || type === 'count') {
+    raw = value;
+  } else {
+    return null;
+  }
+  if (raw === Infinity) return U32_MAX;
+  return Math.min(Math.max(1, Math.ceil(raw)), U32_MAX);
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value) && !(value instanceof Uint8Array);
+}
+
+function isPolicyDescriptor(value: unknown): value is PolicyDescriptor {
+  return isPlainRecord(value) && typeof value.policyId === 'string' && typeof value.rules === 'string';
+}
+
 export function buildProposalPolicy(
   policyId: string,
   description: string,
