@@ -18,6 +18,7 @@ import {
   MacpClient,
   DecisionSession,
   MacpIdentityMismatchError,
+  ModeRegistryWatcher,
   ProposalSession,
   TaskSession,
   HandoffSession,
@@ -1281,6 +1282,38 @@ describe('Extension mode registration', () => {
 
     const unreg = await client.unregisterExtMode('ext.test_mode.v1', { auth: agentAlice });
     expect(unreg.ok).toBe(true);
+  });
+
+  // Issue #163: the wire frame wraps the change (`{ change: RegistryChanged }`);
+  // the watcher used to yield the frame itself, so every field read undefined.
+  it('ModeRegistryWatcher yields the unwrapped RegistryChanged', async () => {
+    const abort = new AbortController();
+    const changes = new ModeRegistryWatcher(client, { auth: agentAlice }).changes(abort.signal);
+    const first = changes.next();
+    // Let the subscription establish before mutating the registry.
+    await new Promise((r) => setTimeout(r, 200));
+    try {
+      const reg = await client.registerExtMode(
+        {
+          mode: 'ext.watch_test.v1',
+          modeVersion: '1.0.0',
+          description: 'Registry watch test mode',
+          messageTypes: ['SessionStart', 'Contribute', 'Commitment'],
+          terminalMessageTypes: ['Commitment'],
+        },
+        { auth: agentAlice },
+      );
+      expect(reg.ok).toBe(true);
+
+      const result = await first;
+      expect(result.done).toBe(false);
+      expect(result.value?.registry).toEqual(expect.any(String));
+      expect(result.value?.registry).not.toBe('');
+      expect(Number(result.value?.observedAtUnixMs)).toBeGreaterThan(0);
+    } finally {
+      abort.abort();
+      await client.unregisterExtMode('ext.watch_test.v1', { auth: agentAlice }).catch(() => undefined);
+    }
   });
 });
 
