@@ -274,7 +274,12 @@ export class SignalWatcher {
 
 export interface PolicyChange {
   descriptors: PolicyDescriptor[];
-  observedAtUnixMs: number;
+  /**
+   * Unix ms as a decimal string — the proto field is `int64`, which the
+   * client decodes with `longs: String` (same as `RegistryChanged`,
+   * `RootsChanged` and `SessionLifecycleEvent`). Was mistyped `number`.
+   */
+  observedAtUnixMs: string;
 }
 
 export class PolicyWatcher {
