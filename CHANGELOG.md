@@ -4,6 +4,13 @@ All notable changes to `macp-sdk-typescript` are documented here. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the
 project uses [Semantic Versioning](https://semver.org/).
 
+## [0.16.0](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/compare/v0.15.0...v0.16.0) (2026-10-18)
+
+
+### Features
+
+* **watchers:** SignalWatcher.events() surfaces sender_authenticated (runtime 0.9.0) ([#172](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/issues/172)) ([57491cd](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/commit/57491cd8e156c9f1650a918e36eea5ff9d2bdab1))
+
 ## [0.15.0](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/compare/v0.14.1...v0.15.0) (2026-10-17)
 
 
