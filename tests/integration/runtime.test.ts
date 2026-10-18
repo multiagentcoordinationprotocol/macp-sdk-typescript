@@ -17,6 +17,7 @@ import {
   Auth,
   MacpClient,
   DecisionSession,
+  MacpAckError,
   MacpIdentityMismatchError,
   ModeRegistryWatcher,
   PolicyWatcher,
@@ -496,6 +497,20 @@ describe('Handoff mode — decline path', () => {
     expect(ack.ok).toBe(true);
     expect(session.projection.isDeclined('hd1')).toBe(true);
     expect(session.projection.isAccepted('hd1')).toBe(false);
+
+    // RFC-MACP-0010 §5 rule 3a (runtime ≥ 0.9.0): bob declined, so a re-offer
+    // to bob is refused — and canOfferTo() predicts it.
+    expect(session.projection.declinedTargets()).toEqual(['bob']);
+    expect(session.projection.canOfferTo('bob')).toBe(false);
+    const reoffer = session.offer({
+      handoffId: 'hd2',
+      targetParticipant: 'bob',
+      scope: 'database module',
+      sender: 'alice',
+    });
+    await expect(reoffer).rejects.toBeInstanceOf(MacpAckError);
+    await expect(reoffer).rejects.toMatchObject({ failure: { code: 'INVALID_ENVELOPE' } });
+    expect(session.projection.getHandoff('hd2')).toBeUndefined();
   });
 });
 

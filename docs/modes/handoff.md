@@ -160,6 +160,13 @@ lives in RFC-MACP-0010 §4; the
 [runtime modes guide › Handoff Mode](https://github.com/multiagentcoordinationprotocol/macp-runtime/blob/main/docs/modes.md#handoff-mode)
 documents validation as implemented.
 
+**Declined-target bar (rule 3a, runtime ≥ 0.9.0).** A target that declined an
+offer may not be offered again in the same session — the runtime refuses the
+re-offer with `INVALID_ENVELOPE`. Sessions started on an older runtime do not
+enforce it. Check ahead of time with the advisory
+`projection.canOfferTo(target)` / `projection.declinedTargets()`; `offer()`
+itself does not refuse locally.
+
 ## Context-Frozen Determinism
 
 Handoff mode uses **context-frozen** determinism — semantic determinism holds only if the external context bound at SessionStart is replayed exactly. The context provided via `HandoffContext` messages is part of this frozen state. See [RFC-MACP-0003 (Determinism)](https://github.com/multiagentcoordinationprotocol/multiagentcoordinationprotocol/blob/main/rfcs/RFC-MACP-0003-determinism.md) for the determinism class definitions.

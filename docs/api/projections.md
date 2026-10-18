@@ -520,6 +520,14 @@ otherwise be wrong — Proposal's last-accept-wins — it is already modelled.
 | `pendingHandoffs()` | `HandoffRecord[]` | Handoffs in offered/context_sent status |
 | `hasAcceptedOffer(handoffId?)` | `boolean` | Given handoff accepted, or (with no ID) any handoff accepted |
 | `activeOffer()` | `HandoffRecord \| undefined` | Most recent handoff still in offered/context_sent status |
+| `declinedTargets()` | `string[]` | Targets that declined an offer this session, in offer order, de-duplicated. Keyed on the offer's `targetParticipant`, not the payload `declinedBy` |
+| `canOfferTo(target)` | `boolean` | `target` has not declined (rule 3a), no offer is outstanding, and none was accepted |
+
+`declinedTargets()`/`canOfferTo()` are **advisory** (RFC-MACP-0010 §5 rule 3a,
+runtime ≥ 0.9.0): `HandoffSession.offer()` still sends, and the runtime's
+`INVALID_ENVELOPE` NACK is authoritative. A projection that joined
+mid-session may miss earlier offers, and sessions started on a runtime < 0.9.0
+do not enforce rule 3a. Same names and semantics as `macp-sdk-python`.
 
 ## QuorumProjection
 

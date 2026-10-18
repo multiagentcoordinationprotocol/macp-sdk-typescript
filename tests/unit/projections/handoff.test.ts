@@ -391,4 +391,61 @@ describe('HandoffProjection', () => {
 
     expect(projection.phase).toBe('Committed');
   });
+
+  // RFC-MACP-0010 §5 rule 3a (runtime ≥ 0.9.0): a target that declined may
+  // not be offered again in the session.
+  describe('declined-target bar (rule 3a)', () => {
+    const offer = (handoffId: string, targetParticipant: string) =>
+      projection.applyEnvelope(
+        makeEnvelope('HandoffOffer', { handoffId, targetParticipant, scope: 's' }, 'owner'),
+        registry,
+      );
+    const decline = (handoffId: string, by: string, declinedBy = by) =>
+      projection.applyEnvelope(makeEnvelope('HandoffDecline', { handoffId, declinedBy }, by), registry);
+
+    it('a fresh projection has no declined targets and can offer to anyone', () => {
+      expect(projection.declinedTargets()).toEqual([]);
+      expect(projection.canOfferTo('t1')).toBe(true);
+    });
+
+    it('bars a target that declined, not other targets', () => {
+      offer('h1', 't1');
+      decline('h1', 't1');
+      expect(projection.declinedTargets()).toEqual(['t1']);
+      expect(projection.canOfferTo('t1')).toBe(false);
+      expect(projection.canOfferTo('t2')).toBe(true);
+    });
+
+    it('keys on the offer target, not the payload declinedBy (which may be empty)', () => {
+      offer('h1', 't1');
+      decline('h1', 't1', '');
+      expect(projection.declinedTargets()).toEqual(['t1']);
+    });
+
+    it('lists targets in offer order, de-duplicated', () => {
+      offer('h1', 't2');
+      decline('h1', 't2');
+      offer('h2', 't1');
+      decline('h2', 't1');
+      offer('h3', 't2');
+      decline('h3', 't2');
+      expect(projection.declinedTargets()).toEqual(['t2', 't1']);
+    });
+
+    it('cannot offer while an offer is outstanding, including after context was sent', () => {
+      offer('h1', 't1');
+      expect(projection.canOfferTo('t2')).toBe(false);
+      projection.applyEnvelope(
+        makeEnvelope('HandoffContext', { handoffId: 'h1', contentType: 'text/plain' }, 'owner'),
+        registry,
+      );
+      expect(projection.canOfferTo('t2')).toBe(false);
+    });
+
+    it('cannot offer once an offer was accepted', () => {
+      offer('h1', 't1');
+      projection.applyEnvelope(makeEnvelope('HandoffAccept', { handoffId: 'h1', acceptedBy: 't1' }, 't1'), registry);
+      expect(projection.canOfferTo('t2')).toBe(false);
+    });
+  });
 });

@@ -184,4 +184,35 @@ export class HandoffProjection extends BaseProjection {
     }
     return undefined;
   }
+
+  // Advisory (RFC-MACP-0010 §5 rule 3a, runtime ≥ 0.9.0): modelled from what
+  // this projection has seen. A projection that joined mid-session may miss
+  // earlier offers, and sessions started on a runtime < 0.9.0 do not enforce
+  // rule 3a. Nothing refuses client-side — `HandoffSession.offer()` still
+  // sends, and the runtime's `INVALID_ENVELOPE` NACK is authoritative. Same
+  // names and semantics as macp-sdk-python's `HandoffProjection`.
+
+  /**
+   * Targets that declined an offer this session, in offer order, de-duplicated.
+   * Keyed on the offer's `targetParticipant` (as the runtime is), not on the
+   * payload-supplied `declinedBy`, which may be empty.
+   */
+  declinedTargets(): string[] {
+    return [
+      ...new Set([...this.handoffs.values()].filter((h) => h.status === 'declined').map((h) => h.targetParticipant)),
+    ];
+  }
+
+  /**
+   * True if a new `HandoffOffer` to `target` would be admissible: `target` has
+   * not declined earlier in the session (rule 3a), no offer is outstanding,
+   * and no offer has been accepted. Does not check that `target` is a declared
+   * participant other than the sender.
+   */
+  canOfferTo(target: string): boolean {
+    if (this.declinedTargets().includes(target)) return false;
+    return ![...this.handoffs.values()].some(
+      (h) => h.status === 'offered' || h.status === 'context_sent' || h.status === 'accepted',
+    );
+  }
 }
