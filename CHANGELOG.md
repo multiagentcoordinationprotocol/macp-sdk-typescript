@@ -4,6 +4,26 @@ All notable changes to `macp-sdk-typescript` are documented here. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the
 project uses [Semantic Versioning](https://semver.org/).
 
+## [0.17.0](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/compare/v0.16.1...v0.17.0) (2026-10-18)
+
+
+### ⚠ BREAKING CHANGES
+
+* **policy:** an untyped (JS/JSON) caller passing an off-domain rule value used to get a descriptor that a pre-0.9 runtime registered. That call now throws MacpSessionError at build time.
+* **task:** a TaskReject sent before any TaskAccept no longer sets TaskRecord.status to 'rejected'; the task stays 'requested' and remains in activeTasks(). TaskRejectRecord gains a required whileAssigned field.
+
+### Features
+
+* **handoff:** expose declined targets and the rule 3a re-offer bar ([#181](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/issues/181)) ([dc61e08](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/commit/dc61e08a552a729c6df9aa0dc19c31abfacd3189))
+* **policy:** refuse every off-domain rule value the 0.9 runtime enforces ([#183](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/issues/183)) ([9afd316](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/commit/9afd3167117dd99baadabb18f3199bc0140ae0ad))
+* **policy:** x- extension and _/$ annotation rules keys; policyRuleExtensions() ([#184](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/issues/184)) ([84b3a14](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/commit/84b3a14c2a414ebb7ff1042f5999ca17d961eab4))
+* **quorum:** effectiveQuorumThreshold and a policy-override bar for the readiness helpers ([#182](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/issues/182)) ([63a00c4](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/commit/63a00c459f676b93cba66c1a53924074c297c30f))
+
+
+### Bug Fixes
+
+* **task:** model a pre-assignment TaskReject as a personal decline (rule 2a) ([#179](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/issues/179)) ([2d56c32](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/commit/2d56c3290c9a77557fdbaa11ab8003498178b514))
+
 ## [0.16.1](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/compare/v0.16.0...v0.16.1) (2026-10-18)
 
 
