@@ -1306,3 +1306,38 @@ describe('Participant', () => {
     });
   });
 });
+
+// The agent initiator path has no participant validation of its own: it
+// delegates to the mode session's start(), so the Decision-only empty-roster
+// exception (PR #186) reaches it unchanged. These tests run the real start()
+// validation (no spy on start) to pin that delegation. Parity with
+// macp-sdk-python's test_agent_participant.py empty-participants tests.
+describe('initiator SessionStart with an empty participants list', () => {
+  const SESSION_ID = '550e8400-e29b-41d4-a716-446655440000';
+
+  function makeInitiatorParticipant(mode: string, client: any): Participant {
+    return new Participant({
+      participantId: 'agent-1',
+      sessionId: SESSION_ID,
+      mode,
+      client,
+      transport: makeMockTransport([]),
+      initiator: { sessionStart: { intent: 'inert', participants: [], ttlMs: 10_000 } },
+    });
+  }
+
+  it('a Decision initiator sends a SessionStart with participants: []', async () => {
+    const client = makeMockClient();
+    await makeInitiatorParticipant(MODE_DECISION, client).run();
+    expect(client.send).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([MODE_PROPOSAL, MODE_TASK, MODE_HANDOFF, MODE_QUORUM])(
+    'a %s initiator rejects participants: [] and sends nothing',
+    async (mode) => {
+      const client = makeMockClient();
+      await expect(makeInitiatorParticipant(mode, client).run()).rejects.toThrow('participants must be non-empty');
+      expect(client.send).not.toHaveBeenCalled();
+    },
+  );
+});
