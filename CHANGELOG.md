@@ -4,6 +4,13 @@ All notable changes to `macp-sdk-typescript` are documented here. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the
 project uses [Semantic Versioning](https://semver.org/).
 
+## [0.17.1](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/compare/v0.17.0...v0.17.1) (2026-10-20)
+
+
+### Bug Fixes
+
+* **validation:** accept an empty participant list on a Decision SessionStart ([#186](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/issues/186)) ([543a86c](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/commit/543a86c1a0996130baae709c6f31687b3bf490b8))
+
 ## [0.17.0](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/compare/v0.16.1...v0.17.0) (2026-10-18)
 
 
