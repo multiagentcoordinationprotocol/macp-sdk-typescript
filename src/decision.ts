@@ -90,6 +90,9 @@ export class DecisionSession {
       maxSuspendMs: input.maxSuspendMs,
       modeVersion: this.modeVersion,
       configurationVersion: this.configurationVersion,
+      // The runtime accepts an empty roster for Decision only (an inert
+      // session: no Proposal is ever admitted); the other modes reject it.
+      allowEmptyParticipants: true,
     });
     const payload = buildSessionStartPayload({
       intent: input.intent,
