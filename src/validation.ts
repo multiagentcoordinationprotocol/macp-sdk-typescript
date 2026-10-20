@@ -142,8 +142,17 @@ export function validateMaxSuspendMs(maxSuspendMs: number): void {
   }
 }
 
-export function validateParticipants(participants: string[]): void {
-  if (!participants.length) {
+/**
+ * `allowEmpty` skips the non-empty check only -- the duplicate check and the
+ * count limit still apply. Decision mode is the sole caller of
+ * `allowEmpty: true` (via `validateSessionStart`): the runtime accepts an empty
+ * `participants` list for a Decision `SessionStart` and rejects it for every
+ * other mode (macp-runtime `allows_empty_participants`; spec fixture
+ * `decision_zero_participants.json`). Same shape as macp-sdk-python's
+ * `validate_participants(..., allow_empty=...)`.
+ */
+export function validateParticipants(participants: string[], options: { allowEmpty?: boolean } = {}): void {
+  if (!participants.length && !options.allowEmpty) {
     throw new MacpSessionError('participants must be non-empty');
   }
   const seen = new Set<string>();
@@ -177,13 +186,14 @@ export function validateSessionStart(input: {
   maxSuspendMs?: number;
   modeVersion: string;
   configurationVersion: string;
+  allowEmptyParticipants?: boolean;
 }): void {
   // `intent` is a proto3 singular string field (implicit presence -- an
   // omitted field and an explicit "" serialize identically on the wire), and
   // RFC-MACP-0001 §7.1 states a runtime "MUST NOT reject a SessionStart
   // solely because intent is empty" -- no client-side non-empty check here
   // (issue #124 item 3).
-  validateParticipants(input.participants);
+  validateParticipants(input.participants, { allowEmpty: input.allowEmptyParticipants });
   validateTtlMs(input.ttlMs);
   if (input.maxSuspendMs !== undefined) validateMaxSuspendMs(input.maxSuspendMs);
   validateRequiredField('modeVersion', input.modeVersion);

@@ -266,6 +266,19 @@ describe('validation', () => {
     it('rejects duplicate participants', () => {
       expect(() => validateParticipants(['agent://a', 'agent://a'])).toThrow(MacpSessionError);
     });
+
+    it('allowEmpty accepts an empty list', () => {
+      expect(() => validateParticipants([], { allowEmpty: true })).not.toThrow();
+      expect(() => validateParticipants([], { allowEmpty: false })).toThrow('participants must be non-empty');
+    });
+
+    it('allowEmpty still rejects duplicates and an over-limit roster', () => {
+      expect(() => validateParticipants(['agent://a', 'agent://a'], { allowEmpty: true })).toThrow(
+        'duplicate participant',
+      );
+      const tooMany = Array.from({ length: 1001 }, (_, i) => `agent://p${i}`);
+      expect(() => validateParticipants(tooMany, { allowEmpty: true })).toThrow(MacpSessionError);
+    });
   });
 
   describe('validateRequiredField', () => {

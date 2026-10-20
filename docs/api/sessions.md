@@ -43,8 +43,15 @@ interface SessionOptions {
 ```
 
 `start()`'s validation is identical across all five built-in mode sessions and
-`BaseSession` — `participants` must be non-empty (no duplicate participants),
-`ttlMs` must be in range, and `maxSuspendMs` (if given) must be `>= 0`.
+`BaseSession`, with one exception. `participants` must be non-empty (no
+duplicate participants), `ttlMs` must be in range, and `maxSuspendMs` (if
+given) must be `>= 0`.
+
+The exception is `DecisionSession.start()`, which accepts an empty
+`participants` list. The runtime accepts it for Decision mode only (spec
+fixture `decision_zero_participants.json`). Such a session is inert: no
+Proposal is ever admitted, so it can never resolve positively. Duplicate
+participants and the participant cap are still checked.
 `intent` may be empty or omitted (issue #124 item 3): it's a proto3 singular
 `string` field with implicit presence — an omitted value and an explicit `''`
 are wire-identical — and RFC-MACP-0001 §7.1 states a runtime "MUST NOT reject
