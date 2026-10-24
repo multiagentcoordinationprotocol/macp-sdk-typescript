@@ -14,17 +14,7 @@ Requires Node.js >= 20 (`engines` in `package.json`); CI runs on Node 22 and 24.
 npm install macp-sdk-typescript
 ```
 
-The SDK depends on `@multiagentcoordinationprotocol/proto` from GitHub Packages. Create a `.npmrc` in your project root:
-
-```
-@multiagentcoordinationprotocol:registry=https://npm.pkg.github.com
-```
-
-And configure a GitHub PAT with `read:packages` scope:
-
-```bash
-npm config set //npm.pkg.github.com/:_authToken YOUR_GITHUB_PAT
-```
+Everything installs from npmjs, including the `@multiagentcoordinationprotocol/proto` dependency (published there from 0.1.11). No `.npmrc` or GitHub token is needed.
 
 ## Quick Start
 
