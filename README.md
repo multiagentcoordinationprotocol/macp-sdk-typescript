@@ -8,7 +8,7 @@ runtime behavior is documented in the [runtime repo's docs](https://github.com/m
 
 ## Install
 
-Requires Node.js >= 20.
+Requires Node.js >= 20 (`engines` in `package.json`); CI runs on Node 22 and 24.
 
 ```bash
 npm install macp-sdk-typescript
@@ -27,6 +27,16 @@ npm config set //npm.pkg.github.com/:_authToken YOUR_GITHUB_PAT
 ```
 
 ## Quick Start
+
+Start a local runtime (the same image CI pins):
+
+```bash
+docker run -p 50051:50051 -e MACP_ALLOW_INSECURE=1 -e MACP_MEMORY_ONLY=1 ghcr.io/multiagentcoordinationprotocol/macp-runtime:0.9.0
+```
+
+`MACP_ALLOW_INSECURE=1` permits plaintext and dev-agent auth (local development only —
+since runtime 0.5.0 a runtime with no auth configured refuses to start without it);
+`MACP_MEMORY_ONLY=1` skips on-disk persistence. Then connect:
 
 ```typescript
 import { Auth, MacpClient, DecisionSession } from 'macp-sdk-typescript';
@@ -454,11 +464,10 @@ cleanly fails that workflow, not just a local check.
 Run the full SDK against a live MACP runtime:
 
 ```bash
-# Build and start the runtime
-docker build -t macp-runtime ../macp-runtime/
+# Start the runtime (CI's pinned image)
 docker run -d --name macp-runtime-test -p 50051:50051 \
-  -e MACP_BIND_ADDR=0.0.0.0:50051 -e MACP_ALLOW_INSECURE=1 \
-  -e MACP_MEMORY_ONLY=1 macp-runtime
+  -e MACP_ALLOW_INSECURE=1 -e MACP_MEMORY_ONLY=1 \
+  ghcr.io/multiagentcoordinationprotocol/macp-runtime:0.9.0
 
 # Run tests
 npm run test:integration

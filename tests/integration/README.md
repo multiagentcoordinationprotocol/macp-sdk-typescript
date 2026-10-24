@@ -34,7 +34,7 @@ runs. The steps below are for reproducing that locally.
 
 ## Runtime setup
 
-Build and start the runtime in insecure dev mode. As of runtime 0.5.0 the
+Start the published runtime image (the same `0.9.0` pin CI uses) in insecure dev mode. As of runtime 0.5.0 the
 published image no longer bakes in `MACP_ALLOW_INSECURE=1`, and the runtime
 refuses to start with no auth configured unless it is passed explicitly — so it
 is now mandatory. The dev fallback authenticates any `Authorization: Bearer
@@ -42,10 +42,9 @@ is now mandatory. The dev fallback authenticates any `Authorization: Bearer
 sends; the legacy `MACP_ALLOW_DEV_SENDER_HEADER` is gone.
 
 ```bash
-docker build -t macp-runtime ../../macp-runtime/
 docker run -d --name macp-runtime-test -p 50051:50051 \
-  -e MACP_BIND_ADDR=0.0.0.0:50051 -e MACP_ALLOW_INSECURE=1 \
-  -e MACP_MEMORY_ONLY=1 macp-runtime
+  -e MACP_ALLOW_INSECURE=1 -e MACP_MEMORY_ONLY=1 \
+  ghcr.io/multiagentcoordinationprotocol/macp-runtime:0.9.0
 ```
 
 ## Variables
@@ -75,7 +74,7 @@ docker run -d --name macp-runtime-test -p 50051:50051 \
   -e MACP_ALLOW_INSECURE=1 \
   -e MACP_MEMORY_ONLY=1 \
   -e MACP_AUTH_TOKENS_JSON="$MACP_AUTH_TOKENS_JSON" \
-  macp-runtime
+  ghcr.io/multiagentcoordinationprotocol/macp-runtime:0.9.0
 
 export MACP_TEST_BEARER_ALICE=alice-test-token
 export MACP_TEST_BEARER_BOB=bob-test-token
