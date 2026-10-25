@@ -1,0 +1,66 @@
+{
+  "name": "@multiagentcoordinationprotocol/langgraph",
+  "version": "0.0.0",
+  "description": "LangGraph adapter for MACP: a graph node that reaches a binding, receipt-backed decision",
+  "license": "Apache-2.0",
+  "type": "commonjs",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "CHANGELOG.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "check": "tsc -p tsconfig.json --noEmit",
+    "format": "prettier --write 'src/**/*.ts' 'tests/**/*.ts' 'examples/**/*.ts' 'scripts/**/*.ts'",
+    "format:check": "prettier --check 'src/**/*.ts' 'tests/**/*.ts' 'examples/**/*.ts' 'scripts/**/*.ts'",
+    "test": "vitest run tests/unit",
+    "test:integration": "vitest run tests/integration",
+    "example": "tsx examples/consensus-graph.ts",
+    "prepublishOnly": "npm run check && npm run format:check && npm test && npm run build"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "keywords": [
+    "macp",
+    "langgraph",
+    "langchain",
+    "multi-agent",
+    "consensus"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript.git",
+    "directory": "integrations/langgraph"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "dependencies": {
+    "macp-sdk-typescript": "^0.18.0"
+  },
+  "peerDependencies": {
+    "@langchain/core": "^1.3.0",
+    "@langchain/langgraph": "^1.5.2"
+  },
+  "devDependencies": {
+    "@langchain/anthropic": "^1.6.0",
+    "@langchain/core": "^1.3.0",
+    "@langchain/langgraph": "^1.5.2",
+    "@types/node": "^26.6.5",
+    "prettier": "^3.9.10",
+    "tsx": "^4.23.15",
+    "typescript": "^6.0.3",
+    "vitest": "^5.0.5",
+    "zod": "^4.6.7"
+  }
+}
