@@ -343,7 +343,7 @@ with its own version and release tag.
 | Framework | Package | |
 | --- | --- | --- |
 | LangGraph | [`@multiagentcoordinationprotocol/langgraph`](integrations/langgraph/) | `MacpConsensusNode`: a graph node whose participants evaluate and vote through a Decision or Quorum session and write the commitment into graph state |
-| Claude Agent SDK | next | Subagents vote through Decision mode |
+| Claude Agent SDK | [`@multiagentcoordinationprotocol/claude-agent-sdk`](integrations/claude-agent-sdk/) | `claudeEvaluator` runs a Claude agent as a participant; `macpConsensusServer` gives a lead agent an `mcp__macp__consensus` tool whose subagents evaluate and vote, returning the commitment |
 | OpenAI Agents SDK | planned | |
 
 ## Authentication

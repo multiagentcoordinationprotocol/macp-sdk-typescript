@@ -8,7 +8,9 @@ name: Integrations
 #
 # Integration tests run against the same pinned runtime as integration.yml
 # (ghcr macp-runtime:0.9.0 on scratch port 50123), and the deterministic
-# example runs end to end against it too, so it can't rot.
+# example runs end to end against it too, so it can't rot. The Claude Agent SDK
+# examples need ANTHROPIC_API_KEY, so CI type-checks them (npm run check) and
+# its integration tests stand a scripted `query` in for Claude.
 
 on:
   push:
@@ -65,3 +67,39 @@ jobs:
         run: |
           npx tsx examples/consensus-graph.ts clean
           npx tsx examples/consensus-graph.ts fraudulent
+
+  claude-agent-sdk:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: [22, 24]
+    defaults:
+      run:
+        working-directory: integrations/claude-agent-sdk
+    services:
+      macp-runtime:
+        image: ghcr.io/multiagentcoordinationprotocol/macp-runtime:0.9.0
+        ports:
+          - 50123:50123
+        env:
+          MACP_BIND_ADDR: 0.0.0.0:50123
+          MACP_ALLOW_INSECURE: '1'
+          MACP_MEMORY_ONLY: '1'
+    env:
+      MACP_RUNTIME_ADDRESS: localhost:50123
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: npm
+          cache-dependency-path: integrations/claude-agent-sdk/package-lock.json
+      - run: npm ci
+      - run: npm run check
+      - run: npm run format:check
+      - run: npm test
+      - run: npm run build
+      - name: Wait for macp-runtime to be ready
+        run: npx tsx scripts/wait-for-runtime.ts
+      - run: npm run test:integration

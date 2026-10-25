@@ -17,6 +17,16 @@
       "include-component-in-tag": true,
       "bump-minor-pre-major": true,
       "initial-version": "0.1.0"
+    },
+    "integrations/claude-agent-sdk": {
+      "release-type": "node",
+      "component": "claude-agent-sdk",
+      "include-component-in-tag": true,
+      "bump-minor-pre-major": true,
+      "initial-version": "0.1.0",
+      "extra-files": [
+        "src/version.ts"
+      ]
     }
   },
   "include-component-in-tag": false,

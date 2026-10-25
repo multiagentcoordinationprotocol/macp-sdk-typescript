@@ -203,8 +203,9 @@ public key can then verify the receipt as `attested`.
 
 ## More frameworks
 
-Adapters for the Claude Agent SDK, where subagents vote through Decision mode, are next in this
-repo under `integrations/`. An OpenAI Agents SDK adapter will follow.
+[`@multiagentcoordinationprotocol/claude-agent-sdk`](../claude-agent-sdk/) runs the same
+consensus with Claude Agent SDK subagents as the participants. An OpenAI Agents SDK adapter will
+follow.
 
 ## Development
 
