@@ -29,6 +29,7 @@ jobs:
           case "$TAG" in
             v[0-9]*) dir=. ;;
             langgraph-v[0-9]*) dir=integrations/langgraph ;;
+            claude-agent-sdk-v[0-9]*) dir=integrations/claude-agent-sdk ;;
             *) echo "::error::no package for release tag '$TAG'"; exit 1 ;;
           esac
           echo "dir=$dir" >> "$GITHUB_OUTPUT"
