@@ -71,6 +71,7 @@
   "QuorumProjection",
   "QuorumSession",
   "RATE_LIMITED",
+  "RECEIPT_FORMAT",
   "REGISTRY_READ_ONLY",
   "RootsWatcher",
   "SESSION_ALREADY_EXISTS",
@@ -96,6 +97,7 @@
   "buildProgressPayload",
   "buildProposalPolicy",
   "buildQuorumPolicy",
+  "buildReceipt",
   "buildRoot",
   "buildSessionStartPayload",
   "buildSignalPayload",
@@ -138,5 +140,6 @@
   "validateSignalType",
   "validateTtlMs",
   "validateVote",
-  "verifyCommitmentHash"
+  "verifyCommitmentHash",
+  "verifyReceipt"
 ]

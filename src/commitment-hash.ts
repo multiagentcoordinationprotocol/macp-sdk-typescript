@@ -13,10 +13,15 @@
  * only strings, one boolean, and one optional 2-string nested object. No
  * JSON numbers, no JSON arrays. That leaves only object-member ordering and
  * string escaping, both of which are small enough to hand-write and test
- * directly rather than pull in this SDK's first non-gRPC/proto runtime
- * dependency. `node:crypto` is a Node builtin, not a dependency.
+ * directly rather than pull in a JCS dependency.
+ *
+ * SHA-256 comes from `@noble/hashes` (pure JS, audited, zero dependencies)
+ * rather than `node:crypto`, so this module, and the decision-receipt module
+ * built on it (`./receipt`), load in a browser bundle as well as in Node.
+ * Strings are encoded with `TextEncoder`, not `Buffer`, for the same reason.
  */
-import { createHash } from 'node:crypto';
+import { sha256 } from '@noble/hashes/sha2';
+import { bytesToHex } from '@noble/hashes/utils';
 import type { CommitmentPayload, CommitmentRef } from './types';
 
 /**
@@ -25,6 +30,8 @@ import type { CommitmentPayload, CommitmentRef } from './types';
  * protocol MINOR version bump, not a routine edit.
  */
 const LABEL = 'macp-commitment-hash/1';
+
+const UTF8 = new TextEncoder();
 
 /**
  * Escapes a single JSON string value per RFC 8785 §3.2.2.2:
@@ -42,8 +49,8 @@ const LABEL = 'macp-commitment-hash/1';
  * specially: `for (const ch of str)` below yields it as its own one-code-unit
  * step and it is emitted literally, unescaped, like any other character. The
  * actual loss happens one step later, in `commitmentHash`, when the finished
- * JCS string is encoded to bytes via `Buffer.from(preimage, 'utf8')` — Node's
- * standard lossy UTF-8 encoder silently substitutes a lone surrogate with
+ * JCS string is encoded to bytes via `TextEncoder` — the standard lossy UTF-8
+ * encoder silently substitutes a lone surrogate with
  * U+FFFD (the Unicode replacement character) before hashing. The observable
  * consequence: a field containing a lone surrogate (e.g. `'\uD800'`) hashes
  * IDENTICALLY to the same field containing a literal U+FFFD in that position
@@ -67,7 +74,7 @@ const LABEL = 'macp-commitment-hash/1';
  * by codepoint is what keeps a full character, including a surrogate pair,
  * together as a single loop step so it can be appended whole.
  */
-function jcsString(value: unknown): string {
+export function jcsString(value: unknown): string {
   const str = typeof value === 'string' ? value : String(value ?? '');
   let out = '"';
   for (const ch of str) {
@@ -263,8 +270,7 @@ export function canonicalizeCommitmentPayload(payload: CommitmentPayload): strin
 export function commitmentHash(payload: CommitmentPayload): string {
   const jcs = canonicalizeCommitmentPayload(payload);
   const preimage = `${LABEL}:${jcs}`;
-  const digest = createHash('sha256').update(Buffer.from(preimage, 'utf8')).digest('hex');
-  return `sha256:${digest}`;
+  return `sha256:${bytesToHex(sha256(UTF8.encode(preimage)))}`;
 }
 
 /**
@@ -430,6 +436,22 @@ function decodeCommitmentPayloadStrict(wire: Uint8Array): CommitmentPayload {
     }
   }
   return payload;
+}
+
+/**
+ * Strictly decodes a `CommitmentPayload` wire encoding for the decision-receipt
+ * verifier (`./receipt`), which must compare the wire against the receipt's
+ * own `commitment`. `undefined` wherever {@link verifyCommitmentHash} would say
+ * `'cannot_verify'`. Internal: not re-exported from the package root.
+ */
+export function decodeCommitmentWire(wire: Uint8Array): CommitmentPayload | undefined {
+  if (!(wire instanceof Uint8Array)) return undefined;
+  try {
+    return decodeCommitmentPayloadStrict(wire);
+  } catch (err) {
+    if (err instanceof CannotVerify) return undefined;
+    throw err;
+  }
 }
 
 /**
