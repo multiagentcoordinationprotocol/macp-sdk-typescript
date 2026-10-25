@@ -12,6 +12,7 @@ import { MacpSdkError } from '../../src/errors';
 import {
   RECEIPT_FORMAT,
   buildReceipt,
+  commitmentFromProjection,
   verifyReceipt,
   type BuildReceiptOptions,
   type DecisionReceipt,
@@ -297,5 +298,24 @@ describe('verifyReceipt: step 3 (attestations)', () => {
     const r = buildReceipt(COMMITMENT, { ...BASE, signer: { kid: KID, privateKey: other } });
     expect(outcome(r)).toEqual(['invalid']);
     expect(outcome(r, { [KID]: Buffer.from(ed25519.getPublicKey(other)).toString('base64url') })).toEqual(['valid']);
+  });
+});
+
+describe('commitmentFromProjection', () => {
+  it('inverts the receipt projection, so build(fromProjection(c)) reproduces the receipt', () => {
+    const r = signed();
+    const payload = commitmentFromProjection(r.commitment);
+    expect(payload).toEqual(COMMITMENT);
+    expect(buildReceipt(payload, { ...BASE, signer: { kid: KID, privateKey: SEED } })).toEqual(r);
+  });
+
+  it('keeps supersedes absent when the projection has none', () => {
+    const { supersedes: _s, ...rest } = signed().commitment;
+    expect(commitmentFromProjection(rest).supersedes).toBeUndefined();
+  });
+
+  it('throws MacpSdkError on an incomplete projection', () => {
+    const { reason: _r, ...rest } = signed().commitment;
+    expect(() => commitmentFromProjection(rest as never)).toThrow(MacpSdkError);
   });
 });

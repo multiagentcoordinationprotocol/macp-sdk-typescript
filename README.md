@@ -452,6 +452,8 @@ const result = verifyReceipt(receipt, { 'prod-2026': 'TDVzkxaSf6_Oxu7mmn5TbCkF80
 | `attestations[i]` | `valid`, `invalid`, `unknown_key` or `unsupported` (any other `alg`, and every `vendor` attestation)                                                                                           |
 | `verdict`         | `attested` (integrity holds and at least one attestation is valid), `integrity_only`, `unverified` (integrity fails, so attestations are not checked), or `refused` (unknown `receipt_format`) |
 
+If you hold the snake_case §3 projection (a receipt's `commitment`) instead of a `CommitmentPayload`, convert it with `commitmentFromProjection(projection)`.
+
 `verifyReceipt` never throws. `buildReceipt` throws `MacpSdkError` on a missing field, and when `commitmentWire` is not the wire encoding of the commitment. Signing is deterministic: the same inputs always produce the same receipt.
 
 The `macp-sdk-typescript/receipt` subpath is browser-safe: it pulls in no gRPC, no `node:crypto` and no `Buffer`. The same functions are also exported from the package root. The tests replay the spec's `schemas/conformance/receipt/` vectors and rebuild the spec's example receipt byte for byte.

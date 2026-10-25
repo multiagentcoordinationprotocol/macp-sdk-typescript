@@ -38,6 +38,7 @@ export * from './quorum';
 export {
   RECEIPT_FORMAT,
   buildReceipt,
+  commitmentFromProjection,
   verifyReceipt,
   type AttestationOutcome,
   type BuildReceiptOptions,

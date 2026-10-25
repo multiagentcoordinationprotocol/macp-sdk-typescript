@@ -102,6 +102,7 @@
   "buildSessionStartPayload",
   "buildSignalPayload",
   "buildTaskPolicy",
+  "commitmentFromProjection",
   "commitmentHash",
   "configureLogging",
   "effectiveQuorumThreshold",

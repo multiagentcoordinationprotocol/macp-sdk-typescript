@@ -264,6 +264,18 @@ function readCommitment(value: unknown): CommitmentPayload | undefined {
   return payload;
 }
 
+/**
+ * Converts a snake_case §3 projection (a receipt's `commitment`, or the same
+ * shape from a control plane) into the camelCase `CommitmentPayload` that
+ * {@link buildReceipt} and `commitmentHash` take. Throws `MacpSdkError` when
+ * it is not a complete, well-typed projection.
+ */
+export function commitmentFromProjection(projection: ReceiptCommitment): CommitmentPayload {
+  const payload = readCommitment(projection);
+  if (!payload) throw new MacpSdkError('commitmentFromProjection: not a complete RFC-MACP-0013 §3 projection');
+  return payload;
+}
+
 function sameProjection(a: ReceiptCommitment, b: ReceiptCommitment): boolean {
   if (STRING_FIELDS.some((f) => a[f] !== b[f]) || a.outcome_positive !== b.outcome_positive) return false;
   if (!a.supersedes || !b.supersedes) return !a.supersedes && !b.supersedes;
