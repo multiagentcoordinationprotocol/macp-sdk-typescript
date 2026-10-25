@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { copyFileSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -14,9 +14,9 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
  * the compiler run into it, which is what this file does.
  *
  * Only the two-file closure the guard needs is copied (`types.ts` has no
- * imports; `commitment-hash.ts` imports `./types` and `node:crypto`), so the
- * temp project compiles without a `node_modules` beside it — `typeRoots`
- * points back at this repo's `@types` for the `node:crypto` declarations.
+ * imports; `commitment-hash.ts` imports `./types` and `@noble/hashes`). The
+ * temp project gets a `node_modules` symlink back to this repo's, so
+ * `@noble/hashes` resolves, and `typeRoots` points at this repo's `@types`.
  */
 const REPO_ROOT = resolve(__dirname, '..', '..');
 const TSC = join(REPO_ROOT, 'node_modules', 'typescript', 'bin', 'tsc');
@@ -26,6 +26,7 @@ let workDir: string;
 beforeAll(() => {
   workDir = mkdtempSync(join(tmpdir(), 'macp-frozen-fields-'));
   copyFileSync(join(REPO_ROOT, 'src', 'commitment-hash.ts'), join(workDir, 'commitment-hash.ts'));
+  symlinkSync(join(REPO_ROOT, 'node_modules'), join(workDir, 'node_modules'), 'junction');
   writeFileSync(
     join(workDir, 'tsconfig.json'),
     JSON.stringify({

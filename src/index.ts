@@ -33,6 +33,25 @@ export * from './proposal';
 export * from './proto-registry';
 export * from './retry';
 export * from './quorum';
+// RFC-MACP-0013 Appendix A decision receipts. Also published as the
+// browser-safe `macp-sdk-typescript/receipt` subpath (no gRPC, no node:crypto).
+export {
+  RECEIPT_FORMAT,
+  buildReceipt,
+  commitmentFromProjection,
+  verifyReceipt,
+  type AttestationOutcome,
+  type BuildReceiptOptions,
+  type DecisionReceipt,
+  type JwsAttestation,
+  type ReceiptAttestation,
+  type ReceiptCommitment,
+  type ReceiptIntegrity,
+  type ReceiptSigner,
+  type ReceiptVerdict,
+  type ReceiptVerification,
+  type VendorAttestation,
+} from './receipt';
 export * from './task';
 export * from './types';
 export * from './validation';

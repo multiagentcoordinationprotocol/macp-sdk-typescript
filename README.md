@@ -79,6 +79,7 @@ The SDK uses a **three-layer** design:
 See [`docs/guides/architecture.md`](docs/guides/architecture.md) for the full map.
 
 Every session class follows the same pattern:
+
 1. Construct with a `MacpClient` and options
 2. Call `start()` to initiate the session
 3. Call mode-specific methods (propose, vote, accept, etc.)
@@ -94,8 +95,8 @@ await session.start({
   intent: 'pick a deployment strategy',
   participants: ['alice', 'bob'],
   ttlMs: 60_000,
-  contextId: 'ctx-abc',                           // optional opaque context reference
-  extensions: { 'x-trace': Buffer.from('tid') },  // optional typed extension buffers
+  contextId: 'ctx-abc', // optional opaque context reference
+  extensions: { 'x-trace': Buffer.from('tid') }, // optional typed extension buffers
   roots: [{ uri: 'file:///workspace', name: 'repo' }],
 });
 ```
@@ -121,9 +122,9 @@ await session.vote({ proposalId: 'p1', vote: 'approve' });
 await session.commit({ action: 'decided', authorityScope: 'team', reason: '...' });
 
 // Projection queries
-session.projection.voteTotals();                 // { p1: 1 }
-session.projection.majorityWinner();             // 'p1'
-session.projection.hasBlockingObjection('p1');   // false (only severity 'critical' blocks)
+session.projection.voteTotals(); // { p1: 1 }
+session.projection.majorityWinner(); // 'p1'
+session.projection.hasBlockingObjection('p1'); // false (only severity 'critical' blocks)
 ```
 
 ### Proposal Mode
@@ -145,9 +146,9 @@ await session.accept({ proposalId: 'p2', reason: 'bob agrees', sender: 'bob', au
 await session.commit({ action: 'proposal.accepted', authorityScope: 'team', reason: '...' });
 
 // Projection queries
-session.projection.activeProposals();            // proposals with status 'open'
-session.projection.isAccepted('p2');             // true
-session.projection.isTerminallyRejected('p1');   // false
+session.projection.activeProposals(); // proposals with status 'open'
+session.projection.isAccepted('p2'); // true
+session.projection.isTerminallyRejected('p1'); // false
 ```
 
 ### Task Mode
@@ -170,9 +171,9 @@ await session.completeTask({ taskId: 't1', assignee: 'worker', summary: 'done', 
 await session.commit({ action: 'task.completed', authorityScope: 'lead', reason: '...' });
 
 // Projection queries
-session.projection.progressOf('t1');   // 1.0
-session.projection.isCompleted('t1');  // true
-session.projection.activeTasks();      // []
+session.projection.progressOf('t1'); // 1.0
+session.projection.isCompleted('t1'); // true
+session.projection.activeTasks(); // []
 ```
 
 ### Handoff Mode
@@ -199,8 +200,8 @@ await session.acceptHandoff({
 await session.commit({ action: 'handoff.accepted', authorityScope: 'team', reason: '...' });
 
 // Projection queries
-session.projection.isAccepted('h1');      // true
-session.projection.pendingHandoffs();     // []
+session.projection.isAccepted('h1'); // true
+session.projection.pendingHandoffs(); // []
 ```
 
 ### Quorum Mode
@@ -222,10 +223,10 @@ await session.approve({ requestId: 'r1', reason: 'ok', sender: 'bob', auth: Auth
 await session.commit({ action: 'quorum.approved', authorityScope: 'ops', reason: '...' });
 
 // Projection queries
-session.projection.hasQuorum('r1');              // true
-session.projection.approvalCount('r1');          // 2
-session.projection.remainingVotesNeeded('r1');   // 0
-session.projection.votedSenders('r1');           // ['alice', 'bob']
+session.projection.hasQuorum('r1'); // true
+session.projection.approvalCount('r1'); // 2
+session.projection.remainingVotesNeeded('r1'); // 0
+session.projection.votedSenders('r1'); // ['alice', 'bob']
 ```
 
 ## Agent Framework
@@ -305,9 +306,16 @@ Composable handler factories for Decision Mode — register them directly on a
 
 ```typescript
 participant
-  .on('Proposal', agent.evaluationHandler(agent.functionEvaluator(async (p) => ({
-    recommendation: 'APPROVE', confidence: 0.9, reason: 'looks good',
-  }))))
+  .on(
+    'Proposal',
+    agent.evaluationHandler(
+      agent.functionEvaluator(async (p) => ({
+        recommendation: 'APPROVE',
+        confidence: 0.9,
+        reason: 'looks good',
+      })),
+    ),
+  )
   .on('Evaluation', agent.votingHandler(agent.majorityVoter({ positiveThreshold: 0.6 })))
   .on('Vote', agent.commitmentHandler(agent.majorityCommitter({ quorumSize: 2 })));
 ```
@@ -389,9 +397,9 @@ To attach to a session that is already in flight and receive accepted history be
 
 ```typescript
 const stream = client.openStream({ auth });
-await stream.sendSubscribe(sessionId);            // full replay then live
+await stream.sendSubscribe(sessionId); // full replay then live
 // or, after a reconnect:
-await stream.sendSubscribe(sessionId, lastSeq);    // resume from cursor
+await stream.sendSubscribe(sessionId, lastSeq); // resume from cursor
 ```
 
 The agent framework's `GrpcTransportAdapter` calls this for you on start, so non-initiator agents see `SessionStart` regardless of join order — and it passes its own resume cursor on a second `start()` (after a `stop()`), so that call resumes rather than replaying the whole session again.
@@ -412,6 +420,43 @@ for await (const change of watcher.changes(controller.signal)) {
 // Or one-shot
 const next = await watcher.nextChange();
 ```
+
+## Decision Receipts
+
+A decision receipt (RFC-MACP-0013 Appendix A, `macp-receipt/1`) records one Commitment in a form a third party can check offline. The verifier reports two things separately:
+
+- **Integrity**: the receipt's `commitment` has its `commitment_hash`. This needs no keys.
+- **Authenticity**: an attestation over the receipt is valid for a key you trust. The SDK implements Ed25519 `jws` attestations only.
+
+```typescript
+import { buildReceipt, verifyReceipt } from 'macp-sdk-typescript/receipt';
+
+// Issue: hash the commitment and sign the receipt body (detached JWS, alg EdDSA).
+const receipt = buildReceipt(commitmentPayload, {
+  sessionId,
+  mode: 'macp.mode.decision.v1',
+  issuer: 'runtime:prod-eu',
+  issuedAt: new Date().toISOString(),
+  signer: { kid: 'prod-2026', privateKey: seed32 }, // or { kid, sign: (bytes) => signature64 }
+  commitmentWire, // optional: Commitment wire bytes, recorded as commitment_wire_b64
+});
+
+// Verify: trusted keys map a kid to an Ed25519 public key (JWK `x`, base64url).
+const result = verifyReceipt(receipt, { 'prod-2026': 'TDVzkxaSf6_Oxu7mmn5TbCkF80s8Ulh33qKQsi0gnZM' });
+// { integrity: 'match', attestations: ['valid'], verdict: 'attested' }
+```
+
+| Field             | Values                                                                                                                                                                                         |
+| ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `integrity`       | `match`, `mismatch`, `cannot_verify`, or `null` when the receipt is refused                                                                                                                    |
+| `attestations[i]` | `valid`, `invalid`, `unknown_key` or `unsupported` (any other `alg`, and every `vendor` attestation)                                                                                           |
+| `verdict`         | `attested` (integrity holds and at least one attestation is valid), `integrity_only`, `unverified` (integrity fails, so attestations are not checked), or `refused` (unknown `receipt_format`) |
+
+If you hold the snake_case §3 projection (a receipt's `commitment`) instead of a `CommitmentPayload`, convert it with `commitmentFromProjection(projection)`.
+
+`verifyReceipt` never throws. `buildReceipt` throws `MacpSdkError` on a missing field, and when `commitmentWire` is not the wire encoding of the commitment. Signing is deterministic: the same inputs always produce the same receipt.
+
+The `macp-sdk-typescript/receipt` subpath is browser-safe: it pulls in no gRPC, no `node:crypto` and no `Buffer`. The same functions are also exported from the package root. The tests replay the spec's `schemas/conformance/receipt/` vectors and rebuild the spec's example receipt byte for byte.
 
 ## Error Handling
 

@@ -94,12 +94,14 @@ function writeFiles(dir: string, files: Record<string, string> | undefined): voi
 }
 
 /** Build a throwaway canonical tree mirroring `$(SPEC_CONFORMANCE_DIR)`: a
- * flat top level plus an optional `cmt-hash/` subdirectory. */
+ * flat top level plus an optional `cmt-hash/` subdirectory and a `receipt/`
+ * one (the Makefile's `VECTOR_DIRS`). */
 function makeCanon(
   root: string,
   opts: {
     flat?: Record<string, string>;
     cmtHash?: Record<string, string>;
+    receipt?: Record<string, string>;
     includeCmtHashDir?: boolean;
   } = {},
 ): string {
@@ -108,16 +110,18 @@ function makeCanon(
   if (opts.includeCmtHashDir ?? true) {
     writeFiles(path.join(canon, 'cmt-hash'), opts.cmtHash);
   }
+  writeFiles(path.join(canon, 'receipt'), opts.receipt);
   return canon;
 }
 
-/** Build a throwaway repo tree holding just the two directories the
- * Makefile checks: `tests/conformance` and `tests/vectors/cmt-hash`. */
+/** Build a throwaway repo tree holding just the directories the Makefile
+ * checks: `tests/conformance` and `tests/vectors/{cmt-hash,receipt}`. */
 function makeRepo(
   root: string,
   opts: {
     conformance?: Record<string, string>;
     cmtHash?: Record<string, string>;
+    receipt?: Record<string, string>;
     createCmtHashDir?: boolean;
   } = {},
 ): string {
@@ -126,6 +130,7 @@ function makeRepo(
   if (opts.createCmtHashDir ?? true) {
     writeFiles(path.join(repo, 'tests', 'vectors', 'cmt-hash'), opts.cmtHash);
   }
+  writeFiles(path.join(repo, 'tests', 'vectors', 'receipt'), opts.receipt);
   return repo;
 }
 
@@ -151,7 +156,9 @@ describe.skipIf(!makeAvailable)('fixture drift gate (Makefile verify-fixtures/sy
     const result = runMake(repo, 'verify-fixtures', canon);
 
     expect(result.status).toBe(0);
-    expect(result.stdout).toContain('All conformance fixtures and cmt-hash vectors match the canonical source.');
+    expect(result.stdout).toContain(
+      'All conformance fixtures and vectors (cmt-hash receipt) match the canonical source.',
+    );
     expect(result.stdout).not.toContain('DRIFT');
     expect(result.stdout).not.toContain('EXTRA');
   });
@@ -223,6 +230,39 @@ describe.skipIf(!makeAvailable)('fixture drift gate (Makefile verify-fixtures/sy
     expect(result.stdout).toContain('DRIFT: tests/vectors/cmt-hash/b.json');
     // One exit -- only one "Conformance fixtures drifted" summary line.
     expect(result.stdout.match(/Conformance fixtures drifted from canonical\./g)).toHaveLength(1);
+  });
+
+  it('checks the receipt vectors the same way: DRIFT, missing, and EXTRA', () => {
+    const root = mkTmp('macp-gate-receipt-');
+    const canon = makeCanon(root, {
+      flat: { 'a.json': 'A' },
+      cmtHash: { 'b.json': 'B' },
+      receipt: { 'r1.json': 'R1', 'r2.json': 'R2' },
+    });
+    const repo = makeRepo(root, {
+      conformance: { 'a.json': 'A' },
+      cmtHash: { 'b.json': 'B' },
+      receipt: { 'r1.json': 'changed', 'orphan.json': 'x' },
+    });
+
+    const result = runMake(repo, 'verify-fixtures', canon);
+
+    expect(result.status).not.toBe(0);
+    expect(result.stdout).toContain('DRIFT: tests/vectors/receipt/r1.json');
+    expect(result.stdout).toContain('DRIFT: tests/vectors/receipt/r2.json');
+    expect(result.stdout).toContain('EXTRA: tests/vectors/receipt/orphan.json');
+  });
+
+  it('fails with a named error when canonical receipt/ is missing', () => {
+    const root = mkTmp('macp-gate-receipt-missing-');
+    const canon = makeCanon(root, { flat: { 'a.json': 'A' }, cmtHash: { 'b.json': 'B' } });
+    fs.rmSync(path.join(canon, 'receipt'), { recursive: true });
+    const repo = makeRepo(root, { conformance: { 'a.json': 'A' }, cmtHash: { 'b.json': 'B' } });
+
+    const result = runMake(repo, 'verify-fixtures', canon);
+
+    expect(result.status).not.toBe(0);
+    expect(result.stdout).toContain(`Error: Canonical receipt vector directory not found at ${canon}/receipt`);
   });
 
   it('fails with a named error, not a garbled glob, when canonical cmt-hash/ is missing', () => {

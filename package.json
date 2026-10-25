@@ -11,6 +11,10 @@
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
     },
+    "./receipt": {
+      "types": "./dist/receipt.d.ts",
+      "default": "./dist/receipt.js"
+    },
     "./package.json": "./package.json"
   },
   "sideEffects": false,
@@ -57,6 +61,8 @@
     "@grpc/grpc-js": "^1.14.3",
     "@grpc/proto-loader": "^0.8.0",
     "@multiagentcoordinationprotocol/proto": "^0.1.11",
+    "@noble/curves": "^1.9.7",
+    "@noble/hashes": "^1.8.0",
     "protobufjs": "^8.6.5"
   },
   "devDependencies": {

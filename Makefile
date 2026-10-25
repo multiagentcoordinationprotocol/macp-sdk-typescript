@@ -2,6 +2,8 @@
 
 SPEC_CONFORMANCE_DIR := ../multiagentcoordinationprotocol/schemas/conformance
 SPEC_PARITY_DIR := ../multiagentcoordinationprotocol/schemas/parity
+# Spec vector subdirectories of SPEC_CONFORMANCE_DIR, vendored flat under tests/vectors/<dir>/.
+VECTOR_DIRS := cmt-hash receipt
 
 build:
 	npm run build
@@ -23,21 +25,26 @@ sync-fixtures:
 		echo "Error: Spec repo not found at $(SPEC_CONFORMANCE_DIR)"; \
 		exit 1; \
 	fi
-	@if [ ! -d "$(SPEC_CONFORMANCE_DIR)/cmt-hash" ]; then \
-		echo "Error: Canonical cmt-hash vector directory not found at $(SPEC_CONFORMANCE_DIR)/cmt-hash"; \
-		exit 1; \
-	fi
+	@for d in $(VECTOR_DIRS); do \
+		if [ ! -d "$(SPEC_CONFORMANCE_DIR)/$$d" ]; then \
+			echo "Error: Canonical $$d vector directory not found at $(SPEC_CONFORMANCE_DIR)/$$d"; \
+			exit 1; \
+		fi; \
+	done
 	@for f in $(SPEC_CONFORMANCE_DIR)/*.json; do \
 		[ -e "$$f" ] || continue; \
 		cp "$$f" tests/conformance/; \
 		echo "  Copied $$(basename $$f)"; \
 	done
-	@for f in $(SPEC_CONFORMANCE_DIR)/cmt-hash/*.json; do \
-		[ -e "$$f" ] || continue; \
-		cp "$$f" tests/vectors/cmt-hash/; \
-		echo "  Copied $$(basename $$f)"; \
+	@for d in $(VECTOR_DIRS); do \
+		mkdir -p "tests/vectors/$$d"; \
+		for f in $(SPEC_CONFORMANCE_DIR)/$$d/*.json; do \
+			[ -e "$$f" ] || continue; \
+			cp "$$f" "tests/vectors/$$d/"; \
+			echo "  Copied $$d/$$(basename $$f)"; \
+		done; \
 	done
-	@echo "Done. Run 'git diff tests/conformance/' and 'git diff tests/vectors/cmt-hash/' to review changes."
+	@echo "Done. Run 'git diff tests/conformance/ tests/vectors/' to review changes."
 
 ## Alias for sync-fixtures (same source)
 sync-fixtures-local: sync-fixtures
@@ -49,10 +56,12 @@ verify-fixtures:
 		echo "Error: Spec repo not found at $(SPEC_CONFORMANCE_DIR)"; \
 		exit 1; \
 	fi
-	@if [ ! -d "$(SPEC_CONFORMANCE_DIR)/cmt-hash" ]; then \
-		echo "Error: Canonical cmt-hash vector directory not found at $(SPEC_CONFORMANCE_DIR)/cmt-hash"; \
-		exit 1; \
-	fi
+	@for d in $(VECTOR_DIRS); do \
+		if [ ! -d "$(SPEC_CONFORMANCE_DIR)/$$d" ]; then \
+			echo "Error: Canonical $$d vector directory not found at $(SPEC_CONFORMANCE_DIR)/$$d"; \
+			exit 1; \
+		fi; \
+	done
 	@drift=0; \
 	for f in $(SPEC_CONFORMANCE_DIR)/*.json; do \
 		[ -e "$$f" ] || continue; \
@@ -68,26 +77,28 @@ verify-fixtures:
 			echo "  EXTRA: tests/conformance/$$b has no canonical source"; drift=1; \
 		fi; \
 	done; \
-	for f in $(SPEC_CONFORMANCE_DIR)/cmt-hash/*.json; do \
-		[ -e "$$f" ] || continue; \
-		b=$$(basename "$$f"); \
-		if ! diff -q "$$f" "tests/vectors/cmt-hash/$$b" >/dev/null 2>&1; then \
-			echo "  DRIFT: tests/vectors/cmt-hash/$$b differs from (or is missing vs) canonical"; drift=1; \
-		fi; \
-	done; \
-	for f in tests/vectors/cmt-hash/*.json; do \
-		[ -e "$$f" ] || continue; \
-		b=$$(basename "$$f"); \
-		if [ ! -f "$(SPEC_CONFORMANCE_DIR)/cmt-hash/$$b" ]; then \
-			echo "  EXTRA: tests/vectors/cmt-hash/$$b has no canonical source"; drift=1; \
-		fi; \
+	for d in $(VECTOR_DIRS); do \
+		for f in $(SPEC_CONFORMANCE_DIR)/$$d/*.json; do \
+			[ -e "$$f" ] || continue; \
+			b=$$(basename "$$f"); \
+			if ! diff -q "$$f" "tests/vectors/$$d/$$b" >/dev/null 2>&1; then \
+				echo "  DRIFT: tests/vectors/$$d/$$b differs from (or is missing vs) canonical"; drift=1; \
+			fi; \
+		done; \
+		for f in tests/vectors/$$d/*.json; do \
+			[ -e "$$f" ] || continue; \
+			b=$$(basename "$$f"); \
+			if [ ! -f "$(SPEC_CONFORMANCE_DIR)/$$d/$$b" ]; then \
+				echo "  EXTRA: tests/vectors/$$d/$$b has no canonical source"; drift=1; \
+			fi; \
+		done; \
 	done; \
 	if [ $$drift -ne 0 ]; then \
 		echo "Conformance fixtures drifted from canonical. Run 'make sync-fixtures' and commit."; \
 		echo "Note: 'make sync-fixtures' copies but never deletes -- any file flagged EXTRA: above has no canonical source and must be removed by hand."; \
 		exit 1; \
 	fi; \
-	echo "All conformance fixtures and cmt-hash vectors match the canonical source."
+	echo "All conformance fixtures and vectors ($(VECTOR_DIRS)) match the canonical source."
 
 ## Sync the vendored cross-SDK parity contract from canonical source
 sync-parity:
