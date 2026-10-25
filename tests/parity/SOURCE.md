@@ -7,11 +7,16 @@ schemas/parity/contract.json
 ```
 
 from the spec repo (`multiagentcoordinationprotocol/multiagentcoordinationprotocol`),
-commit `60262b8` (spec-repo PR
+commit `22976d8` (spec-repo PR
+[#218](https://github.com/multiagentcoordinationprotocol/multiagentcoordinationprotocol/pull/218),
+a PATCH bump to `1.4.1` — only the `source` text of `defaults`, `contribute_payload`
+and `contribute_acceptance` changed, to cite their new normative homes; no value
+changed), last re-synced 2026-10-25. Previously re-synced 2026-10-17 from commit
+`60262b8` (spec-repo PR
 [#196](https://github.com/multiagentcoordinationprotocol/multiagentcoordinationprotocol/pull/196),
 a MINOR bump to `1.4.0` — `error_codes.permanent` gains the four runtime 0.9.0
 control-plane codes `REGISTRY_READ_ONLY`, `INVALID_REQUEST`, `STREAM_LAGGED`,
-`AGENT_NOT_FOUND`), last re-synced 2026-10-17. Previously re-synced from commit
+`AGENT_NOT_FOUND`). Before that, re-synced from commit
 `2989f644576e73a46d2efe6b682b74e0e4eadd54` (spec-repo PR
 [#179](https://github.com/multiagentcoordinationprotocol/multiagentcoordinationprotocol/pull/179),
 a MINOR bump per the manifest's own versioning rule — purely additive: a new
@@ -28,7 +33,7 @@ bump — annotation-only). Previously re-synced 2026-09-27 as part of fixing iss
 (PR #118), at `contract_version` `1.1.0` (spec-repo PR #151, adding four `collision_*`
 `contribute_payload` vectors). Originally copied on 2026-09-25 as part of
 `plans/sdk-parity-typescript.md` Phase 5, at `contract_version` `1.0.0`.
-`contract_version` at last sync: `1.4.0`.
+`contract_version` at last sync: `1.4.1`.
 
 ## Why this directory lives outside `tests/conformance/`
 
