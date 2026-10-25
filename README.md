@@ -335,6 +335,17 @@ server via `fromBootstrap()`; for the manual path use
 See [`docs/api/cancel-callback.md`](docs/api/cancel-callback.md) and
 [`examples/cancel-callback.ts`](examples/cancel-callback.ts).
 
+## Framework Integrations
+
+Framework adapters live under [`integrations/`](integrations/). Each is a separate npm package
+with its own version and release tag.
+
+| Framework | Package | |
+| --- | --- | --- |
+| LangGraph | [`@multiagentcoordinationprotocol/langgraph`](integrations/langgraph/) | `MacpConsensusNode`: a graph node whose participants evaluate and vote through a Decision or Quorum session and write the commitment into graph state |
+| Claude Agent SDK | next | Subagents vote through Decision mode |
+| OpenAI Agents SDK | planned | |
+
 ## Authentication
 
 ```typescript
