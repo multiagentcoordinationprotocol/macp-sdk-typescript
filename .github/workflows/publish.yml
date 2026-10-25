@@ -4,6 +4,11 @@ on:
   release:
     types: [created]
 
+# One repo, several npm packages (release-please-config.json). The release tag
+# says which: `v1.2.3` is macp-sdk-typescript at the root; `<component>-v1.2.3`
+# is a framework adapter under integrations/ (W3.5), e.g. `langgraph-v0.1.0`
+# publishes integrations/langgraph as @multiagentcoordinationprotocol/langgraph.
+
 permissions:
   contents: read
 
@@ -15,21 +20,40 @@ jobs:
       id-token: write
       packages: read
     steps:
+      - name: Resolve package from tag
+        id: pkg
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+          case "$TAG" in
+            v[0-9]*) dir=. ;;
+            langgraph-v[0-9]*) dir=integrations/langgraph ;;
+            *) echo "::error::no package for release tag '$TAG'"; exit 1 ;;
+          esac
+          echo "dir=$dir" >> "$GITHUB_OUTPUT"
+          echo "release $TAG -> $dir"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
           registry-url: https://registry.npmjs.org
           cache: npm
-      # setup-node points .npmrc auth at npmjs.org for the publish; the proto
-      # dependency still resolves from GitHub Packages, so append its token.
+          cache-dependency-path: ${{ steps.pkg.outputs.dir }}/package-lock.json
+      # setup-node points .npmrc auth at npmjs.org for the publish; the root
+      # package's proto dependency still resolves from GitHub Packages, so
+      # append its token. (The adapters resolve everything from npmjs.)
       - name: Authenticate to GitHub Packages
+        if: steps.pkg.outputs.dir == '.'
         run: echo "//npm.pkg.github.com/:_authToken=${{ secrets.GITHUB_TOKEN }}" >> .npmrc
       - run: npm ci
-      # `prepublishOnly` (check + lint + format:check + test + build) runs as
-      # part of publish — the full release gate executes against the exact
-      # tree being published.
+        working-directory: ${{ steps.pkg.outputs.dir }}
+      # `prepublishOnly` (check + lint + format:check + test + build at the
+      # root; check + format:check + test + build for an adapter) runs as part
+      # of publish — the release gate executes against the exact tree being
+      # published.
       - run: npm publish --provenance --access public
+        working-directory: ${{ steps.pkg.outputs.dir }}
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
@@ -40,6 +64,8 @@ jobs:
     name: Dispatch sdk-released to macp-playground
     runs-on: ubuntu-latest
     needs: [publish]
+    # The playground pins macp-sdk-typescript only; adapter releases don't bump it.
+    if: startsWith(github.event.release.tag_name, 'v')
     steps:
       - name: Mint GitHub App token
         id: app
