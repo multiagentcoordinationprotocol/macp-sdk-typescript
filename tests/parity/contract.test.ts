@@ -62,7 +62,7 @@ function snakeToLowerCamel(name: string): string {
 }
 
 describe('parity contract (tests/parity/contract.json)', () => {
-  it('pins contract_version 1.4.0 — a version bump means re-reading this whole file', () => {
+  it('pins contract_version 1.4.1 — a version bump means re-reading this whole file', () => {
     // Not a manifest-content assertion: a tripwire so a future contract_version
     // bump (MINOR or MAJOR, per the manifest's own versioning rule) forces a
     // human to re-review every section below, not just whichever one changed.
@@ -111,7 +111,12 @@ describe('parity contract (tests/parity/contract.json)', () => {
     // through, and `send()`'s status-name map is only the pre-0.9.0 fallback
     // when no `macp-error-code` key is present. No other section changed;
     // re-reviewed every section below against the bump regardless.
-    expect(contract.contract_version).toBe('1.4.0');
+    // Bumped 1.4.0 -> 1.4.1 (spec-repo PR #218, merged 2026-10-25 at
+    // 22976d8): PATCH — only the `source` text of `defaults`,
+    // `contribute_payload` and `contribute_acceptance` changed, to point at
+    // their new normative homes (RFC-MACP-0001 §7.1, registries/modes.md,
+    // multi_round.proto). No value, section or vector changed.
+    expect(contract.contract_version).toBe('1.4.1');
   });
 
   describe('protocol', () => {
