@@ -47,3 +47,9 @@ PR strategy: Phases 1, 2 and 2b in one `feat:` PR (one SDK release with the S1 s
   - All three are closed.
   - Files: src/client.ts, tests/unit/client-unary.test.ts, README.md, docs/api/{client,errors}.md, docs/guides/error-handling.md, CLAUDE.md (local).
   - Next: Phase 2b.
+- **2026-10-26: Phase 2b PASS (Opus verifier, simple; 1 round).**
+  - Generalized `FIXTURE_FILES`/`SPEC_EXAMPLES_DIR` into `VENDORED_FILES`/`SPEC_ROOT`/`VENDORED_DIRS`, and vendored `tests/otel/macp-semconv.json` (spec 0f77753).
+  - The verifier's notes (a colon-less entry guard, and the stale testing.md drift-gate section) were applied.
+  - Also added a `signed`-only gate case to client-unary at macp-sdk-python's request.
+  - Files: Makefile, tests/otel/*, tests/fixtures/SOURCE.md, tests/unit/{fixture-drift-gate,client-unary}.test.ts, docs/guides/testing.md, CLAUDE.md (local).
+  - Next: finalization (§4), then ship.

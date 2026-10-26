@@ -613,6 +613,10 @@ describe('MacpClient.getDecisionReceipt / getReceiptKeys', () => {
   const unadvertised = [
     { label: 'false', capabilities: { decisionReceipt: { getDecisionReceipt: false, signed: false } } },
     { label: 'absent', capabilities: { decisionReceipt: {} } },
+    {
+      label: 'false with signed true (signed alone never opens it)',
+      capabilities: { decisionReceipt: { signed: true } },
+    },
     { label: 'null (pre-R1 runtime, proto-loader defaults)', capabilities: { decisionReceipt: null } },
     { label: 'no decisionReceipt group (pre-0.1.13 double)', capabilities: { policyRegistry: { whatIfReplay: true } } },
   ];

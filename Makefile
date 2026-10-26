@@ -4,11 +4,17 @@ SPEC_CONFORMANCE_DIR := ../multiagentcoordinationprotocol/schemas/conformance
 SPEC_PARITY_DIR := ../multiagentcoordinationprotocol/schemas/parity
 # Spec vector subdirectories of SPEC_CONFORMANCE_DIR, vendored flat under tests/vectors/<dir>/.
 VECTOR_DIRS := cmt-hash receipt
-# Spec example documents vendored byte-identical under tests/fixtures/ (test inputs
-# that live outside schemas/conformance). Overridable on its own; by default it
-# follows SPEC_CONFORMANCE_DIR, so CI's single override moves both.
-SPEC_EXAMPLES_DIR ?= $(SPEC_CONFORMANCE_DIR)/../../examples/discovery
-FIXTURE_FILES := receipt_keys.json
+# Single spec documents vendored byte-identical outside tests/conformance and
+# tests/vectors, as <path under SPEC_ROOT>:<local path> pairs. SPEC_ROOT is
+# overridable on its own; by default it follows SPEC_CONFORMANCE_DIR, so CI's
+# single override moves both. VENDORED_DIRS are the local directories these
+# land in: any other *.json found there is flagged EXTRA.
+SPEC_ROOT ?= $(SPEC_CONFORMANCE_DIR)/../..
+VENDORED_FILES := \
+	examples/discovery/receipt_keys.json:tests/fixtures/receipt_keys.json \
+	schemas/otel/macp-semconv.json:tests/otel/macp-semconv.json
+VENDORED_DIRS := tests/fixtures tests/otel
+VENDORED_LOCAL := $(foreach p,$(VENDORED_FILES),$(word 2,$(subst :, ,$(p))))
 
 build:
 	npm run build
@@ -49,16 +55,18 @@ sync-fixtures:
 			echo "  Copied $$d/$$(basename $$f)"; \
 		done; \
 	done
-	@for b in $(FIXTURE_FILES); do \
-		if [ ! -f "$(SPEC_EXAMPLES_DIR)/$$b" ]; then \
-			echo "Error: canonical example $$b not found at $(SPEC_EXAMPLES_DIR)/$$b"; \
+	@for p in $(VENDORED_FILES); do \
+		case "$$p" in *:*) ;; *) echo "Error: VENDORED_FILES entry $$p is not <spec path>:<local path>"; exit 1;; esac; \
+		src="$${p%%:*}"; dst="$${p#*:}"; \
+		if [ ! -f "$(SPEC_ROOT)/$$src" ]; then \
+			echo "Error: canonical file $$src not found at $(SPEC_ROOT)/$$src"; \
 			exit 1; \
 		fi; \
-		mkdir -p tests/fixtures; \
-		cp "$(SPEC_EXAMPLES_DIR)/$$b" tests/fixtures/; \
-		echo "  Copied fixtures/$$b"; \
+		mkdir -p "$$(dirname "$$dst")"; \
+		cp "$(SPEC_ROOT)/$$src" "$$dst"; \
+		echo "  Copied $$dst"; \
 	done
-	@echo "Done. Run 'git diff tests/conformance/ tests/vectors/ tests/fixtures/' to review changes."
+	@echo "Done. Run 'git diff tests/conformance/ tests/vectors/ $(VENDORED_DIRS)' to review changes."
 
 ## Alias for sync-fixtures (same source)
 sync-fixtures-local: sync-fixtures
@@ -107,22 +115,25 @@ verify-fixtures:
 			fi; \
 		done; \
 	done; \
-	for b in $(FIXTURE_FILES); do \
-		if ! cmp -s "$(SPEC_EXAMPLES_DIR)/$$b" "tests/fixtures/$$b"; then \
-			echo "  DRIFT: tests/fixtures/$$b differs from (or is missing vs) canonical $(SPEC_EXAMPLES_DIR)/$$b"; drift=1; \
+	for p in $(VENDORED_FILES); do \
+		case "$$p" in *:*) ;; *) echo "Error: VENDORED_FILES entry $$p is not <spec path>:<local path>"; exit 1;; esac; \
+		src="$${p%%:*}"; dst="$${p#*:}"; \
+		if ! cmp -s "$(SPEC_ROOT)/$$src" "$$dst"; then \
+			echo "  DRIFT: $$dst differs from (or is missing vs) canonical $(SPEC_ROOT)/$$src"; drift=1; \
 		fi; \
 	done; \
-	for f in tests/fixtures/*.json; do \
-		[ -e "$$f" ] || continue; \
-		b=$$(basename "$$f"); \
-		case " $(FIXTURE_FILES) " in *" $$b "*) ;; *) echo "  EXTRA: tests/fixtures/$$b is not in FIXTURE_FILES (no canonical source)"; drift=1;; esac; \
+	for d in $(VENDORED_DIRS); do \
+		for f in "$$d"/*.json; do \
+			[ -e "$$f" ] || continue; \
+			case " $(VENDORED_LOCAL) " in *" $$f "*) ;; *) echo "  EXTRA: $$f is not in VENDORED_FILES (no canonical source)"; drift=1;; esac; \
+		done; \
 	done; \
 	if [ $$drift -ne 0 ]; then \
 		echo "Conformance fixtures drifted from canonical. Run 'make sync-fixtures' and commit."; \
 		echo "Note: 'make sync-fixtures' copies but never deletes -- any file flagged EXTRA: above has no canonical source and must be removed by hand."; \
 		exit 1; \
 	fi; \
-	echo "All conformance fixtures, vectors ($(VECTOR_DIRS)) and fixtures ($(FIXTURE_FILES)) match the canonical source."
+	echo "All conformance fixtures, vectors ($(VECTOR_DIRS)) and vendored files ($(VENDORED_LOCAL)) match the canonical source."
 
 ## Sync the vendored cross-SDK parity contract from canonical source
 sync-parity:

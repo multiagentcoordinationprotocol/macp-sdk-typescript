@@ -8,5 +8,5 @@ spec repo (`multiagentcoordinationprotocol/multiagentcoordinationprotocol`), com
 macp-sdk-python vendors the same file at the same path.
 
 Never edit it here; refresh it with `make sync-fixtures`. `make verify-fixtures` compares every
-file named in the Makefile's `FIXTURE_FILES` against `SPEC_EXAMPLES_DIR` byte for byte, and
+pair in the Makefile's `VENDORED_FILES` against its source under `SPEC_ROOT` byte for byte, and
 flags any other `tests/fixtures/*.json` as EXTRA.
