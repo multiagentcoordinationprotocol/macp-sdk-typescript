@@ -7,6 +7,7 @@ import {
   AGENT_NOT_FOUND,
   HISTORY_UNAVAILABLE,
   INVALID_REQUEST,
+  RECEIPT_UNAVAILABLE,
   REGISTRY_READ_ONLY,
   SESSION_NOT_FOUND,
 } from '../../src/constants';
@@ -594,6 +595,241 @@ describe('MacpClient.whatIfReplay', () => {
 
     expect(caught).toBeInstanceOf(MacpTransportError);
     expect((caught as MacpTransportError).macpErrorCode).toBe(HISTORY_UNAVAILABLE);
+  });
+});
+
+// RFC-MACP-0013 §13. Test names without spaces are shared with
+// macp-sdk-python (`test_<name>`).
+describe('MacpClient.getDecisionReceipt / getReceiptKeys', () => {
+  const advertised = { capabilities: { decisionReceipt: { getDecisionReceipt: true, signed: true } } };
+  // Non-canonical whitespace: `raw` must come back exactly as served.
+  const receiptJson = ' { "receipt_format": "macp-receipt/1",\n  "session_id": "s1" }\n';
+  const jwksJson = '{"keys":[{"kty":"OKP","crv":"Ed25519","kid":"example-1","x":"TDVz"}]}';
+  const fail = (code: number, macpCode?: string) => {
+    const metadata = new grpc.Metadata();
+    if (macpCode) metadata.set('macp-error-code', macpCode);
+    return { code, details: 'refused', message: 'refused', metadata };
+  };
+  const unadvertised = [
+    { label: 'false', capabilities: { decisionReceipt: { getDecisionReceipt: false, signed: false } } },
+    { label: 'absent', capabilities: { decisionReceipt: {} } },
+    { label: 'null (pre-R1 runtime, proto-loader defaults)', capabilities: { decisionReceipt: null } },
+    { label: 'no decisionReceipt group (pre-0.1.13 double)', capabilities: { policyRegistry: { whatIfReplay: true } } },
+  ];
+
+  it.each(unadvertised)('get_decision_receipt_requires_capability ($label)', async ({ capabilities }) => {
+    const client = makeClient();
+    stubUnary(client, 'Initialize', { capabilities });
+    const calls = stubUnary(client, 'GetDecisionReceipt', { receiptJson });
+
+    const caught = await client.getDecisionReceipt('s1').catch((err: unknown) => err);
+
+    expect(caught).toBeInstanceOf(MacpSdkError);
+    expect(caught).not.toBeInstanceOf(MacpTransportError);
+    expect((caught as Error).message).toContain('capabilities.decisionReceipt.getDecisionReceipt');
+    expect((caught as Error).message).toContain('GetDecisionReceipt is optional');
+    expect((caught as Error).message).toContain('RFC-MACP-0013 §13');
+    expect(calls).toHaveLength(0);
+  });
+
+  it('get_decision_receipt_returns_parsed_and_raw', async () => {
+    const client = makeClient();
+    const init = stubUnary(client, 'Initialize', advertised);
+    const calls = stubUnary(client, 'GetDecisionReceipt', { receiptJson });
+
+    const res = await client.getDecisionReceipt('s1');
+    await client.getDecisionReceipt('s1');
+
+    expect(init).toHaveLength(1);
+    expect(calls[0]!.request).toEqual({ sessionId: 's1' });
+    expect(res.raw).toBe(receiptJson);
+    expect(res.receipt).toEqual(JSON.parse(receiptJson));
+  });
+
+  it.each([
+    { label: 'non-JSON', receiptJson: '{not json', message: 'not valid JSON' },
+    { label: 'empty (proto default)', receiptJson: '', message: 'not valid JSON' },
+    { label: 'absent', receiptJson: undefined, message: 'not valid JSON' },
+    { label: 'a JSON array', receiptJson: '[1]', message: 'not a JSON object' },
+    { label: 'JSON null', receiptJson: 'null', message: 'not a JSON object' },
+    { label: 'a JSON string', receiptJson: '"r"', message: 'not a JSON object' },
+  ])('get_decision_receipt_rejects_non_json ($label)', async ({ receiptJson: served, message }) => {
+    const client = makeClient();
+    stubUnary(client, 'Initialize', advertised);
+    stubUnary(client, 'GetDecisionReceipt', served === undefined ? {} : { receiptJson: served });
+
+    const caught = await client.getDecisionReceipt('s1').catch((err: unknown) => err);
+
+    expect(caught).toBeInstanceOf(MacpSdkError);
+    expect(caught).not.toBeInstanceOf(MacpTransportError);
+    expect((caught as Error).message).toContain(`receipt_json that is ${message}`);
+  });
+
+  it('getDecisionReceipt requires auth before initializing', async () => {
+    const client = makeBareClient();
+    const init = stubUnary(client, 'Initialize', advertised);
+
+    await expect(client.getDecisionReceipt('s1')).rejects.toBeInstanceOf(MacpSdkError);
+    expect(init).toHaveLength(0);
+  });
+
+  it('receipt_unavailable_surfaces_macp_code', async () => {
+    const client = makeClient();
+    stubUnary(client, 'Initialize', advertised);
+    stubUnary(client, 'GetDecisionReceipt', fail(grpc.status.FAILED_PRECONDITION, RECEIPT_UNAVAILABLE), {
+      fail: true,
+    });
+
+    const caught = await client.getDecisionReceipt('s1').catch((err: unknown) => err);
+
+    expect(caught).toBeInstanceOf(MacpTransportError);
+    expect(caught).not.toBeInstanceOf(MacpAckError);
+    expect((caught as MacpTransportError).macpErrorCode).toBe(RECEIPT_UNAVAILABLE);
+    expect((caught as MacpTransportError).code).toBe('FAILED_PRECONDITION');
+  });
+
+  it('an advertised runtime that answers UNIMPLEMENTED surfaces as MacpTransportError', async () => {
+    const client = makeClient();
+    stubUnary(client, 'Initialize', advertised);
+    stubUnary(client, 'GetDecisionReceipt', fail(grpc.status.UNIMPLEMENTED), { fail: true });
+
+    const caught = await client.getDecisionReceipt('s1').catch((err: unknown) => err);
+
+    expect(caught).toBeInstanceOf(MacpTransportError);
+    expect((caught as MacpTransportError).code).toBe('UNIMPLEMENTED');
+    expect((caught as MacpTransportError).macpErrorCode).toBeUndefined();
+  });
+
+  it.each(unadvertised)('get_receipt_keys_requires_capability ($label)', async ({ capabilities }) => {
+    const client = makeClient();
+    stubUnary(client, 'Initialize', { capabilities });
+    const calls = stubUnary(client, 'GetReceiptKeys', { jwksJson });
+
+    const caught = await client.getReceiptKeys().catch((err: unknown) => err);
+
+    expect(caught).toBeInstanceOf(MacpSdkError);
+    expect(caught).not.toBeInstanceOf(MacpTransportError);
+    expect((caught as Error).message).toContain('capabilities.decisionReceipt.getDecisionReceipt');
+    expect((caught as Error).message).toContain('GetReceiptKeys is optional');
+    expect((caught as Error).message).toContain('RFC-MACP-0013 §13');
+    expect(calls).toHaveLength(0);
+  });
+
+  it('get_receipt_keys_returns_jwks', async () => {
+    const client = makeClient();
+    stubUnary(client, 'Initialize', advertised);
+    const calls = stubUnary(client, 'GetReceiptKeys', { jwksJson });
+
+    const res = await client.getReceiptKeys();
+
+    expect(calls[0]!.request).toEqual({});
+    expect(calls[0]!.extras[0]).toBeInstanceOf(grpc.Metadata);
+    expect(res).toEqual(JSON.parse(jwksJson));
+  });
+
+  it('getReceiptKeys needs no auth, like getManifest (transport auth only)', async () => {
+    const client = makeBareClient();
+    stubUnary(client, 'Initialize', advertised);
+    const calls = stubUnary(client, 'GetReceiptKeys', { jwksJson: '{"keys":[]}' });
+
+    await expect(client.getReceiptKeys()).resolves.toEqual({ keys: [] });
+    expect(calls[0]!.extras).toEqual([]);
+  });
+
+  it.each([
+    { label: 'non-JSON', jwksJson: 'keys', message: 'jwks_json that is not valid JSON' },
+    { label: 'a JSON array', jwksJson: '[]', message: 'jwks_json that is not a JSON object' },
+    { label: 'no keys member', jwksJson: '{}', message: 'jwks_json with no keys array' },
+    { label: 'non-array keys', jwksJson: '{"keys":{}}', message: 'jwks_json with no keys array' },
+  ])('getReceiptKeys rejects $label with MacpSdkError', async ({ jwksJson: served, message }) => {
+    const client = makeClient();
+    stubUnary(client, 'Initialize', advertised);
+    stubUnary(client, 'GetReceiptKeys', { jwksJson: served });
+
+    const caught = await client.getReceiptKeys().catch((err: unknown) => err);
+
+    expect(caught).toBeInstanceOf(MacpSdkError);
+    expect(caught).not.toBeInstanceOf(MacpTransportError);
+    expect((caught as Error).message).toContain(message);
+  });
+
+  it('passes deadlineMs to Initialize and the RPC, and an explicit auth to both receipt RPCs', async () => {
+    const client = makeBareClient();
+    const init = stubUnary(client, 'Initialize', advertised);
+    const receipts = stubUnary(client, 'GetDecisionReceipt', { receiptJson });
+    const keys = stubUnary(client, 'GetReceiptKeys', { jwksJson });
+    const auth = Auth.bearer('bob-token', { expectedSender: 'bob' });
+
+    await client.getDecisionReceipt('s1', { auth, deadlineMs: 5000 });
+    await client.getReceiptKeys({ auth, deadlineMs: 5000 });
+
+    // Initialize carries the deadline only; each RPC carries metadata then the deadline.
+    expect(init[0]!.extras).toEqual([{ deadline: expect.any(Date) }]);
+    for (const call of [receipts[0]!, keys[0]!]) {
+      expect(call.extras[0]).toBeInstanceOf(grpc.Metadata);
+      expect((call.extras[0] as grpc.Metadata).get('authorization')).toEqual(['Bearer bob-token']);
+      expect(call.extras[1]).toEqual({ deadline: expect.any(Date) });
+    }
+  });
+
+  it('concurrent first calls share one Initialize, across receipts and whatIfReplay', async () => {
+    const client = makeClient();
+    const capabilities = { ...advertised.capabilities, policyRegistry: { whatIfReplay: true } };
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    let inits = 0;
+    (client as unknown as { client: Record<string, unknown> }).client.Initialize = (...args: unknown[]) => {
+      inits += 1;
+      const callback = args[args.length - 1] as (err: unknown, res?: unknown) => void;
+      void gate.then(() => callback(null, { capabilities }));
+    };
+    stubUnary(client, 'GetDecisionReceipt', { receiptJson });
+    stubUnary(client, 'GetReceiptKeys', { jwksJson });
+    stubUnary(client, 'WhatIfReplay', {});
+
+    const pending = Promise.all([
+      client.getDecisionReceipt('s1'),
+      client.getDecisionReceipt('s2'),
+      client.getReceiptKeys(),
+      client.whatIfReplay('s1', {
+        policyId: 'p',
+        mode: 'macp.mode.decision.v1',
+        description: '',
+        rules: '{}',
+        schemaVersion: 1,
+      }),
+    ]);
+    release();
+    await pending;
+
+    expect(inits).toBe(1);
+  });
+
+  it('a failed first Initialize is not memoized: the next call initializes again', async () => {
+    const client = makeClient();
+    stubUnary(client, 'Initialize', fail(grpc.status.UNAVAILABLE), { fail: true });
+
+    await expect(client.getReceiptKeys()).rejects.toBeInstanceOf(MacpTransportError);
+    const init = stubUnary(client, 'Initialize', advertised);
+    stubUnary(client, 'GetReceiptKeys', { jwksJson });
+
+    await expect(client.getReceiptKeys()).resolves.toEqual(JSON.parse(jwksJson));
+    expect(init).toHaveLength(1);
+  });
+
+  it('gates on the cached initialize() result, and a later initialize() refreshes it', async () => {
+    const client = makeClient();
+    const init = stubUnary(client, 'Initialize', advertised);
+    await client.initialize();
+    const calls = stubUnary(client, 'GetReceiptKeys', { jwksJson });
+
+    await client.getReceiptKeys();
+    stubUnary(client, 'Initialize', { capabilities: { decisionReceipt: { getDecisionReceipt: false } } });
+    await client.initialize();
+
+    await expect(client.getReceiptKeys()).rejects.toThrow('GetReceiptKeys is optional');
+    expect(init).toHaveLength(1);
+    expect(calls).toHaveLength(1);
   });
 });
 

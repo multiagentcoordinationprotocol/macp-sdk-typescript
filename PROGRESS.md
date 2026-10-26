@@ -39,3 +39,11 @@ PR strategy: Phases 1, 2 and 2b in one `feat:` PR (one SDK release with the S1 s
   - Round 2 re-checked the duplicate-kid change made at Python's request (any entry counts). It found GAPS in two stale doc lines, README and plan; both are fixed.
   - Files: Makefile, package.json/lock (proto 0.1.13), src/{constants,types,receipt,index}.ts, tests/fixtures/*, tests/unit/{receipt-keys,fixture-drift-gate}.test.ts, public-api-snapshot.json, README, docs/api/constants.md.
   - Next: Phase 2.
+- **2026-10-26: Phase 2 PASS (Opus verifier, complex: public client RPCs plus a concurrency memo; 2 rounds).**
+  - Round 1 PASS with 3 gaps:
+    - the RECEIPT_UNAVAILABLE wording was too narrow (error-handling.md said to retry always)
+    - the missing `cause` was undocumented
+    - deadline and explicit-auth tests were missing
+  - All three are closed.
+  - Files: src/client.ts, tests/unit/client-unary.test.ts, README.md, docs/api/{client,errors}.md, docs/guides/error-handling.md, CLAUDE.md (local).
+  - Next: Phase 2b.

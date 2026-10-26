@@ -315,6 +315,52 @@ const all = await client.listPolicies(undefined, { auth });
 const decisionOnly = await client.listPolicies('macp.mode.decision.v1', { auth });
 ```
 
+### `getDecisionReceipt(sessionId, options?)`
+
+Fetch the runtime-issued decision receipt for a resolved session
+(RFC-MACP-0013 §13). Returns `{ receipt, raw }`: `receipt` is the parsed
+`macp-receipt/1` object, and `raw` is the exact JSON text the runtime served.
+The runtime serves the same bytes on every call (§13 item 6), so `raw` is the
+thing to store or forward. The method does not verify the receipt; see
+`getReceiptKeys` below.
+
+```typescript
+const { receipt, raw } = await client.getDecisionReceipt(sessionId, { auth });
+```
+
+The RPC is optional. The method checks
+`capabilities.decisionReceipt.getDecisionReceipt` from `initialize()` first,
+calling `initialize()` once if the client hasn't; concurrent first calls share
+that one call. When the runtime doesn't advertise the capability, the method
+throws `MacpSdkError` without sending anything. It requires auth and is
+authorized like `getSession`.
+
+Runtime refusals throw `MacpTransportError` with `macpErrorCode` set:
+- `RECEIPT_UNAVAILABLE`: no receipt can be issued for this session. Either it isn't resolved yet (retryable once it is), or it resolved without a `CommitmentPayload` (permanent).
+- `SESSION_NOT_FOUND`
+- `FORBIDDEN`
+- `INTERNAL_ERROR`
+
+A `receipt_json` that isn't a JSON object throws `MacpSdkError`.
+
+### `getReceiptKeys(options?)`
+
+Fetch the JWK Set of public keys the runtime signs receipts with
+(RFC-MACP-0013 §13 item 8). An unsigned runtime returns `{ keys: [] }`. The
+method is gated on the same capability as `getDecisionReceipt`. It needs
+transport auth only, like `getManifest`: `auth` is optional. A `jwks_json`
+that isn't an object with a `keys` array throws `MacpSdkError`.
+
+```typescript
+import { trustedKeysFromJwks, verifyReceipt } from 'macp-sdk-typescript/receipt';
+
+const jwks = await client.getReceiptKeys();
+verifyReceipt(receipt, trustedKeysFromJwks(jwks)).verdict; // 'attested' from a signing runtime
+```
+
+These keys come from the runtime that issued the receipt. Whether to trust
+that runtime is your decision.
+
 ### `openStream(options?)`
 
 Open a bidirectional session stream. Requires auth (throws `MacpSdkError` if
