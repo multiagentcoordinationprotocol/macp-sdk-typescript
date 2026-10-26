@@ -4,6 +4,14 @@ All notable changes to `macp-sdk-typescript` are documented here. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the
 project uses [Semantic Versioning](https://semver.org/).
 
+## [0.19.0](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/compare/v0.18.0...v0.19.0) (2026-10-26)
+
+
+### Features
+
+* capability-gated whatIfReplay and HISTORY_UNAVAILABLE (RFC-MACP-0012 §8.1) ([c5bc5cf](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/commit/c5bc5cf6d8206c30f5d69f6fde44800e8d294fa6))
+* **claude-agent-sdk:** Claude Agent SDK subagents reach a binding MACP decision (W3.5) ([573bf33](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/commit/573bf335d433ad13bcb5668d1563b67494df4442))
+
 ## [0.18.0](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/compare/v0.17.1...v0.18.0) (2026-10-25)
 
 
