@@ -58,3 +58,22 @@ PR strategy: Phases 1, 2 and 2b in one `feat:` PR (one SDK release with the S1 s
   - Types check end to end without casts. The ./receipt subpath is browser-safe and the docs are consistent.
   - ASSUMPTIONS.md has no entries for this plan, so there's nothing to reconcile.
   - Next: ship.
+
+## otel-send-spans (W5 S2): plans/otel-send-spans.md
+- PR strategy: one `feat:` PR (Phases 1+2). Python ships both together.
+- 2026-10-26: plan written. Plan review round 1 was REVISE with 6 items, all folded into the implementation (see the plan's Plan review section).
+- 2026-10-26: Phases 1+2 implemented as one unit.
+  - New: src/otel.ts. Changed: src/client.ts (metadata/unary/send/watchSignals) and package.json (optional peer `@opentelemetry/api >=1.3.0 <2`; dev deps api ~1.9.1, sdk-trace-base ^2.12.0, context-async-hooks ^2.12.0).
+  - Tests: tests/unit/otel.test.ts (24, including all 9 shared names) plus the helpers block-otel.cjs and otel-child.ts.
+  - Docs: docs/guides/observability.md, README, docs/api/client.md, docs/index.md, CLAUDE.md (local).
+  - Mutation checks, all caught: validateAuth removed, span context not injected, memo removed, sender unconditional, recordException added, baggage injected.
+  - Full gate green: 1738 tests; coverage above the floors.
+- **2026-10-26: Phase verify round 1 (Opus).**
+  - Phase 1 PASS. Phase 2 GAPS (4): null-response span leak, send span not active, no semconv-tied test, untested no-provider path.
+- **2026-10-26: Phase 2 re-verify round 2 (Opus): PASS, all 4 closed.**
+  - The optional hardening was applied too: a context manager throwing after the call returns the real result.
+- **2026-10-26: Finalization.**
+  - Added tests/integration/otel.test.ts (live runtime: accepted SessionStart plus rejected duplicate start, both parented on the caller's trace, traceparent accepted on the wire). Green against runtime 0.9.0 and 0.10.0 images.
+  - Docs swept: the observability caveat was corrected, CLAUDE.md test structure updated, and the plan's stale macp.version row fixed.
+  - ASSUMPTIONS.md: no entries for this plan, so nothing to reconcile.
+  - Next: the final verify, then ship.

@@ -9,7 +9,8 @@
 import * as path from 'node:path';
 import * as grpc from '@grpc/grpc-js';
 import * as protoLoader from '@grpc/proto-loader';
-import { assertSenderMatchesIdentity, authSender, type AuthConfig, metadataFromAuth } from './auth';
+import { assertSenderMatchesIdentity, authSender, type AuthConfig, metadataFromAuth, validateAuth } from './auth';
+import { startSendSpan, traceHeaders, type TraceContext } from './otel';
 import { POLICY_DENIED, SESSION_ALREADY_EXISTS } from './constants';
 import { buildEnvelope, buildProgressPayload, buildSignalPayload } from './envelope';
 import {
@@ -397,10 +398,19 @@ export class MacpClient {
     }
   }
 
-  private metadata(auth?: AuthConfig): grpc.Metadata | undefined {
+  /**
+   * The single metadata choke point: auth, plus W3C trace context
+   * (RFC-MACP-0006 §2.1) when `@opentelemetry/api` is installed and a valid
+   * span context is active — or, for Send, the send span's own context.
+   */
+  private metadata(auth?: AuthConfig, traceContext?: TraceContext): grpc.Metadata | undefined {
     const selected = auth ?? this.auth;
-    if (!selected) return undefined;
-    return metadataFromAuth(selected);
+    const metadata = selected ? metadataFromAuth(selected) : undefined;
+    const headers = traceHeaders(traceContext);
+    if (headers.length === 0) return metadata;
+    const withTrace = metadata ?? new grpc.Metadata();
+    for (const [key, value] of headers) withTrace.set(key, value);
+    return withTrace;
   }
 
   private deadline(deadlineMs?: number): Date | undefined {
@@ -415,6 +425,7 @@ export class MacpClient {
     deadlineMs?: number,
     ackStatuses?: AckStatusMap,
     registryCodeAsAck = false,
+    traceContext?: TraceContext,
   ): Promise<TResponse> {
     return new Promise<TResponse>((resolve, reject) => {
       const callback = (error: grpc.ServiceError | null, response: TResponse) => {
@@ -443,7 +454,7 @@ export class MacpClient {
         }
       };
       const deadline = this.deadline(deadlineMs);
-      const metadata = this.metadata(auth);
+      const metadata = this.metadata(auth, traceContext);
       if (metadata && deadline) this.client[method](request, metadata, { deadline }, callback);
       else if (metadata) this.client[method](request, metadata, callback);
       else if (deadline) this.client[method](request, { deadline }, callback);
@@ -486,20 +497,37 @@ export class MacpClient {
     options?: { auth?: AuthConfig; deadlineMs?: number; raiseOnNack?: boolean },
   ): Promise<Ack> {
     const auth = this.requireAuth(options?.auth);
-    const response = await this.unary<{ envelope: Envelope }, { ack: Ack }>(
-      'Send',
-      { envelope },
-      auth,
-      options?.deadlineMs,
-      // gRPC ALREADY_EXISTS/FAILED_PRECONDITION on Send are application-level
-      // rejections the runtime couldn't express as a normal NACK (issue #107);
-      // surface them as MacpAckError, matching macp-sdk-python (client.py:442-452).
-      // That status map is the pre-0.9.0 fallback: a `macp-error-code` key
-      // (runtime ≥ 0.9.0) supplies the exact registry code instead.
-      { ALREADY_EXISTS: SESSION_ALREADY_EXISTS, FAILED_PRECONDITION: POLICY_DENIED },
-      true,
-    );
-    const ack = response.ack;
+    // A malformed credential fails here, before the span starts: a send that
+    // never reaches the wire emits no span.
+    validateAuth(auth);
+    // One CLIENT span per call (undefined without @opentelemetry/api); its
+    // own context goes into the Send metadata so the runtime's server span
+    // is its child.
+    const span = startSendSpan(envelope);
+    const call = () =>
+      this.unary<{ envelope: Envelope }, { ack: Ack }>(
+        'Send',
+        { envelope },
+        auth,
+        options?.deadlineMs,
+        // gRPC ALREADY_EXISTS/FAILED_PRECONDITION on Send are application-level
+        // rejections the runtime couldn't express as a normal NACK (issue #107);
+        // surface them as MacpAckError, matching macp-sdk-python (client.py:442-452).
+        // That status map is the pre-0.9.0 fallback: a `macp-error-code` key
+        // (runtime ≥ 0.9.0) supplies the exact registry code instead.
+        { ALREADY_EXISTS: SESSION_ALREADY_EXISTS, FAILED_PRECONDITION: POLICY_DENIED },
+        true,
+        span?.context,
+      );
+    let response: { ack: Ack } | undefined;
+    try {
+      response = await (span ? span.run(call) : call());
+    } catch (error) {
+      span?.end({ error });
+      throw error;
+    }
+    const ack = response?.ack;
+    span?.end({ ack: ack ?? {} });
     // Duplicate acks are success — the message was already accepted
     if (ack?.duplicate) return ack;
     if (options?.raiseOnNack !== false && !ack?.ok) throw new MacpAckError(ack ?? {});
@@ -943,7 +971,7 @@ export class MacpClient {
    */
   watchSignals(auth?: AuthConfig): grpc.ClientReadableStream<any> {
     const selected = this.requireAuth(auth);
-    const metadata = metadataFromAuth(selected);
+    const metadata = this.metadata(selected) as grpc.Metadata;
     return (this.client as any).WatchSignals({}, metadata);
   }
 
