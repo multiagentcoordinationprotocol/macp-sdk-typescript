@@ -68,7 +68,8 @@ runtimes and for statuses raised without a registry code.
 Since 0.9.0 the control-plane RPCs set it too — e.g. `SESSION_NOT_FOUND` /
 `FORBIDDEN` from `getSession`/`cancelSession`/`suspendSession`/`resumeSession`,
 `UNKNOWN_POLICY_VERSION` from `getPolicy`, `INVALID_REQUEST` from a bad
-`listSessions` page token, `AGENT_NOT_FOUND` from `getManifest`, and
+`listSessions` page token, `AGENT_NOT_FOUND` from `getManifest`,
+`HISTORY_UNAVAILABLE` from `whatIfReplay`, and
 `STREAM_LAGGED` (status `RESOURCE_EXHAUSTED`) when a stream or watch
 subscriber falls behind — resubscribe with `afterSequence`. Treat an
 unrecognised code by falling back to `code`.
@@ -216,3 +217,4 @@ bearer) — pre-0.2 code continues to work unchanged.
 | `INVALID_REQUEST` | Malformed control-plane request — bad `page_size`/`page_token`, missing descriptor (runtime ≥ 0.9.0, `INVALID_ARGUMENT`) |
 | `STREAM_LAGGED` | Stream/watch subscriber fell behind; resubscribe with `afterSequence` (runtime ≥ 0.9.0, `RESOURCE_EXHAUSTED`) |
 | `AGENT_NOT_FOUND` | `getManifest` for an agent this runtime doesn't host (runtime ≥ 0.9.0, `NOT_FOUND`) |
+| `HISTORY_UNAVAILABLE` | `whatIfReplay` on a session whose accepted history the runtime no longer holds (RFC-MACP-0012 §8.1, `FAILED_PRECONDITION`) |

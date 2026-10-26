@@ -118,6 +118,15 @@ const policy = await client.getPolicy('policy.fraud.majority-veto');
 await client.unregisterPolicy('policy.fraud.majority-veto');
 ```
 
+## What-If Replay
+
+Before you switch a session type to a new policy, replay a finished session
+under it with `client.whatIfReplay(sessionId, candidate)`. Nothing is registered or
+changed. The result shows where the two replays first diverge, every message the
+candidate would have denied, and both final outcomes. The runtime must advertise
+`capabilities.policyRegistry.whatIfReplay`; otherwise the client throws before
+sending. See the [API reference](../api/policy.md#clientwhatifreplaysessionid-candidate-options).
+
 ## Watching for Policy Changes
 
 Use `PolicyWatcher` to react to policy registration/unregistration events:

@@ -33,6 +33,7 @@
   "DecisionProjection",
   "DecisionSession",
   "FORBIDDEN",
+  "HISTORY_UNAVAILABLE",
   "HandoffProjection",
   "HandoffSession",
   "INTERNAL_ERROR",

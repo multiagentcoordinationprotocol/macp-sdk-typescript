@@ -116,6 +116,70 @@ export interface PolicyRegistryCapability {
    * admission, not this list, is authoritative. Runtime ≥ 0.9.0.
    */
   ruleExtensions?: string[];
+  /**
+   * The runtime implements the optional, read-only `WhatIfReplay` RPC
+   * (RFC-MACP-0012 §8.1); {@link MacpClient.whatIfReplay} refuses to call it
+   * otherwise. Proto ≥ 0.1.12.
+   */
+  whatIfReplay?: boolean;
+}
+
+/** How one replay handled one history entry (`macp.v1.WhatIfEntryOutcome`). */
+export interface WhatIfEntryOutcome {
+  kind: 'KIND_UNSPECIFIED' | 'KIND_APPLIED' | 'KIND_NOT_OPEN' | 'KIND_REFUSED' | 'KIND_NO_SESSION';
+  /** Session state after the entry, for `KIND_APPLIED`. */
+  state: string;
+  /** MACP error code, for `KIND_REFUSED`. */
+  errorCode: string;
+  /** For a `POLICY_DENIED` refusal, the §6.2 detail JSON; see {@link parseErrorDetails}. */
+  details: Buffer;
+}
+
+/** One accepted-history entry as both replays handled it. `historyIndex` is 0-based; the SessionStart is 0. */
+export interface WhatIfEntry {
+  historyIndex: string;
+  messageId: string;
+  messageType: string;
+  recorded: WhatIfEntryOutcome | null;
+  candidate: WhatIfEntryOutcome | null;
+}
+
+/** One replay's final outcome (`macp.v1.WhatIfOutcome`). */
+export interface WhatIfOutcome {
+  /** `SESSION_STATE_UNSPECIFIED` when the candidate refused the SessionStart. */
+  state: string;
+  /** The resolving Commitment's payload bytes; empty if unresolved. */
+  resolution: Buffer;
+  resolvedByHistoryIndex: string;
+  /** Empty if unresolved. */
+  resolvedByMessageId: string;
+  resolvedByMessageType: string;
+}
+
+/** A `POLICY_DENIED` the candidate produced; `details` as {@link WhatIfEntryOutcome.details}. */
+export interface WhatIfDenial {
+  historyIndex: string;
+  messageId: string;
+  details: Buffer;
+}
+
+/**
+ * `macp.v1.WhatIfReplayResponse`: a session's accepted history replayed under
+ * its bound policy (`recorded`) and under a candidate. Advisory, never binding.
+ * uint64 fields are decimal strings, as elsewhere in this client.
+ */
+export interface WhatIfReplayResult {
+  candidatePolicyId: string;
+  /** The policy the session is bound to (`policy.default` if none was named). */
+  recordedPolicyId: string;
+  recorded: WhatIfOutcome | null;
+  candidate: WhatIfOutcome | null;
+  /** First history index the two replays handled differently; absent when they agree throughout. */
+  firstDivergence?: string;
+  /** Every POLICY_DENIED the candidate produced, in history order. */
+  denials: WhatIfDenial[];
+  /** One entry per accepted-history entry, in history order. */
+  entries: WhatIfEntry[];
 }
 
 export interface InitializeResult {

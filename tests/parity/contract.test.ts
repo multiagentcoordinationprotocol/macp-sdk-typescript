@@ -26,6 +26,7 @@ import {
   INVALID_REQUEST,
   STREAM_LAGGED,
   AGENT_NOT_FOUND,
+  HISTORY_UNAVAILABLE,
   INVALID_SESSION_ID,
   MACP_VERSION,
   MODE_MULTI_ROUND,
@@ -116,6 +117,9 @@ describe('parity contract (tests/parity/contract.json)', () => {
     // `contribute_payload` and `contribute_acceptance` changed, to point at
     // their new normative homes (RFC-MACP-0001 §7.1, registries/modes.md,
     // multi_round.proto). No value, section or vector changed.
+    // Still 1.4.1 after spec-repo PR #227 (2026-10-25, 8d20dc5), which added
+    // `HISTORY_UNAVAILABLE` to `error_codes.permanent` without a version bump;
+    // the `error_codes` block below pins it.
     expect(contract.contract_version).toBe('1.4.1');
   });
 
@@ -170,9 +174,10 @@ describe('parity contract (tests/parity/contract.json)', () => {
       INVALID_REQUEST,
       STREAM_LAGGED,
       AGENT_NOT_FOUND,
+      HISTORY_UNAVAILABLE,
     };
 
-    it('exports exactly the 20 permanent codes the manifest pins (order-independent)', () => {
+    it('exports exactly the 21 permanent codes the manifest pins (order-independent)', () => {
       expect(Object.keys(exported).sort()).toEqual([...contract.sections.error_codes.permanent].sort());
       for (const [name, value] of Object.entries(exported)) {
         expect(value, `${name} export`).toBe(name);
