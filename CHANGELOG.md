@@ -4,6 +4,13 @@ All notable changes to `macp-sdk-typescript` are documented here. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the
 project uses [Semantic Versioning](https://semver.org/).
 
+## [0.20.0](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/compare/v0.19.0...v0.20.0) (2026-10-26)
+
+
+### Features
+
+* runtime-issued decision receipts — getDecisionReceipt, getReceiptKeys, trustedKeysFromJwks (RFC-MACP-0013 §13) ([#210](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/issues/210)) ([931d9e1](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/commit/931d9e13d7695a9f4659d0538e85dcb709eaeb20))
+
 ## [0.19.0](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/compare/v0.18.0...v0.19.0) (2026-10-26)
 
 
