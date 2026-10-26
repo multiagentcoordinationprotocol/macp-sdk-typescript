@@ -85,6 +85,7 @@ import { SESSION_NOT_OPEN, POLICY_DENIED } from 'macp-sdk-typescript';
 | `INVALID_REQUEST` |
 | `STREAM_LAGGED` |
 | `AGENT_NOT_FOUND` |
+| `HISTORY_UNAVAILABLE` |
 
 ## Policy denial codes
 

@@ -3,7 +3,13 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Auth } from '../../src/auth';
 import { MacpClient } from '../../src/client';
 import { MacpAckError, MacpSdkError, MacpSessionError, MacpTransportError } from '../../src/errors';
-import { AGENT_NOT_FOUND, INVALID_REQUEST, REGISTRY_READ_ONLY, SESSION_NOT_FOUND } from '../../src/constants';
+import {
+  AGENT_NOT_FOUND,
+  HISTORY_UNAVAILABLE,
+  INVALID_REQUEST,
+  REGISTRY_READ_ONLY,
+  SESSION_NOT_FOUND,
+} from '../../src/constants';
 import type { Ack, Envelope } from '../../src/types';
 import { stubUnary } from './helpers/grpc-stub';
 
@@ -492,6 +498,102 @@ describe('MacpClient policy RPCs', () => {
     stubUnary(client, 'ListPolicies', {});
 
     await expect(client.listPolicies('macp.mode.decision.v1')).resolves.toEqual([]);
+  });
+});
+
+// RFC-MACP-0012 §8.1: WhatIfReplay is optional, so the client checks the
+// capability Initialize advertised and refuses to send otherwise.
+describe('MacpClient.whatIfReplay', () => {
+  const candidate = {
+    policyId: 'pol-strict',
+    mode: 'macp.mode.decision.v1',
+    description: 'strict',
+    rules: '{}',
+    schemaVersion: 3,
+  };
+  const advertised = { capabilities: { policyRegistry: { registerPolicy: true, whatIfReplay: true } } };
+  const response = {
+    candidatePolicyId: 'pol-strict',
+    recordedPolicyId: 'policy.default',
+    recorded: null,
+    candidate: null,
+    firstDivergence: '0',
+    _firstDivergence: 'firstDivergence',
+    denials: [{ historyIndex: '2', messageId: 'm2', details: Buffer.from('{}') }],
+    entries: [],
+  };
+
+  it('initializes once, then sends { sessionId, candidate } and strips the oneof discriminator', async () => {
+    const client = makeClient();
+    const init = stubUnary(client, 'Initialize', advertised);
+    const calls = stubUnary(client, 'WhatIfReplay', response);
+
+    const res = await client.whatIfReplay('s1', candidate);
+    await client.whatIfReplay('s1', candidate);
+
+    expect(init).toHaveLength(1);
+    expect(client.serverCapabilities).toEqual(advertised.capabilities);
+    expect(calls[0]!.request).toEqual({ sessionId: 's1', candidate });
+    expect(res.firstDivergence).toBe('0');
+    expect(res).not.toHaveProperty('_firstDivergence');
+    expect(res.denials).toHaveLength(1);
+  });
+
+  it('reuses an earlier initialize() result and leaves firstDivergence absent when unset', async () => {
+    const client = makeClient();
+    const init = stubUnary(client, 'Initialize', advertised);
+    await client.initialize();
+    stubUnary(client, 'WhatIfReplay', { candidatePolicyId: 'pol-strict' });
+
+    const res = await client.whatIfReplay('s1', candidate);
+
+    expect(init).toHaveLength(1);
+    expect(res.firstDivergence).toBeUndefined();
+    expect(res.denials).toEqual([]);
+    expect(res.entries).toEqual([]);
+  });
+
+  it.each([
+    { label: 'false', capabilities: { policyRegistry: { whatIfReplay: false } } },
+    { label: 'absent (pre-0.1.12 runtime)', capabilities: { policyRegistry: { registerPolicy: true } } },
+    { label: 'no policyRegistry', capabilities: {} },
+  ])('throws MacpSdkError without sending when the capability is $label', async ({ capabilities }) => {
+    const client = makeClient();
+    stubUnary(client, 'Initialize', { capabilities });
+    const calls = stubUnary(client, 'WhatIfReplay', response);
+
+    const caught = await client.whatIfReplay('s1', candidate).catch((err: unknown) => err);
+
+    expect(caught).toBeInstanceOf(MacpSdkError);
+    expect(caught).not.toBeInstanceOf(MacpTransportError);
+    expect((caught as Error).message).toContain('RFC-MACP-0012 §8.1');
+    expect(calls).toHaveLength(0);
+  });
+
+  it('requires auth before initializing', async () => {
+    const client = makeBareClient();
+    const init = stubUnary(client, 'Initialize', advertised);
+
+    await expect(client.whatIfReplay('s1', candidate)).rejects.toBeInstanceOf(MacpSdkError);
+    expect(init).toHaveLength(0);
+  });
+
+  it('surfaces HISTORY_UNAVAILABLE on MacpTransportError.macpErrorCode', async () => {
+    const client = makeClient();
+    stubUnary(client, 'Initialize', advertised);
+    const metadata = new grpc.Metadata();
+    metadata.set('macp-error-code', HISTORY_UNAVAILABLE);
+    stubUnary(
+      client,
+      'WhatIfReplay',
+      { code: grpc.status.FAILED_PRECONDITION, details: 'compacted', message: 'compacted', metadata },
+      { fail: true },
+    );
+
+    const caught = await client.whatIfReplay('s1', candidate).catch((err: unknown) => err);
+
+    expect(caught).toBeInstanceOf(MacpTransportError);
+    expect((caught as MacpTransportError).macpErrorCode).toBe(HISTORY_UNAVAILABLE);
   });
 });
 

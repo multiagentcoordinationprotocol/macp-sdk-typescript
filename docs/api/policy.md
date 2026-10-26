@@ -308,6 +308,38 @@ Retrieves a policy by ID. Returns the `PolicyDescriptor`.
 
 Lists registered policies, optionally filtered by mode. Returns `PolicyDescriptor[]`.
 
+### `client.whatIfReplay(sessionId, candidate, options?)`
+
+Replays a session's accepted history under a candidate `PolicyDescriptor` and
+reports how the outcome would differ (RFC-MACP-0012 §8.1). The call is read-only
+and advisory: it doesn't touch the session, its history or the registry, and the
+candidate is never registered. Returns a `WhatIfReplayResult`:
+
+| Field | |
+| --- | --- |
+| `recordedPolicyId`, `candidatePolicyId` | The session's bound policy, and the candidate's id |
+| `recorded`, `candidate` | Each replay's `WhatIfOutcome`: final `state`, the resolving Commitment's `resolution` bytes, and `resolvedBy*` |
+| `firstDivergence` | First history index (a decimal string; `'0'` is the SessionStart) the replays handled differently. Absent if they agree throughout |
+| `denials` | Every `POLICY_DENIED` the candidate produced; decode `details` with `parseErrorDetails` |
+| `entries` | Per history entry, the `recorded` and `candidate` `WhatIfEntryOutcome` (`kind`, `state`, `errorCode`, `details`) |
+
+The RPC is optional. The client reads `capabilities.policyRegistry.whatIfReplay`
+from `initialize()` (calling it once if needed; the result is cached and
+readable as `client.serverCapabilities`). If the runtime doesn't advertise it,
+the client throws `MacpSdkError` and sends nothing. The runtime's refusals arrive as
+`MacpTransportError` with `macpErrorCode`: `SESSION_NOT_FOUND`/`FORBIDDEN`
+(authorized like `getSession`), `INVALID_POLICY_DEFINITION` (the candidate fails
+admission, or its mode is neither the session's nor `*`), `HISTORY_UNAVAILABLE`
+(history compacted), `INTERNAL_ERROR`.
+
+```typescript
+const candidate = buildDecisionPolicy('policy.strict', 'unanimous', { voting: { algorithm: 'unanimous' } });
+const result = await client.whatIfReplay(sessionId, candidate);
+if (result.firstDivergence !== undefined) {
+  console.log(`diverges at entry ${result.firstDivergence}: ${result.recorded?.state} → ${result.candidate?.state}`);
+}
+```
+
 ## PolicyWatcher
 
 ```typescript

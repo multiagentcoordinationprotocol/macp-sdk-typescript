@@ -30,8 +30,10 @@ import type {
   InitializeResult,
   ModeDescriptor,
   PolicyDescriptor,
+  PolicyRegistryCapability,
   SessionMetadata,
   Root,
+  WhatIfReplayResult,
 } from './types';
 
 interface MacpClientOptions {
@@ -312,6 +314,13 @@ export class MacpClient {
   private readonly defaultDeadlineMs?: number;
   private readonly clientName: string;
   private readonly clientVersion: string;
+  /** The last {@link initialize} result; {@link whatIfReplay} reads its capabilities. */
+  private initializeResult?: InitializeResult;
+
+  /** The runtime's capabilities from the last {@link initialize}; `undefined` before one. */
+  get serverCapabilities(): Record<string, unknown> | undefined {
+    return this.initializeResult?.capabilities;
+  }
 
   constructor(options: MacpClientOptions) {
     this.auth = options.auth;
@@ -412,7 +421,7 @@ export class MacpClient {
   }
 
   async initialize(deadlineMs?: number): Promise<InitializeResult> {
-    return this.unary(
+    const result = await (this.unary(
       'Initialize',
       {
         supportedProtocolVersions: ['1.0'],
@@ -436,7 +445,9 @@ export class MacpClient {
       },
       undefined,
       deadlineMs,
-    ) as Promise<InitializeResult>;
+    ) as Promise<InitializeResult>);
+    this.initializeResult = result;
+    return result;
   }
 
   async send(
@@ -692,6 +703,50 @@ export class MacpClient {
       options?.deadlineMs,
     );
     return res.descriptors || [];
+  }
+
+  /**
+   * Replay a session's accepted history under a candidate policy and report how
+   * the outcome would differ (RFC-MACP-0012 §8.1). Read-only and advisory: the
+   * session, its history and the policy registry are untouched, and the
+   * candidate is never registered.
+   *
+   * The RPC is optional, so this checks `capabilities.policyRegistry.whatIfReplay`
+   * from {@link initialize} first (calling it once if this client hasn't) and
+   * throws {@link MacpSdkError} without sending anything when the runtime
+   * doesn't advertise it. Runtime refusals arrive as {@link MacpTransportError}
+   * with `macpErrorCode` set: `SESSION_NOT_FOUND`, `FORBIDDEN` (authorized as
+   * {@link getSession}), `INVALID_POLICY_DEFINITION` (the candidate fails
+   * RegisterPolicy admission, or its mode is neither the session's nor `*`),
+   * `HISTORY_UNAVAILABLE` (history compacted), `INTERNAL_ERROR`.
+   */
+  async whatIfReplay(
+    sessionId: string,
+    candidate: PolicyDescriptor,
+    options?: { auth?: AuthConfig; deadlineMs?: number },
+  ): Promise<WhatIfReplayResult> {
+    const auth = this.requireAuth(options?.auth);
+    const capabilities = this.serverCapabilities ?? (await this.initialize(options?.deadlineMs)).capabilities;
+    const policyRegistry = capabilities?.policyRegistry as PolicyRegistryCapability | undefined;
+    if (!policyRegistry?.whatIfReplay) {
+      throw new MacpSdkError(
+        'this runtime does not advertise capabilities.policyRegistry.whatIfReplay; ' +
+          'WhatIfReplay is optional and a client MUST NOT call it otherwise (RFC-MACP-0012 §8.1)',
+      );
+    }
+    const res = await this.unary<
+      { sessionId: string; candidate: PolicyDescriptor },
+      WhatIfReplayResult & { _firstDivergence?: string }
+    >('WhatIfReplay', { sessionId, candidate }, auth, options?.deadlineMs);
+    // proto3 `optional` decodes with a synthetic oneof discriminator; an unset
+    // first_divergence is absent, never "0" (index 0 is the SessionStart).
+    const result: WhatIfReplayResult & { _firstDivergence?: string } = {
+      ...res,
+      denials: res.denials ?? [],
+      entries: res.entries ?? [],
+    };
+    delete result._firstDivergence;
+    return result;
   }
 
   /**

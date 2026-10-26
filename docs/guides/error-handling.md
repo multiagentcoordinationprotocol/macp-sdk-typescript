@@ -181,6 +181,7 @@ most often:
 | `INVALID_REQUEST` | Malformed control-plane request (runtime ≥ 0.9.0) |
 | `STREAM_LAGGED` | Stream/watch subscriber fell behind — resubscribe with `afterSequence` (runtime ≥ 0.9.0) |
 | `AGENT_NOT_FOUND` | `getManifest` for an agent this runtime doesn't host (runtime ≥ 0.9.0) |
+| `HISTORY_UNAVAILABLE` | `whatIfReplay` on a session whose history was compacted. Permanent: don't retry |
 
 The canonical, complete code list lives in the spec's
 [Common Error Codes](https://github.com/multiagentcoordinationprotocol/multiagentcoordinationprotocol/blob/main/docs/security.md#common-error-codes);

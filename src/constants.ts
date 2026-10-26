@@ -45,6 +45,11 @@ export const INVALID_REQUEST = 'INVALID_REQUEST';
 export const STREAM_LAGGED = 'STREAM_LAGGED';
 /** GetManifest for an agent this runtime does not host — NOT_FOUND. */
 export const AGENT_NOT_FOUND = 'AGENT_NOT_FOUND';
+/**
+ * WhatIfReplay on a session whose full accepted history the runtime no longer
+ * holds (e.g. compacted when it ended) — FAILED_PRECONDITION. RFC-MACP-0012 §8.1.
+ */
+export const HISTORY_UNAVAILABLE = 'HISTORY_UNAVAILABLE';
 
 // Structured POLICY_DENIED denial codes (`PolicyDenial.code`, runtime ≥ 0.9.0;
 // RFC-MACP-0012 §6.2). Open set — names match python-sdk's exports.
