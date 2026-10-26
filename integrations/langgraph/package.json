@@ -1,6 +1,6 @@
 {
   "name": "@multiagentcoordinationprotocol/langgraph",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "LangGraph adapter for MACP: a graph node that reaches a binding, receipt-backed decision",
   "license": "Apache-2.0",
   "type": "commonjs",
