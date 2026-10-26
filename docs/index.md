@@ -21,6 +21,7 @@ The MACP TypeScript SDK connects TypeScript/Node.js applications to the [Multi-A
 - [Building Orchestrators](guides/building-orchestrators.md) — Orchestration patterns and what to keep out of the SDK
 - [Determinism and Replay](guides/determinism.md) — Version binding, replay testing, and determinism classes
 - [Security](guides/security.md) — TLS defaults, sender identity guardrail, and a production checklist
+- [Observability](guides/observability.md) — Optional OpenTelemetry send spans and W3C trace propagation
 - [Testing](guides/testing.md) — Running tests, coverage gates, conformance fixtures, and integration test patterns
 
 ### Coordination Modes

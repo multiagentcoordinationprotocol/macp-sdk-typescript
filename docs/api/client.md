@@ -82,6 +82,10 @@ On runtime ≥ 0.9.0 a `macp-error-code` metadata key on the failure supplies
 gRPC status. Every other gRPC status is still `MacpTransportError`. See
 [error-handling.md › MacpAckError](../guides/error-handling.md#macpackerror).
 
+With `@opentelemetry/api` installed, each call emits one `send {mode}` CLIENT
+span and propagates its context in the Send metadata. See
+[observability.md](../guides/observability.md).
+
 ### `getSession(sessionId, options?)`
 
 Query session metadata.

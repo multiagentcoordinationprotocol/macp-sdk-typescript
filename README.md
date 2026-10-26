@@ -492,6 +492,14 @@ If you hold the snake_case §3 projection (a receipt's `commitment`) instead of 
 
 The `macp-sdk-typescript/receipt` subpath is browser-safe: it pulls in no gRPC, no `node:crypto` and no `Buffer`. The same functions are also exported from the package root. The tests replay the spec's `schemas/conformance/receipt/` vectors and rebuild the spec's example receipt byte for byte.
 
+## OpenTelemetry
+
+Install the optional peer dependency `@opentelemetry/api` and register a tracer provider. The SDK then:
+- emits one CLIENT span per `send()`, named `send {macp.mode.id}`, with the MACP semantic-convention attributes;
+- puts W3C `traceparent`/`tracestate` in the gRPC metadata of every call made while a valid span context is active.
+
+It never records payloads, `reason` text or error messages. Without the package, nothing is loaded or emitted. See [docs/guides/observability.md](docs/guides/observability.md) for the attribute set, the outcome rules and the limitations.
+
 ## Error Handling
 
 ```typescript
