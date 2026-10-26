@@ -60,7 +60,7 @@
   "dependencies": {
     "@grpc/grpc-js": "^1.14.3",
     "@grpc/proto-loader": "^0.8.0",
-    "@multiagentcoordinationprotocol/proto": "^0.1.11",
+    "@multiagentcoordinationprotocol/proto": "^0.1.12",
     "@noble/curves": "^1.9.7",
     "@noble/hashes": "^1.8.0",
     "protobufjs": "^8.6.5"
