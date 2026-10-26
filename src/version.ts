@@ -4,4 +4,4 @@
  * Kept in sync with package.json by release-please (see the
  * `x-release-please-version` annotation).
  */
-export const VERSION = '0.19.0'; // x-release-please-version
+export const VERSION = '0.20.0'; // x-release-please-version
