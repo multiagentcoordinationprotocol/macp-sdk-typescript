@@ -463,6 +463,17 @@ const result = verifyReceipt(receipt, { 'prod-2026': 'TDVzkxaSf6_Oxu7mmn5TbCkF80
 | `attestations[i]` | `valid`, `invalid`, `unknown_key` or `unsupported` (any other `alg`, and every `vendor` attestation)                                                                                           |
 | `verdict`         | `attested` (integrity holds and at least one attestation is valid), `integrity_only`, `unverified` (integrity fails, so attestations are not checked), or `refused` (unknown `receipt_format`) |
 
+To trust a published key set (a JWK Set, such as a runtime's `GetReceiptKeys` response; RFC-MACP-0013 §13), convert it with `trustedKeysFromJwks(jwks)`:
+
+```typescript
+import { trustedKeysFromJwks, verifyReceipt } from 'macp-sdk-typescript/receipt';
+
+const trustedKeys = trustedKeysFromJwks(jwks); // { 'example-1': 'TDVzkxaSf6_…' }
+verifyReceipt(receipt, trustedKeys).verdict; // 'attested'
+```
+
+It keeps only Ed25519 public keys (`kty` `OKP`, `crv` `Ed25519`) with a `kid` and an `x`, whose `alg` (if any) is `EdDSA` and `use` (if any) is `sig`. It drops a key that carries a private member (`d`, `k`, …) and any `kid` that more than one entry of the set claims, even when the other entry is a key it can't use (an EC key, say). It never throws: anything that isn't a key set gives `{}`. Deciding to trust the set is still up to you.
+
 If you hold the snake_case §3 projection (a receipt's `commitment`) instead of a `CommitmentPayload`, convert it with `commitmentFromProjection(projection)`.
 
 `verifyReceipt` never throws. `buildReceipt` throws `MacpSdkError` on a missing field, and when `commitmentWire` is not the wire encoding of the commitment. Signing is deterministic: the same inputs always produce the same receipt.
