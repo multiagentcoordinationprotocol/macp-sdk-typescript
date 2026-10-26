@@ -19,6 +19,8 @@ import {
   DecisionSession,
   MacpAckError,
   MacpIdentityMismatchError,
+  MacpSdkError,
+  MacpTransportError,
   ModeRegistryWatcher,
   PolicyWatcher,
   ProposalSession,
@@ -33,6 +35,7 @@ import {
   policyRuleExtensions,
 } from '../../src/index';
 import { GrpcTransportAdapter } from '../../src/agent/transports';
+import type { DecisionReceiptCapability } from '../../src/types';
 
 const RUNTIME_ADDRESS = process.env.MACP_RUNTIME_ADDRESS ?? 'localhost:50051';
 
@@ -99,6 +102,38 @@ describe('MacpClient', () => {
   it('listRoots', async () => {
     const { roots } = await client.listRoots(5000);
     expect(Array.isArray(roots)).toBe(true);
+  });
+});
+
+// ── Decision receipts (RFC-MACP-0013 §13) ───────────────────────────
+//
+// The runtime-issuance RPCs are optional. Against a runtime that doesn't
+// advertise them (every release before R1, including the pinned 0.9.0), both
+// methods must refuse client-side, before sending, rather than surface the
+// runtime's UNIMPLEMENTED. Fetching and verifying real receipts against an
+// advertising runtime is plans/receipt-client-methods.md Phase 3.
+
+describe('Decision receipts — capability gate', () => {
+  it('refuses both receipt RPCs client-side when the runtime does not advertise them', async (ctx) => {
+    const receiptClient = makeClient();
+    try {
+      const { capabilities } = await receiptClient.initialize(5000);
+      const advertised = (capabilities?.decisionReceipt as DecisionReceiptCapability | null | undefined)
+        ?.getDecisionReceipt;
+      if (advertised === true) ctx.skip(); // an R1+ runtime: Phase 3's suite covers it
+
+      for (const call of [
+        () => receiptClient.getDecisionReceipt(newSessionId()),
+        () => receiptClient.getReceiptKeys(),
+      ]) {
+        const caught = await call().catch((err: unknown) => err);
+        expect(caught).toBeInstanceOf(MacpSdkError);
+        expect(caught).not.toBeInstanceOf(MacpTransportError);
+        expect((caught as Error).message).toContain('RFC-MACP-0013 §13');
+      }
+    } finally {
+      receiptClient.close();
+    }
   });
 });
 

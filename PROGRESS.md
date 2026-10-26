@@ -53,3 +53,8 @@ PR strategy: Phases 1, 2 and 2b in one `feat:` PR (one SDK release with the S1 s
   - Also added a `signed`-only gate case to client-unary at macp-sdk-python's request.
   - Files: Makefile, tests/otel/*, tests/fixtures/SOURCE.md, tests/unit/{fixture-drift-gate,client-unary}.test.ts, docs/guides/testing.md, CLAUDE.md (local).
   - Next: finalization (§4), then ship.
+- **2026-10-26: Finalization PASS (Opus, whole feature, 1 round).**
+  - Added the integration test "Decision receipts — capability gate", run green against real runtime 0.9.0 and 0.10.0 images. It skips on an R1+ runtime, so the canary stays safe.
+  - Types check end to end without casts. The ./receipt subpath is browser-safe and the docs are consistent.
+  - ASSUMPTIONS.md has no entries for this plan, so there's nothing to reconcile.
+  - Next: ship.
