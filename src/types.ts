@@ -124,6 +124,24 @@ export interface PolicyRegistryCapability {
   whatIfReplay?: boolean;
 }
 
+/**
+ * `capabilities.decisionReceipt` (`macp.v1.DecisionReceiptCapability`, proto
+ * ≥ 0.1.13): optional runtime-issued decision receipts (RFC-MACP-0013 §13).
+ */
+export interface DecisionReceiptCapability {
+  /**
+   * The runtime implements `GetDecisionReceipt` and `GetReceiptKeys`;
+   * {@link MacpClient.getDecisionReceipt} and {@link MacpClient.getReceiptKeys}
+   * refuse to call them otherwise.
+   */
+  getDecisionReceipt?: boolean;
+  /**
+   * Every receipt issued from now on carries at least one EdDSA `jws`
+   * attestation. Says nothing about receipts issued earlier.
+   */
+  signed?: boolean;
+}
+
 /** How one replay handled one history entry (`macp.v1.WhatIfEntryOutcome`). */
 export interface WhatIfEntryOutcome {
   kind: 'KIND_UNSPECIFIED' | 'KIND_APPLIED' | 'KIND_NOT_OPEN' | 'KIND_REFUSED' | 'KIND_NO_SESSION';

@@ -93,9 +93,31 @@ function writeFiles(dir: string, files: Record<string, string> | undefined): voi
   }
 }
 
+/** The Makefile's `VENDORED_FILES`: spec path (under `SPEC_ROOT`) → local
+ * path. Every synthetic spec root/repo pair carries all of them by default,
+ * with matching stand-in content, so cases about other fixture sets don't trip
+ * this check. */
+const VENDORED: Record<string, string> = {
+  'examples/discovery/receipt_keys.json': 'tests/fixtures/receipt_keys.json',
+  'schemas/otel/macp-semconv.json': 'tests/otel/macp-semconv.json',
+};
+const standIn = (specPath: string): string => `CANON ${specPath}`;
+const DEFAULT_SPEC_FILES = Object.fromEntries(Object.keys(VENDORED).map((s) => [s, standIn(s)]));
+const DEFAULT_LOCAL_FILES = Object.fromEntries(Object.entries(VENDORED).map(([s, l]) => [l, standIn(s)]));
+
+/** Writes `files` (paths relative to `base`, which may contain `/`). */
+function writeTree(base: string, files: Record<string, string>): void {
+  for (const [rel, content] of Object.entries(files)) {
+    fs.mkdirSync(path.dirname(path.join(base, rel)), { recursive: true });
+    fs.writeFileSync(path.join(base, rel), content, 'utf8');
+  }
+}
+
 /** Build a throwaway canonical tree mirroring `$(SPEC_CONFORMANCE_DIR)`: a
  * flat top level plus an optional `cmt-hash/` subdirectory and a `receipt/`
- * one (the Makefile's `VECTOR_DIRS`). */
+ * one (the Makefile's `VECTOR_DIRS`). A sibling `specroot/` stands in for
+ * `$(SPEC_ROOT)`, which {@link runMake} passes explicitly, holding `specFiles`
+ * (default: every `VENDORED_FILES` source). */
 function makeCanon(
   root: string,
   opts: {
@@ -103,6 +125,7 @@ function makeCanon(
     cmtHash?: Record<string, string>;
     receipt?: Record<string, string>;
     includeCmtHashDir?: boolean;
+    specFiles?: Record<string, string>;
   } = {},
 ): string {
   const canon = path.join(root, 'canon');
@@ -111,11 +134,14 @@ function makeCanon(
     writeFiles(path.join(canon, 'cmt-hash'), opts.cmtHash);
   }
   writeFiles(path.join(canon, 'receipt'), opts.receipt);
+  fs.mkdirSync(path.join(root, 'specroot'), { recursive: true });
+  writeTree(path.join(root, 'specroot'), opts.specFiles ?? DEFAULT_SPEC_FILES);
   return canon;
 }
 
 /** Build a throwaway repo tree holding just the directories the Makefile
- * checks: `tests/conformance` and `tests/vectors/{cmt-hash,receipt}`. */
+ * checks: `tests/conformance`, `tests/vectors/{cmt-hash,receipt}`, and the
+ * `VENDORED_FILES` copies (`localFiles`, default: all of them, matching). */
 function makeRepo(
   root: string,
   opts: {
@@ -123,6 +149,7 @@ function makeRepo(
     cmtHash?: Record<string, string>;
     receipt?: Record<string, string>;
     createCmtHashDir?: boolean;
+    localFiles?: Record<string, string>;
   } = {},
 ): string {
   const repo = path.join(root, 'repo');
@@ -131,15 +158,24 @@ function makeRepo(
     writeFiles(path.join(repo, 'tests', 'vectors', 'cmt-hash'), opts.cmtHash);
   }
   writeFiles(path.join(repo, 'tests', 'vectors', 'receipt'), opts.receipt);
+  writeTree(repo, opts.localFiles ?? DEFAULT_LOCAL_FILES);
   return repo;
 }
 
-function runMake(repo: string, target: string, specDir: string) {
+/** Runs a fixtures target with `SPEC_CONFORMANCE_DIR=specDir` and, unless
+ * `specRoot` is `null`, `SPEC_ROOT` pointed at the synthetic `specroot/`
+ * sibling {@link makeCanon} writes. `null` leaves it to the Makefile's
+ * default derivation. */
+function runMake(repo: string, target: string, specDir: string, specRoot?: string | null) {
   const env: NodeJS.ProcessEnv = { ...process.env };
   delete env.MAKEFLAGS;
   delete env.MAKELEVEL;
   delete env.MFLAGS;
-  return spawnSync('make', ['-f', MAKEFILE, target, `SPEC_CONFORMANCE_DIR=${specDir}`], {
+  const args = ['-f', MAKEFILE, target, `SPEC_CONFORMANCE_DIR=${specDir}`];
+  if (specRoot !== null) {
+    args.push(`SPEC_ROOT=${specRoot ?? path.join(path.dirname(specDir), 'specroot')}`);
+  }
+  return spawnSync('make', args, {
     cwd: repo,
     env,
     encoding: 'utf8',
@@ -157,7 +193,7 @@ describe.skipIf(!makeAvailable)('fixture drift gate (Makefile verify-fixtures/sy
 
     expect(result.status).toBe(0);
     expect(result.stdout).toContain(
-      'All conformance fixtures and vectors (cmt-hash receipt) match the canonical source.',
+      'All conformance fixtures, vectors (cmt-hash receipt) and vendored files (tests/fixtures/receipt_keys.json tests/otel/macp-semconv.json) match the canonical source.',
     );
     expect(result.stdout).not.toContain('DRIFT');
     expect(result.stdout).not.toContain('EXTRA');
@@ -358,6 +394,153 @@ describe.skipIf(!makeAvailable)('fixture drift gate (Makefile verify-fixtures/sy
     expect(fs.readFileSync(path.join(repo, 'tests', 'conformance', 'a.json'), 'utf8')).toBe('A');
     expect(fs.readFileSync(path.join(repo, 'tests', 'vectors', 'cmt-hash', 'b.json'), 'utf8')).toBe('B');
     expect(verifyResult.status).toBe(0);
+  });
+
+  // VENDORED_FILES: single spec documents (examples/discovery/receipt_keys.json,
+  // schemas/otel/macp-semconv.json) vendored under tests/, gated byte for byte
+  // like the vector directories.
+  it.each(Object.entries(VENDORED))("flags drift when %s's vendored copy %s differs", (specPath, local) => {
+    const root = mkTmp('macp-gate-vendored-drift-');
+    const canon = makeCanon(root, { flat: { 'a.json': 'A' } });
+    const repo = makeRepo(root, {
+      conformance: { 'a.json': 'A' },
+      localFiles: { ...DEFAULT_LOCAL_FILES, [local]: 'EDITED' },
+    });
+
+    const result = runMake(repo, 'verify-fixtures', canon);
+
+    expect(result.status).not.toBe(0);
+    expect(result.stdout).toContain(`DRIFT: ${local} differs from (or is missing vs) canonical`);
+    expect(result.stdout).toContain(`/specroot/${specPath}`);
+    // Only the edited file drifts.
+    expect(result.stdout.match(/DRIFT:/g)).toHaveLength(1);
+  });
+
+  it.each(Object.entries(VENDORED))(
+    'flags drift, not a pass, when %s or its vendored copy %s is missing',
+    (specPath, local) => {
+      const root = mkTmp('macp-gate-vendored-missing-');
+      const specFiles = { ...DEFAULT_SPEC_FILES };
+      delete specFiles[specPath];
+      const canon = makeCanon(root, { flat: { 'a.json': 'A' }, specFiles });
+      const repo = makeRepo(root, { conformance: { 'a.json': 'A' } });
+      const missingCanon = runMake(repo, 'verify-fixtures', canon);
+
+      const root2 = mkTmp('macp-gate-vendored-unvendored-');
+      const localFiles = { ...DEFAULT_LOCAL_FILES };
+      delete localFiles[local];
+      const canon2 = makeCanon(root2, { flat: { 'a.json': 'A' } });
+      const repo2 = makeRepo(root2, { conformance: { 'a.json': 'A' }, localFiles });
+      const missingLocal = runMake(repo2, 'verify-fixtures', canon2);
+
+      for (const result of [missingCanon, missingLocal]) {
+        expect(result.status).not.toBe(0);
+        expect(result.stdout).toContain(`DRIFT: ${local}`);
+      }
+    },
+  );
+
+  it('flags a JSON file in any VENDORED_DIRS directory not named in VENDORED_FILES as EXTRA, but not SOURCE.md', () => {
+    const root = mkTmp('macp-gate-vendored-extra-');
+    const canon = makeCanon(root, { flat: { 'a.json': 'A' } });
+    const repo = makeRepo(root, {
+      conformance: { 'a.json': 'A' },
+      localFiles: {
+        ...DEFAULT_LOCAL_FILES,
+        'tests/fixtures/stray.json': '{}',
+        'tests/otel/stray.json': '{}',
+        'tests/fixtures/SOURCE.md': 'provenance',
+        'tests/otel/SOURCE.md': 'provenance',
+      },
+    });
+
+    const result = runMake(repo, 'verify-fixtures', canon);
+
+    expect(result.status).not.toBe(0);
+    expect(result.stdout).toContain('EXTRA: tests/fixtures/stray.json');
+    expect(result.stdout).toContain('EXTRA: tests/otel/stray.json');
+    expect(result.stdout).not.toContain('SOURCE.md');
+    expect(result.stdout).not.toContain('EXTRA: tests/fixtures/receipt_keys.json');
+    expect(result.stdout).not.toContain('EXTRA: tests/otel/macp-semconv.json');
+    expect(result.stdout).toContain('copies but never deletes');
+  });
+
+  it('derives SPEC_ROOT from SPEC_CONFORMANCE_DIR when only the latter is overridden (as CI does)', () => {
+    // CI passes SPEC_CONFORMANCE_DIR=$GITHUB_WORKSPACE/_spec/schemas/conformance
+    // and nothing else; the vendored files must resolve under _spec/.
+    const root = mkTmp('macp-gate-vendored-derive-');
+    const canon = path.join(root, 'spec', 'schemas', 'conformance');
+    writeFiles(canon, { 'a.json': 'A' });
+    writeFiles(path.join(canon, 'cmt-hash'), {});
+    writeFiles(path.join(canon, 'receipt'), {});
+    writeTree(path.join(root, 'spec'), DEFAULT_SPEC_FILES);
+    const repo = makeRepo(root, { conformance: { 'a.json': 'A' } });
+
+    const clean = runMake(repo, 'verify-fixtures', canon, null);
+    fs.writeFileSync(path.join(root, 'spec', 'schemas', 'otel', 'macp-semconv.json'), 'UPSTREAM CHANGE');
+    const drifted = runMake(repo, 'verify-fixtures', canon, null);
+
+    expect(clean.status).toBe(0);
+    expect(drifted.status).not.toBe(0);
+    expect(drifted.stdout).toContain(`${canon}/../../schemas/otel/macp-semconv.json`);
+  });
+
+  it('sync-fixtures copies every VENDORED_FILES entry, creating its directory', () => {
+    const root = mkTmp('macp-gate-vendored-sync-');
+    const specFiles = Object.fromEntries(Object.keys(VENDORED).map((s) => [s, `NEW ${s}`]));
+    const canon = makeCanon(root, { flat: { 'a.json': 'A' }, specFiles });
+    const repo = makeRepo(root, { conformance: {}, localFiles: {} });
+
+    const synced = runMake(repo, 'sync-fixtures', canon);
+    const verified = runMake(repo, 'verify-fixtures', canon);
+
+    expect(synced.status).toBe(0);
+    for (const [specPath, local] of Object.entries(VENDORED)) {
+      expect(fs.readFileSync(path.join(repo, local), 'utf8')).toBe(`NEW ${specPath}`);
+    }
+    expect(verified.status).toBe(0);
+  });
+
+  it.each(['verify-fixtures', 'sync-fixtures'])('%s rejects a VENDORED_FILES entry with no colon', (target) => {
+    // Without the guard a colon-less entry splits to src === dst, so sync would
+    // copy the spec file into the repo at its spec-relative path.
+    const root = mkTmp('macp-gate-vendored-malformed-');
+    const canon = makeCanon(root, { flat: { 'a.json': 'A' } });
+    const repo = makeRepo(root, { conformance: { 'a.json': 'A' } });
+    const env: NodeJS.ProcessEnv = { ...process.env };
+    delete env.MAKEFLAGS;
+    delete env.MAKELEVEL;
+    delete env.MFLAGS;
+
+    const result = spawnSync(
+      'make',
+      [
+        '-f',
+        MAKEFILE,
+        target,
+        `SPEC_CONFORMANCE_DIR=${canon}`,
+        `SPEC_ROOT=${path.join(root, 'specroot')}`,
+        'VENDORED_FILES=schemas/otel/macp-semconv.json',
+      ],
+      { cwd: repo, env, encoding: 'utf8', timeout: 120_000 },
+    );
+
+    expect(result.status).not.toBe(0);
+    expect(result.stdout).toContain('Error: VENDORED_FILES entry schemas/otel/macp-semconv.json is not');
+    expect(fs.existsSync(path.join(repo, 'schemas'))).toBe(false);
+  });
+
+  it.each(Object.keys(VENDORED))('sync-fixtures fails with a named error when %s is missing upstream', (specPath) => {
+    const root = mkTmp('macp-gate-vendored-sync-missing-');
+    const specFiles = { ...DEFAULT_SPEC_FILES };
+    delete specFiles[specPath];
+    const canon = makeCanon(root, { flat: { 'a.json': 'A' }, specFiles });
+    const repo = makeRepo(root, { conformance: {}, localFiles: {} });
+
+    const result = runMake(repo, 'sync-fixtures', canon);
+
+    expect(result.status).not.toBe(0);
+    expect(result.stdout).toContain(`Error: canonical file ${specPath} not found at`);
   });
 });
 

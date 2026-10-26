@@ -50,6 +50,13 @@ export const AGENT_NOT_FOUND = 'AGENT_NOT_FOUND';
  * holds (e.g. compacted when it ended) — FAILED_PRECONDITION. RFC-MACP-0012 §8.1.
  */
 export const HISTORY_UNAVAILABLE = 'HISTORY_UNAVAILABLE';
+/**
+ * GetDecisionReceipt named a session no receipt can be issued for: not
+ * RESOLVED, resolved without a `CommitmentPayload`, or issuance failed —
+ * FAILED_PRECONDITION. RFC-MACP-0013 §13. **Provisional** in the spec's error
+ * registry (not yet in the parity contract's permanent set).
+ */
+export const RECEIPT_UNAVAILABLE = 'RECEIPT_UNAVAILABLE';
 
 // Structured POLICY_DENIED denial codes (`PolicyDenial.code`, runtime ≥ 0.9.0;
 // RFC-MACP-0012 §6.2). Open set — names match python-sdk's exports.

@@ -72,7 +72,7 @@ client.close();
 
 The SDK uses a **three-layer** design:
 
-- **Low-level transport** (`MacpClient`): typed wrappers around every `MACPRuntimeService` RPC — `initialize`, `send`, `openStream`, `getSession`, `cancelSession`, `suspendSession`, `resumeSession`, `listSessions`, `getManifest`, `listModes`, `listRoots`, `listExtModes`, `registerExtMode`, `unregisterExtMode`, `promoteMode`, the policy RPCs (`register`/`unregister`/`get`/`listPolicies`, and `whatIfReplay` where the runtime advertises it), plus streaming watchers (`ModeRegistryWatcher`, `RootsWatcher`, `SignalWatcher`, `PolicyWatcher`, `SessionLifecycleWatcher`).
+- **Low-level transport** (`MacpClient`): typed wrappers around every `MACPRuntimeService` RPC — `initialize`, `send`, `openStream`, `getSession`, `cancelSession`, `suspendSession`, `resumeSession`, `listSessions`, `getManifest`, `listModes`, `listRoots`, `listExtModes`, `registerExtMode`, `unregisterExtMode`, `promoteMode`, the policy RPCs (`register`/`unregister`/`get`/`listPolicies`, and `whatIfReplay` where the runtime advertises it), `getDecisionReceipt`/`getReceiptKeys` where the runtime advertises receipts, plus streaming watchers (`ModeRegistryWatcher`, `RootsWatcher`, `SignalWatcher`, `PolicyWatcher`, `SessionLifecycleWatcher`).
 - **High-level session helpers**: one class per coordination mode (`DecisionSession`, `ProposalSession`, `TaskSession`, `HandoffSession`, `QuorumSession`) — wraps `MacpClient`, builds envelopes, encodes payloads, and maintains a local state projection.
 - **Agent framework** (`src/agent/`): event-driven `Participant` with strategy-based handlers, bootstrap runner (`fromBootstrap`), gRPC/HTTP transports, and the optional cancel-callback HTTP server.
 
@@ -462,6 +462,29 @@ const result = verifyReceipt(receipt, { 'prod-2026': 'TDVzkxaSf6_Oxu7mmn5TbCkF80
 | `integrity`       | `match`, `mismatch`, `cannot_verify`, or `null` when the receipt is refused                                                                                                                    |
 | `attestations[i]` | `valid`, `invalid`, `unknown_key` or `unsupported` (any other `alg`, and every `vendor` attestation)                                                                                           |
 | `verdict`         | `attested` (integrity holds and at least one attestation is valid), `integrity_only`, `unverified` (integrity fails, so attestations are not checked), or `refused` (unknown `receipt_format`) |
+
+To trust a published key set (a JWK Set, such as a runtime's `GetReceiptKeys` response; RFC-MACP-0013 §13), convert it with `trustedKeysFromJwks(jwks)`:
+
+```typescript
+import { trustedKeysFromJwks, verifyReceipt } from 'macp-sdk-typescript/receipt';
+
+const trustedKeys = trustedKeysFromJwks(jwks); // { 'example-1': 'TDVzkxaSf6_…' }
+verifyReceipt(receipt, trustedKeys).verdict; // 'attested'
+```
+
+It keeps only Ed25519 public keys (`kty` `OKP`, `crv` `Ed25519`) with a `kid` and an `x`, whose `alg` (if any) is `EdDSA` and `use` (if any) is `sig`. It drops a key that carries a private member (`d`, `k`, …) and any `kid` that more than one entry of the set claims, even when the other entry is a key it can't use (an EC key, say). It never throws: anything that isn't a key set gives `{}`. Deciding to trust the set is still up to you.
+
+### Fetching a runtime-issued receipt
+
+A runtime that advertises `capabilities.decisionReceipt.getDecisionReceipt` issues receipts itself (RFC-MACP-0013 §13). Fetch one for a resolved session, fetch the runtime's key set, and verify:
+
+```typescript
+const { receipt, raw } = await client.getDecisionReceipt(sessionId); // raw: the exact bytes served
+const jwks = await client.getReceiptKeys(); // { keys: [] } from an unsigned runtime
+verifyReceipt(receipt, trustedKeysFromJwks(jwks)).verdict; // 'attested', or 'integrity_only' if unsigned
+```
+
+Both methods throw `MacpSdkError` without sending anything when the runtime doesn't advertise the capability. A session the runtime can't issue a receipt for (not resolved yet, or resolved without a `CommitmentPayload`) gives `MacpTransportError` with `macpErrorCode` `RECEIPT_UNAVAILABLE`.
 
 If you hold the snake_case §3 projection (a receipt's `commitment`) instead of a `CommitmentPayload`, convert it with `commitmentFromProjection(projection)`.
 

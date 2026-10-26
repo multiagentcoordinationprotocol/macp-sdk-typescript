@@ -23,6 +23,7 @@ import {
 import { logger } from './logging';
 import { ProtoRegistry } from './proto-registry';
 import { validateProgressScope, validateSignalType } from './validation';
+import type { DecisionReceipt, DecisionReceiptResult, ReceiptKeySet } from './receipt';
 import type {
   Ack,
   AgentManifest,
@@ -30,7 +31,6 @@ import type {
   InitializeResult,
   ModeDescriptor,
   PolicyDescriptor,
-  PolicyRegistryCapability,
   SessionMetadata,
   Root,
   WhatIfReplayResult,
@@ -314,8 +314,10 @@ export class MacpClient {
   private readonly defaultDeadlineMs?: number;
   private readonly clientName: string;
   private readonly clientVersion: string;
-  /** The last {@link initialize} result; {@link whatIfReplay} reads its capabilities. */
+  /** The last {@link initialize} result; capability-gated RPCs read its capabilities. */
   private initializeResult?: InitializeResult;
+  /** An `Initialize` that {@link requireCapability} started and is still in flight. */
+  private pendingInit?: Promise<InitializeResult>;
 
   /** The runtime's capabilities from the last {@link initialize}; `undefined` before one. */
   get serverCapabilities(): Record<string, unknown> | undefined {
@@ -364,6 +366,35 @@ export class MacpClient {
     const selected = auth ?? this.auth;
     if (!selected) throw new MacpSdkError('this operation requires auth; pass auth= or configure client.auth');
     return selected;
+  }
+
+  /**
+   * Throws {@link MacpSdkError}, without sending anything, unless
+   * `capabilities.<group>.<flag>` from {@link initialize} is `true`. Calls
+   * `Initialize` once if this client hasn't; concurrent first callers share
+   * that one in-flight call (and the first caller's deadline).
+   */
+  private async requireCapability(
+    group: string,
+    flag: string,
+    rpc: string,
+    rfc: string,
+    deadlineMs?: number,
+  ): Promise<void> {
+    const capabilities =
+      this.serverCapabilities ??
+      (
+        await (this.pendingInit ??= this.initialize(deadlineMs).finally(() => {
+          this.pendingInit = undefined;
+        }))
+      ).capabilities;
+    const advertised = capabilities?.[group] as Record<string, unknown> | null | undefined;
+    if (advertised?.[flag] !== true) {
+      throw new MacpSdkError(
+        `this runtime does not advertise capabilities.${group}.${flag}; ` +
+          `${rpc} is optional and a client MUST NOT call it otherwise (${rfc})`,
+      );
+    }
   }
 
   private metadata(auth?: AuthConfig): grpc.Metadata | undefined {
@@ -726,14 +757,13 @@ export class MacpClient {
     options?: { auth?: AuthConfig; deadlineMs?: number },
   ): Promise<WhatIfReplayResult> {
     const auth = this.requireAuth(options?.auth);
-    const capabilities = this.serverCapabilities ?? (await this.initialize(options?.deadlineMs)).capabilities;
-    const policyRegistry = capabilities?.policyRegistry as PolicyRegistryCapability | undefined;
-    if (!policyRegistry?.whatIfReplay) {
-      throw new MacpSdkError(
-        'this runtime does not advertise capabilities.policyRegistry.whatIfReplay; ' +
-          'WhatIfReplay is optional and a client MUST NOT call it otherwise (RFC-MACP-0012 §8.1)',
-      );
-    }
+    await this.requireCapability(
+      'policyRegistry',
+      'whatIfReplay',
+      'WhatIfReplay',
+      'RFC-MACP-0012 §8.1',
+      options?.deadlineMs,
+    );
     const res = await this.unary<
       { sessionId: string; candidate: PolicyDescriptor },
       WhatIfReplayResult & { _firstDivergence?: string }
@@ -747,6 +777,81 @@ export class MacpClient {
     };
     delete result._firstDivergence;
     return result;
+  }
+
+  /**
+   * Fetch the runtime-issued decision receipt for a resolved session
+   * (RFC-MACP-0013 §13). Returns the parsed `macp-receipt/1` object and `raw`,
+   * the exact JSON text the runtime served, which is stable across calls
+   * (§13 item 6), so it can be stored or forwarded byte for byte. Verify it
+   * with `verifyReceipt(receipt, trustedKeysFromJwks(await getReceiptKeys()))`;
+   * this method does not.
+   *
+   * The RPC is optional, so this checks
+   * `capabilities.decisionReceipt.getDecisionReceipt` from {@link initialize}
+   * first (calling it once if this client hasn't) and throws
+   * {@link MacpSdkError} without sending anything when the runtime doesn't
+   * advertise it. Authorized as {@link getSession}. Runtime refusals arrive as
+   * {@link MacpTransportError} with `macpErrorCode` set: `RECEIPT_UNAVAILABLE`
+   * (no receipt can be issued: not resolved yet, or resolved without a
+   * `CommitmentPayload`), `SESSION_NOT_FOUND`, `FORBIDDEN`,
+   * `INTERNAL_ERROR`. A `receipt_json` that isn't a JSON object throws
+   * {@link MacpSdkError}.
+   */
+  async getDecisionReceipt(
+    sessionId: string,
+    options?: { auth?: AuthConfig; deadlineMs?: number },
+  ): Promise<DecisionReceiptResult> {
+    const auth = this.requireAuth(options?.auth);
+    await this.requireCapability(
+      'decisionReceipt',
+      'getDecisionReceipt',
+      'GetDecisionReceipt',
+      'RFC-MACP-0013 §13',
+      options?.deadlineMs,
+    );
+    const res = await this.unary<{ sessionId: string }, { receiptJson?: string }>(
+      'GetDecisionReceipt',
+      { sessionId },
+      auth,
+      options?.deadlineMs,
+    );
+    const raw = res.receiptJson ?? '';
+    const receipt = parseJsonObject(raw, 'receipt_json');
+    return { receipt: receipt as unknown as DecisionReceipt, raw };
+  }
+
+  /**
+   * Fetch the JWK Set of public keys the runtime signs receipts with
+   * (RFC-MACP-0013 §13 item 8); an unsigned runtime returns `{keys: []}`. Pass
+   * it to `trustedKeysFromJwks` for the map `verifyReceipt` takes. Whether
+   * to trust these keys is the caller's decision.
+   *
+   * Gated on `capabilities.decisionReceipt.getDecisionReceipt` like
+   * {@link getDecisionReceipt}. Needs transport auth only, like
+   * {@link getManifest}: `auth` is optional and falls back to the client's.
+   * A `jwks_json` that isn't a JSON object with a `keys` array throws
+   * {@link MacpSdkError}.
+   */
+  async getReceiptKeys(options?: { auth?: AuthConfig; deadlineMs?: number }): Promise<ReceiptKeySet> {
+    await this.requireCapability(
+      'decisionReceipt',
+      'getDecisionReceipt',
+      'GetReceiptKeys',
+      'RFC-MACP-0013 §13',
+      options?.deadlineMs,
+    );
+    const res = await this.unary<Record<string, never>, { jwksJson?: string }>(
+      'GetReceiptKeys',
+      {},
+      options?.auth,
+      options?.deadlineMs,
+    );
+    const jwks = parseJsonObject(res.jwksJson ?? '', 'jwks_json');
+    if (!Array.isArray(jwks.keys)) {
+      throw new MacpSdkError('runtime returned a jwks_json with no keys array');
+    }
+    return jwks as unknown as ReceiptKeySet;
   }
 
   /**
@@ -928,4 +1033,18 @@ export class MacpClient {
   close(): void {
     if (typeof this.client.close === 'function') this.client.close();
   }
+}
+
+/** Parses runtime-served JSON text that must be an object, else throws {@link MacpSdkError}. */
+function parseJsonObject(text: string, field: string): Record<string, unknown> {
+  let value: unknown;
+  try {
+    value = JSON.parse(text);
+  } catch (err) {
+    throw new MacpSdkError(`runtime returned a ${field} that is not valid JSON: ${(err as Error).message}`);
+  }
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new MacpSdkError(`runtime returned a ${field} that is not a JSON object`);
+  }
+  return value as Record<string, unknown>;
 }

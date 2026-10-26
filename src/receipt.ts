@@ -71,6 +71,35 @@ export interface DecisionReceipt {
 }
 
 /**
+ * {@link MacpClient.getDecisionReceipt}'s result: the parsed receipt and the
+ * `receipt_json` text exactly as the runtime served it, so a caller can store
+ * the issued bytes unchanged (RFC-MACP-0013 §13 item 6 serves them
+ * byte-identical). `receipt` is parsed, not validated: {@link verifyReceipt}
+ * is the authority on whether it is a well-formed `macp-receipt/1`.
+ */
+export interface DecisionReceiptResult {
+  receipt: DecisionReceipt;
+  raw: string;
+}
+
+/** One JWK of a receipt key set (`schemas/json/macp-receipt-keys.schema.json`). */
+export interface ReceiptJwk {
+  kid: string;
+  kty: string;
+  crv?: string;
+  x?: string;
+  alg?: string;
+  use?: string;
+  [member: string]: unknown;
+}
+
+/** A JWK Set [RFC 7517] of receipt verification keys, as `GetReceiptKeys` returns it. */
+export interface ReceiptKeySet {
+  keys: ReceiptJwk[];
+  [member: string]: unknown;
+}
+
+/**
  * Signs a receipt with Ed25519: either a 32-byte private key seed, or a
  * callback that returns the 64-byte signature over `signingInput` (for a key
  * held elsewhere, such as an HSM, as long as it signs synchronously).
@@ -452,4 +481,51 @@ export function verifyReceipt(receipt: unknown, trustedKeys: Record<string, stri
     attestations: outcomes,
     verdict: outcomes.includes('valid') ? 'attested' : 'integrity_only',
   };
+}
+
+/** JWK private-key members (RFC 7518 §6); RFC-MACP-0013 §13 item 8 forbids them in a key set. */
+const PRIVATE_JWK_MEMBERS = ['d', 'p', 'q', 'dp', 'dq', 'qi', 'oth', 'k'] as const;
+
+const isNonEmptyString = (v: unknown): v is string => typeof v === 'string' && v.length > 0;
+
+/** An Ed25519 public verification key usable for an EdDSA `jws` attestation. */
+function usableEd25519Key(key: unknown): key is ReceiptJwk & { x: string } {
+  if (!isRecord(key)) return false;
+  if (key.kty !== 'OKP' || key.crv !== 'Ed25519') return false;
+  if (!isNonEmptyString(key.kid) || !isNonEmptyString(key.x)) return false;
+  if (key.alg !== undefined && key.alg !== 'EdDSA') return false;
+  if (key.use !== undefined && key.use !== 'sig') return false;
+  return !PRIVATE_JWK_MEMBERS.some((m) => Object.prototype.hasOwnProperty.call(key, m));
+}
+
+/**
+ * Turns a receipt key set (the JWK Set `GetReceiptKeys` returns, RFC-MACP-0013
+ * §13 item 8) into the `kid → x` map {@link verifyReceipt} takes. Choosing to
+ * trust the set is the caller's decision; this only converts it.
+ *
+ * A key is kept only if it is an Ed25519 public key (`kty` `OKP`, `crv`
+ * `Ed25519`) with a non-empty `kid` and `x`, an `alg` (if any) of `EdDSA`, a
+ * `use` (if any) of `sig`, and no private member (`d`, `p`, `q`, `dp`, `dq`,
+ * `qi`, `oth`, `k`): a key set that publishes private key material is
+ * misconfigured and is not trusted silently. A `kid` that more than one entry
+ * of the set claims is dropped entirely, even when the other entry is a key
+ * this function can't use (an EC key, say): item 8 makes kids unique across
+ * the whole set, so a repeated one leaves the set ambiguous about which key it
+ * names. Never throws: input that is not a key set yields `{}`.
+ */
+export function trustedKeysFromJwks(jwks: unknown): Record<string, string> {
+  const result: Record<string, string> = {};
+  if (!isRecord(jwks) || !Array.isArray(jwks.keys)) return result;
+  // Count every entry's string kid, usable or not, before keeping any.
+  const claims = new Map<string, number>();
+  for (const key of jwks.keys) {
+    if (isRecord(key) && typeof key.kid === 'string') claims.set(key.kid, (claims.get(key.kid) ?? 0) + 1);
+  }
+  for (const key of jwks.keys) {
+    if (!usableEd25519Key(key) || claims.get(key.kid) !== 1) continue;
+    // defineProperty, not assignment: a kid of "__proto__" must become an own
+    // key (which verifyReceipt's hasOwnProperty lookup finds), not a prototype.
+    Object.defineProperty(result, key.kid, { value: key.x, enumerable: true, writable: true, configurable: true });
+  }
+  return result;
 }

@@ -428,16 +428,24 @@ Harness behaviours worth knowing:
 
 `make verify-fixtures` diffs this SDK's vendored fixtures against the spec repo's
 canonical copies and fails if either has drifted; `make sync-fixtures` refreshes
-the vendored copies from a local spec checkout. Both targets cover **two** fixture
-sets in one invocation:
+the vendored copies from a local spec checkout. Both targets cover every
+vendored set in one invocation:
 
 - `tests/conformance/*.json` against `$(SPEC_CONFORMANCE_DIR)/*.json` (flat).
-- `tests/vectors/cmt-hash/*.json` against `$(SPEC_CONFORMANCE_DIR)/cmt-hash/*.json`
-  (the RFC-MACP-0013 commitment-hash vectors — see
-  [`tests/vectors/cmt-hash/SOURCE.md`](../../tests/vectors/cmt-hash/SOURCE.md) for
-  that directory's provenance).
+- `tests/vectors/<dir>/*.json` against `$(SPEC_CONFORMANCE_DIR)/<dir>/*.json` for
+  each directory in the Makefile's `VECTOR_DIRS`: `cmt-hash` (the RFC-MACP-0013
+  commitment-hash vectors; see
+  [`tests/vectors/cmt-hash/SOURCE.md`](../../tests/vectors/cmt-hash/SOURCE.md)) and
+  `receipt` (the decision-receipt vectors).
+- Single spec documents listed in `VENDORED_FILES` as `<spec path>:<local path>`
+  pairs under `$(SPEC_ROOT)`, which defaults to the spec repo root derived from
+  `SPEC_CONFORMANCE_DIR`: `examples/discovery/receipt_keys.json` →
+  `tests/fixtures/receipt_keys.json`, and `schemas/otel/macp-semconv.json` →
+  `tests/otel/macp-semconv.json`. Any other `*.json` in a `VENDORED_DIRS`
+  directory is `EXTRA:`. To vendor another document, add a pair (and its
+  directory to `VENDORED_DIRS`).
 
-`verify-fixtures` reports every problem across both sets before exiting — a
+`verify-fixtures` reports every problem across all sets before exiting — a
 canonical file that differs from (or is missing from) the vendored copy prints
 `DRIFT:`, and a vendored file with no canonical source prints `EXTRA:`. CI runs
 this gate on every PR via `.github/workflows/conformance-fixtures.yml`, so a
