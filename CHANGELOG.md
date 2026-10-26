@@ -4,6 +4,13 @@ All notable changes to `macp-sdk-typescript` are documented here. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the
 project uses [Semantic Versioning](https://semver.org/).
 
+## [0.21.0](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/compare/v0.20.0...v0.21.0) (2026-10-26)
+
+
+### Features
+
+* optional OpenTelemetry send spans and W3C trace propagation (W5 S2) ([#212](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/issues/212)) ([28ce7a1](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/commit/28ce7a149e6803f5828416eafbc73e4067f80cd7))
+
 ## [0.20.0](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/compare/v0.19.0...v0.20.0) (2026-10-26)
 
 
