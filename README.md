@@ -566,6 +566,10 @@ an older runtime, the 0.9.0 behaviors the SDK models will not match. Examples:
 - policy rule-domain admission and `ruleExtensions`;
 - `macp-error-code` statuses.
 
+## HTTP/JSON
+
+This SDK talks to the runtime over gRPC only; it has no HTTP client. To reach a runtime's HTTP/JSON listener instead, see RFC-MACP-0006 §4 and the curl section of the spec quickstart.
+
 ## Runtime Boundary
 
 This SDK is a **client** for the MACP Rust runtime. The runtime handles session state, message ordering, deduplication, TTL enforcement, and mode-specific validation. The SDK provides typed helpers for building and sending envelopes, and local projections for tracking state client-side.
