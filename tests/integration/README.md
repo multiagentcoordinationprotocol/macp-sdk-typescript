@@ -22,7 +22,8 @@ CI runs this suite automatically on every push/PR to `main` via
 `.github/workflows/integration.yml`. The published
 `ghcr.io/multiagentcoordinationprotocol/macp-runtime` image runs as a GitHub
 Actions service container (dev mode, in-memory, scratch port 50123), in
-three jobs:
+three jobs (`integration-receipts` starts it with `docker run` instead, so a
+signing key generated in the job can be passed in):
 
 - `integration`: the required gate, pinned to `:0.9.0`, the minimum
   supported runtime.

@@ -158,7 +158,7 @@ jobs:
           fi
           docker run -d --name macp-runtime -p 50123:50123 "${args[@]}" "$RUNTIME_IMAGE"
       - name: Wait for macp-runtime to be ready
-        run: npx tsx scripts/wait-for-runtime.ts || { docker logs macp-runtime; exit 1; }
+        run: npx tsx scripts/wait-for-runtime.ts
       - run: npm run test:integration -- tests/integration/runtime.test.ts -t receipt_
       - if: failure()
         run: docker logs macp-runtime

@@ -115,7 +115,7 @@ describe('MacpClient', () => {
 // advertise them (every release before R1, including the pinned 0.9.0), both
 // methods must refuse client-side, before sending, rather than surface the
 // runtime's UNIMPLEMENTED. Fetching and verifying real receipts against an
-// advertising runtime is plans/receipt-client-methods.md Phase 3.
+// advertising runtime is the next describe block.
 
 describe('Decision receipts — capability gate', () => {
   it('refuses both receipt RPCs client-side when the runtime does not advertise them', async (ctx) => {
@@ -244,7 +244,7 @@ describe('Decision receipts — runtime issuance', () => {
     expect(receipt.attestations).toEqual([]);
 
     const result = verifyReceipt(receipt, trustedKeysFromJwks(keys));
-    expect(result).toEqual({ integrity: 'match', attestations: [], verdict: 'integrity_only' });
+    expect(result).toStrictEqual({ integrity: 'match', attestations: [], verdict: 'integrity_only' });
   });
 
   it('receipt_open_session_unavailable', async (ctx) => {
