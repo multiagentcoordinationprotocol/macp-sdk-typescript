@@ -27,6 +27,7 @@ import {
   STREAM_LAGGED,
   AGENT_NOT_FOUND,
   HISTORY_UNAVAILABLE,
+  RECEIPT_UNAVAILABLE,
   INVALID_SESSION_ID,
   MACP_VERSION,
   MODE_MULTI_ROUND,
@@ -119,7 +120,8 @@ describe('parity contract (tests/parity/contract.json)', () => {
     // multi_round.proto). No value, section or vector changed.
     // Still 1.4.1 after spec-repo PR #227 (2026-10-25, 8d20dc5), which added
     // `HISTORY_UNAVAILABLE` to `error_codes.permanent` without a version bump;
-    // the `error_codes` block below pins it.
+    // the `error_codes` block below pins it. Likewise after spec-repo PR #236
+    // (82c5187), which promoted `RECEIPT_UNAVAILABLE` to permanent.
     expect(contract.contract_version).toBe('1.4.1');
   });
 
@@ -175,9 +177,10 @@ describe('parity contract (tests/parity/contract.json)', () => {
       STREAM_LAGGED,
       AGENT_NOT_FOUND,
       HISTORY_UNAVAILABLE,
+      RECEIPT_UNAVAILABLE,
     };
 
-    it('exports exactly the 21 permanent codes the manifest pins (order-independent)', () => {
+    it('exports exactly the 22 permanent codes the manifest pins (order-independent)', () => {
       expect(Object.keys(exported).sort()).toEqual([...contract.sections.error_codes.permanent].sort());
       for (const [name, value] of Object.entries(exported)) {
         expect(value, `${name} export`).toBe(name);
