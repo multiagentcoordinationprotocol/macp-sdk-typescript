@@ -53,8 +53,8 @@ export const HISTORY_UNAVAILABLE = 'HISTORY_UNAVAILABLE';
 /**
  * GetDecisionReceipt named a session no receipt can be issued for: not
  * RESOLVED, resolved without a `CommitmentPayload`, or issuance failed —
- * FAILED_PRECONDITION. RFC-MACP-0013 §13. **Provisional** in the spec's error
- * registry (not yet in the parity contract's permanent set).
+ * FAILED_PRECONDITION. RFC-MACP-0013 §13. Permanent in the spec's error
+ * registry and the parity contract.
  */
 export const RECEIPT_UNAVAILABLE = 'RECEIPT_UNAVAILABLE';
 

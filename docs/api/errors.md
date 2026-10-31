@@ -219,4 +219,4 @@ bearer) — pre-0.2 code continues to work unchanged.
 | `STREAM_LAGGED` | Stream/watch subscriber fell behind; resubscribe with `afterSequence` (runtime ≥ 0.9.0, `RESOURCE_EXHAUSTED`) |
 | `AGENT_NOT_FOUND` | `getManifest` for an agent this runtime doesn't host (runtime ≥ 0.9.0, `NOT_FOUND`) |
 | `HISTORY_UNAVAILABLE` | `whatIfReplay` on a session whose accepted history the runtime no longer holds (RFC-MACP-0012 §8.1, `FAILED_PRECONDITION`) |
-| `RECEIPT_UNAVAILABLE` | `getDecisionReceipt` for a session no receipt can be issued for: not resolved yet, resolved without a `CommitmentPayload`, or any other reason (RFC-MACP-0013 §13, `FAILED_PRECONDITION`; provisional) |
+| `RECEIPT_UNAVAILABLE` | `getDecisionReceipt` for a session no receipt can be issued for: not resolved yet, resolved without a `CommitmentPayload`, or any other reason (RFC-MACP-0013 §13, `FAILED_PRECONDITION`) |

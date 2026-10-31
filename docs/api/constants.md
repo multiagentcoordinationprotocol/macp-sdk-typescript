@@ -86,7 +86,7 @@ import { SESSION_NOT_OPEN, POLICY_DENIED } from 'macp-sdk-typescript';
 | `STREAM_LAGGED` |
 | `AGENT_NOT_FOUND` |
 | `HISTORY_UNAVAILABLE` |
-| `RECEIPT_UNAVAILABLE` (provisional, RFC-MACP-0013 §13) |
+| `RECEIPT_UNAVAILABLE` (RFC-MACP-0013 §13) |
 
 ## Policy denial codes
 
