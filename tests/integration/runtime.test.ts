@@ -33,8 +33,12 @@ import {
   buildHandoffPolicy,
   newSessionId,
   policyRuleExtensions,
+  RECEIPT_UNAVAILABLE,
+  trustedKeysFromJwks,
+  verifyReceipt,
 } from '../../src/index';
 import { GrpcTransportAdapter } from '../../src/agent/transports';
+import type { DecisionReceiptResult } from '../../src/receipt';
 import type { DecisionReceiptCapability } from '../../src/types';
 
 const RUNTIME_ADDRESS = process.env.MACP_RUNTIME_ADDRESS ?? 'localhost:50051';
@@ -134,6 +138,125 @@ describe('Decision receipts — capability gate', () => {
     } finally {
       receiptClient.close();
     }
+  });
+});
+
+// Fetching and verifying real receipts (RFC-MACP-0013 §13) against a runtime
+// that advertises them. Test names are shared with macp-sdk-python. Each test
+// skips, with the reason, when the runtime it runs against can't exercise it
+// (the pinned 0.9.0, or the other signing configuration). CI's
+// `integration-receipts` job sets MACP_EXPECT_RECEIPTS to `signed` or
+// `unsigned`, which turns a missing capability or a mismatched `signed` flag
+// into a failure, so a misconfigured leg can't pass by skipping everything.
+
+const EXPECT_RECEIPTS = process.env.MACP_EXPECT_RECEIPTS;
+if (EXPECT_RECEIPTS !== undefined && EXPECT_RECEIPTS !== 'signed' && EXPECT_RECEIPTS !== 'unsigned') {
+  throw new Error(`MACP_EXPECT_RECEIPTS must be "signed" or "unsigned", got ${JSON.stringify(EXPECT_RECEIPTS)}`);
+}
+
+describe('Decision receipts — runtime issuance', () => {
+  let receiptClient: MacpClient;
+  let capability: DecisionReceiptCapability | undefined;
+
+  beforeAll(async () => {
+    receiptClient = makeClient();
+    const { capabilities } = await receiptClient.initialize(5000);
+    capability = (capabilities?.decisionReceipt as DecisionReceiptCapability | null | undefined) ?? undefined;
+  });
+
+  afterAll(() => {
+    receiptClient.close();
+  });
+
+  /**
+   * Skips unless the runtime advertises receipts and its `signed` flag is the
+   * one this test needs (`undefined`: either). Under MACP_EXPECT_RECEIPTS a
+   * test the leg is meant to run fails instead of skipping.
+   */
+  function requireReceipts(ctx: { skip: (note?: string) => never }, signed?: boolean): void {
+    const want = signed === undefined ? undefined : signed ? 'signed' : 'unsigned';
+    if (EXPECT_RECEIPTS !== undefined && want !== undefined && want !== EXPECT_RECEIPTS) {
+      ctx.skip(`not run on the ${EXPECT_RECEIPTS} leg`);
+    }
+    const advertised = capability?.getDecisionReceipt === true;
+    const isSigned = capability?.signed === true;
+    if (EXPECT_RECEIPTS !== undefined) {
+      expect(advertised, 'runtime must advertise decisionReceipt.getDecisionReceipt').toBe(true);
+      expect(isSigned, 'runtime decisionReceipt.signed').toBe(EXPECT_RECEIPTS === 'signed');
+      return;
+    }
+    if (!advertised) ctx.skip('runtime does not advertise decisionReceipt.getDecisionReceipt');
+    if (want !== undefined && isSigned !== signed) ctx.skip(`runtime is not ${want}`);
+  }
+
+  /** A Decision session alice resolves with a Commitment. */
+  async function resolvedSession(): Promise<DecisionSession> {
+    const session = new DecisionSession(receiptClient, { auth: agentAlice });
+    expect(
+      (await session.start({ intent: 'receipt', participants: ['alice', 'bob'], ttlMs: 30_000, sender: 'alice' })).ok,
+    ).toBe(true);
+    expect((await session.propose({ proposalId: 'p1', option: 'ship', rationale: 'ready', sender: 'alice' })).ok).toBe(
+      true,
+    );
+    expect(
+      (await session.vote({ proposalId: 'p1', vote: 'approve', reason: 'yes', sender: 'bob', auth: agentBob })).ok,
+    ).toBe(true);
+    expect(
+      (await session.commit({ action: 'ship', authorityScope: 'team', reason: 'approved', sender: 'alice' })).ok,
+    ).toBe(true);
+    return session;
+  }
+
+  /** Fetches the receipt twice: §13 item 6 serves the same bytes every time. */
+  async function fetchReceipt(sessionId: string): Promise<DecisionReceiptResult> {
+    const first = await receiptClient.getDecisionReceipt(sessionId);
+    const second = await receiptClient.getDecisionReceipt(sessionId);
+    expect(second.raw).toBe(first.raw);
+    expect(first.receipt.session_id).toBe(sessionId);
+    expect(first.receipt.mode).toBe('macp.mode.decision.v1');
+    expect(first.receipt.commitment.action).toBe('ship');
+    return first;
+  }
+
+  it('receipt_signed_runtime_attested', async (ctx) => {
+    requireReceipts(ctx, true);
+    const session = await resolvedSession();
+    const { receipt } = await fetchReceipt(session.sessionId);
+    const keys = await receiptClient.getReceiptKeys();
+    expect(keys.keys.length).toBeGreaterThan(0);
+    expect(receipt.attestations.length).toBeGreaterThan(0);
+
+    const result = verifyReceipt(receipt, trustedKeysFromJwks(keys));
+    expect(result.integrity).toBe('match');
+    expect(result.attestations).toContain('valid');
+    expect(result.verdict).toBe('attested');
+
+    // Without the runtime's keys the same receipt is only integrity-checked.
+    expect(verifyReceipt(receipt, {}).verdict).toBe('integrity_only');
+  });
+
+  it('receipt_unsigned_runtime_integrity_only', async (ctx) => {
+    requireReceipts(ctx, false);
+    const session = await resolvedSession();
+    const { receipt } = await fetchReceipt(session.sessionId);
+    const keys = await receiptClient.getReceiptKeys();
+    expect(keys).toEqual({ keys: [] });
+    expect(receipt.attestations).toEqual([]);
+
+    const result = verifyReceipt(receipt, trustedKeysFromJwks(keys));
+    expect(result).toEqual({ integrity: 'match', attestations: [], verdict: 'integrity_only' });
+  });
+
+  it('receipt_open_session_unavailable', async (ctx) => {
+    requireReceipts(ctx);
+    const session = new DecisionSession(receiptClient, { auth: agentAlice });
+    expect(
+      (await session.start({ intent: 'receipt', participants: ['alice', 'bob'], ttlMs: 30_000, sender: 'alice' })).ok,
+    ).toBe(true);
+
+    const caught = await receiptClient.getDecisionReceipt(session.sessionId).catch((err: unknown) => err);
+    expect(caught).toBeInstanceOf(MacpTransportError);
+    expect((caught as MacpTransportError).macpErrorCode).toBe(RECEIPT_UNAVAILABLE);
   });
 });
 

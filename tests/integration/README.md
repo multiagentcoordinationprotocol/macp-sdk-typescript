@@ -21,12 +21,16 @@ Two files make up the suite:
 CI runs this suite automatically on every push/PR to `main` via
 `.github/workflows/integration.yml`. The published
 `ghcr.io/multiagentcoordinationprotocol/macp-runtime` image runs as a GitHub
-Actions service container (dev mode, in-memory, scratch port 50123), in two
-jobs:
+Actions service container (dev mode, in-memory, scratch port 50123), in
+three jobs:
 
 - `integration`: the required gate, pinned to `:0.9.0`, the minimum
   supported runtime.
 - `integration-canary`: non-blocking, against `:latest`.
+- `integration-receipts`: the decision-receipt tests (`-t receipt_`), in one
+  `signed` and one `unsigned` leg against a runtime that issues receipts
+  (0.11.0+), with `MACP_EXPECT_RECEIPTS` set per leg. See
+  [Decision receipt tests](#decision-receipt-tests).
 
 To reproduce the gate locally, run that same `:0.9.0` image.
 `scripts/wait-for-runtime.ts` polls the `Initialize` RPC before the suite
@@ -49,15 +53,41 @@ docker run -d --name macp-runtime-test -p 50051:50051 \
 
 ## Variables
 
-| Variable | Used by | Required? | Description |
-|---|---|---|---|
-| `MACP_RUNTIME_ADDRESS` | all | no (defaults `localhost:50051`) | gRPC address |
-| `MACP_TEST_BEARER_ALICE` | *Direct-agent auth* | yes for that block | Bearer token the runtime accepts for sender `alice` |
-| `MACP_TEST_BEARER_BOB` | *Direct-agent auth* | yes for that block | Bearer token the runtime accepts for sender `bob` |
+| Variable                 | Used by                                | Required?                       | Description                                                                                                                                                                                                    |
+| ------------------------ | -------------------------------------- | ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `MACP_RUNTIME_ADDRESS`   | all                                    | no (defaults `localhost:50051`) | gRPC address                                                                                                                                                                                                   |
+| `MACP_TEST_BEARER_ALICE` | _Direct-agent auth_                    | yes for that block              | Bearer token the runtime accepts for sender `alice`                                                                                                                                                            |
+| `MACP_TEST_BEARER_BOB`   | _Direct-agent auth_                    | yes for that block              | Bearer token the runtime accepts for sender `bob`                                                                                                                                                              |
+| `MACP_EXPECT_RECEIPTS`   | _Decision receipts — runtime issuance_ | no                              | `signed` or `unsigned`: the receipt configuration the runtime must have. Set, a runtime without `decisionReceipt.getDecisionReceipt` or with the other `signed` value fails the tests instead of skipping them |
 
 The direct-agent-auth tests (RFC-MACP-0004 §4) are skipped automatically when
 the bearer envs are absent, so the default `npm run test:integration` flow
 still works against an insecure dev-mode runtime.
+
+## Decision receipt tests
+
+`receipt_signed_runtime_attested`, `receipt_unsigned_runtime_integrity_only` and
+`receipt_open_session_unavailable` (names shared with `macp-sdk-python`) fetch
+real receipts (RFC-MACP-0013 §13). They need a runtime that advertises
+`decisionReceipt.getDecisionReceipt`, and the first two need its `signed` flag
+to match, so against `0.9.0` all three skip with the reason, and against one
+runtime only one of the first two runs. An unsigned runtime needs no extra
+configuration. A signed one needs a key, its `kid` and a runtime id (the
+runtime refuses to start on a signing key without `MACP_RUNTIME_ID`):
+
+```bash
+openssl genpkey -algorithm ed25519 -out receipt-signing.pem
+docker run -d --name macp-runtime-signed -p 50051:50051 \
+  -e MACP_ALLOW_INSECURE=1 -e MACP_MEMORY_ONLY=1 \
+  -e MACP_RECEIPT_SIGNING_KEY="$(cat receipt-signing.pem)" \
+  -e MACP_RECEIPT_SIGNING_KID=local -e MACP_RUNTIME_ID=local \
+  ghcr.io/multiagentcoordinationprotocol/macp-runtime:latest
+MACP_EXPECT_RECEIPTS=signed npm run test:integration -- tests/integration/runtime.test.ts -t receipt_
+```
+
+The unsigned test expects `GetReceiptKeys` to return `{"keys":[]}`, so don't
+set `MACP_RECEIPT_PUBLIC_KEYS_PATH` on the unsigned runtime: an unsigned runtime
+still publishes retired keys.
 
 ## Enabling direct-agent-auth tests
 

@@ -111,3 +111,54 @@ jobs:
       - name: Wait for macp-runtime to be ready
         run: npx tsx scripts/wait-for-runtime.ts
       - run: npm run test:integration
+
+  integration-receipts:
+    # Runtime-issued decision receipts (RFC-MACP-0013 §13), which need a
+    # runtime that advertises `decision_receipt` (0.11.0+). The pinned 0.9.0
+    # job and the canary skip the receipt tests' signed or unsigned half, so
+    # each leg here runs one runtime configuration with MACP_EXPECT_RECEIPTS
+    # set: a missing capability or a wrong `signed` flag fails the leg instead
+    # of skipping it. The signed leg's key is generated per run and never
+    # leaves the runner. The runtime is started with `docker run` rather than
+    # `services:` because the key only exists once a step has made it.
+    #
+    # Pinned to the runtime main commit that merged R1 (016afe6) until
+    # 0.11.0 is published; then pin `:0.11.0`.
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    strategy:
+      fail-fast: false
+      matrix:
+        receipts: [signed, unsigned]
+    env:
+      MACP_RUNTIME_ADDRESS: localhost:50123
+      MACP_EXPECT_RECEIPTS: ${{ matrix.receipts }}
+      RUNTIME_IMAGE: ghcr.io/multiagentcoordinationprotocol/macp-runtime:016afe6
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          registry-url: 'https://npm.pkg.github.com'
+          scope: '@multiagentcoordinationprotocol'
+          cache: npm
+      - run: npm ci
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Start macp-runtime (${{ matrix.receipts }})
+        run: |
+          args=(-e MACP_BIND_ADDR=0.0.0.0:50123 -e MACP_ALLOW_INSECURE=1 -e MACP_MEMORY_ONLY=1)
+          if [ "${{ matrix.receipts }}" = signed ]; then
+            openssl genpkey -algorithm ed25519 -out "$RUNNER_TEMP/receipt-signing.pem"
+            args+=(-e MACP_RECEIPT_SIGNING_KEY="$(cat "$RUNNER_TEMP/receipt-signing.pem")"
+                   -e MACP_RECEIPT_SIGNING_KID=ci-receipts
+                   -e MACP_RUNTIME_ID=sdk-typescript-ci)
+          fi
+          docker run -d --name macp-runtime -p 50123:50123 "${args[@]}" "$RUNTIME_IMAGE"
+      - name: Wait for macp-runtime to be ready
+        run: npx tsx scripts/wait-for-runtime.ts || { docker logs macp-runtime; exit 1; }
+      - run: npm run test:integration -- tests/integration/runtime.test.ts -t receipt_
+      - if: failure()
+        run: docker logs macp-runtime
