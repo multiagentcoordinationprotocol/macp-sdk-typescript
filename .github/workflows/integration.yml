@@ -122,8 +122,7 @@ jobs:
     # leaves the runner. The runtime is started with `docker run` rather than
     # `services:` because the key only exists once a step has made it.
     #
-    # Pinned to the runtime main commit that merged R1 (016afe6) until
-    # 0.11.0 is published; then pin `:0.11.0`.
+    # Pinned to 0.11.0, the first runtime release that issues receipts.
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -135,7 +134,7 @@ jobs:
     env:
       MACP_RUNTIME_ADDRESS: localhost:50123
       MACP_EXPECT_RECEIPTS: ${{ matrix.receipts }}
-      RUNTIME_IMAGE: ghcr.io/multiagentcoordinationprotocol/macp-runtime:016afe6
+      RUNTIME_IMAGE: ghcr.io/multiagentcoordinationprotocol/macp-runtime:0.11.0
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
