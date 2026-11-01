@@ -1,0 +1,2204 @@
+{
+  "proto_version": "0.1.13",
+  "messages": {
+    "macp.modes.decision.v1.EvaluationPayload": [
+      {
+        "name": "proposal_id",
+        "id": 1,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "recommendation",
+        "id": 2,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "confidence",
+        "id": 3,
+        "type": "double",
+        "kind": "scalar"
+      },
+      {
+        "name": "reason",
+        "id": 4,
+        "type": "string",
+        "kind": "scalar"
+      }
+    ],
+    "macp.modes.decision.v1.ObjectionPayload": [
+      {
+        "name": "proposal_id",
+        "id": 1,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "reason",
+        "id": 2,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "severity",
+        "id": 3,
+        "type": "string",
+        "kind": "scalar"
+      }
+    ],
+    "macp.modes.decision.v1.ProposalPayload": [
+      {
+        "name": "proposal_id",
+        "id": 1,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "option",
+        "id": 2,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "rationale",
+        "id": 3,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "supporting_data",
+        "id": 4,
+        "type": "bytes",
+        "kind": "scalar"
+      }
+    ],
+    "macp.modes.decision.v1.VotePayload": [
+      {
+        "name": "proposal_id",
+        "id": 1,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "vote",
+        "id": 2,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "reason",
+        "id": 3,
+        "type": "string",
+        "kind": "scalar"
+      }
+    ],
+    "macp.modes.handoff.v1.HandoffAcceptPayload": [
+      {
+        "name": "handoff_id",
+        "id": 1,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "accepted_by",
+        "id": 2,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "reason",
+        "id": 3,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "implicit",
+        "id": 4,
+        "type": "bool",
+        "kind": "scalar"
+      }
+    ],
+    "macp.modes.handoff.v1.HandoffContextPayload": [
+      {
+        "name": "handoff_id",
+        "id": 1,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "content_type",
+        "id": 2,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "context",
+        "id": 3,
+        "type": "bytes",
+        "kind": "scalar"
+      }
+    ],
+    "macp.modes.handoff.v1.HandoffDeclinePayload": [
+      {
+        "name": "handoff_id",
+        "id": 1,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "declined_by",
+        "id": 2,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "reason",
+        "id": 3,
+        "type": "string",
+        "kind": "scalar"
+      }
+    ],
+    "macp.modes.handoff.v1.HandoffOfferPayload": [
+      {
+        "name": "handoff_id",
+        "id": 1,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "target_participant",
+        "id": 2,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "scope",
+        "id": 3,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "reason",
+        "id": 4,
+        "type": "string",
+        "kind": "scalar"
+      }
+    ],
+    "macp.modes.multi_round.v1.ContributePayload": [
+      {
+        "name": "value",
+        "id": 1,
+        "type": "string",
+        "kind": "scalar"
+      }
+    ],
+    "macp.modes.proposal.v1.AcceptPayload": [
+      {
+        "name": "proposal_id",
+        "id": 1,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "reason",
+        "id": 2,
+        "type": "string",
+        "kind": "scalar"
+      }
+    ],
+    "macp.modes.proposal.v1.CounterProposalPayload": [
+      {
+        "name": "proposal_id",
+        "id": 1,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "supersedes_proposal_id",
+        "id": 2,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "title",
+        "id": 3,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "summary",
+        "id": 4,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "details",
+        "id": 5,
+        "type": "bytes",
+        "kind": "scalar"
+      }
+    ],
+    "macp.modes.proposal.v1.ProposalPayload": [
+      {
+        "name": "proposal_id",
+        "id": 1,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "title",
+        "id": 2,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "summary",
+        "id": 3,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "details",
+        "id": 4,
+        "type": "bytes",
+        "kind": "scalar"
+      },
+      {
+        "name": "tags",
+        "id": 5,
+        "type": "string",
+        "kind": "scalar",
+        "repeated": true
+      }
+    ],
+    "macp.modes.proposal.v1.RejectPayload": [
+      {
+        "name": "proposal_id",
+        "id": 1,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "terminal",
+        "id": 2,
+        "type": "bool",
+        "kind": "scalar"
+      },
+      {
+        "name": "reason",
+        "id": 3,
+        "type": "string",
+        "kind": "scalar"
+      }
+    ],
+    "macp.modes.proposal.v1.WithdrawPayload": [
+      {
+        "name": "proposal_id",
+        "id": 1,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "reason",
+        "id": 2,
+        "type": "string",
+        "kind": "scalar"
+      }
+    ],
+    "macp.modes.quorum.v1.AbstainPayload": [
+      {
+        "name": "request_id",
+        "id": 1,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "reason",
+        "id": 2,
+        "type": "string",
+        "kind": "scalar"
+      }
+    ],
+    "macp.modes.quorum.v1.ApprovalRequestPayload": [
+      {
+        "name": "request_id",
+        "id": 1,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "action",
+        "id": 2,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "summary",
+        "id": 3,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "details",
+        "id": 4,
+        "type": "bytes",
+        "kind": "scalar"
+      },
+      {
+        "name": "required_approvals",
+        "id": 5,
+        "type": "uint32",
+        "kind": "scalar"
+      }
+    ],
+    "macp.modes.quorum.v1.ApprovePayload": [
+      {
+        "name": "request_id",
+        "id": 1,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "reason",
+        "id": 2,
+        "type": "string",
+        "kind": "scalar"
+      }
+    ],
+    "macp.modes.quorum.v1.RejectPayload": [
+      {
+        "name": "request_id",
+        "id": 1,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "reason",
+        "id": 2,
+        "type": "string",
+        "kind": "scalar"
+      }
+    ],
+    "macp.modes.task.v1.TaskAcceptPayload": [
+      {
+        "name": "task_id",
+        "id": 1,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "assignee",
+        "id": 2,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "reason",
+        "id": 3,
+        "type": "string",
+        "kind": "scalar"
+      }
+    ],
+    "macp.modes.task.v1.TaskCompletePayload": [
+      {
+        "name": "task_id",
+        "id": 1,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "assignee",
+        "id": 2,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "output",
+        "id": 3,
+        "type": "bytes",
+        "kind": "scalar"
+      },
+      {
+        "name": "summary",
+        "id": 4,
+        "type": "string",
+        "kind": "scalar"
+      }
+    ],
+    "macp.modes.task.v1.TaskFailPayload": [
+      {
+        "name": "task_id",
+        "id": 1,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "assignee",
+        "id": 2,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "error_code",
+        "id": 3,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "reason",
+        "id": 4,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "retryable",
+        "id": 5,
+        "type": "bool",
+        "kind": "scalar"
+      }
+    ],
+    "macp.modes.task.v1.TaskRejectPayload": [
+      {
+        "name": "task_id",
+        "id": 1,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "assignee",
+        "id": 2,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "reason",
+        "id": 3,
+        "type": "string",
+        "kind": "scalar"
+      }
+    ],
+    "macp.modes.task.v1.TaskRequestPayload": [
+      {
+        "name": "task_id",
+        "id": 1,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "title",
+        "id": 2,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "instructions",
+        "id": 3,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "requested_assignee",
+        "id": 4,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "input",
+        "id": 5,
+        "type": "bytes",
+        "kind": "scalar"
+      },
+      {
+        "name": "deadline_unix_ms",
+        "id": 6,
+        "type": "int64",
+        "kind": "scalar"
+      }
+    ],
+    "macp.modes.task.v1.TaskUpdatePayload": [
+      {
+        "name": "task_id",
+        "id": 1,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "status",
+        "id": 2,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "progress",
+        "id": 3,
+        "type": "double",
+        "kind": "scalar"
+      },
+      {
+        "name": "message",
+        "id": 4,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "partial_output",
+        "id": 5,
+        "type": "bytes",
+        "kind": "scalar"
+      }
+    ],
+    "macp.v1.Ack": [
+      {
+        "name": "ok",
+        "id": 1,
+        "type": "bool",
+        "kind": "scalar"
+      },
+      {
+        "name": "duplicate",
+        "id": 2,
+        "type": "bool",
+        "kind": "scalar"
+      },
+      {
+        "name": "message_id",
+        "id": 3,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "session_id",
+        "id": 4,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "accepted_at_unix_ms",
+        "id": 5,
+        "type": "int64",
+        "kind": "scalar"
+      },
+      {
+        "name": "session_state",
+        "id": 6,
+        "type": "macp.v1.SessionState",
+        "kind": "enum"
+      },
+      {
+        "name": "error",
+        "id": 7,
+        "type": "macp.v1.MACPError",
+        "kind": "message"
+      }
+    ],
+    "macp.v1.AgentManifest": [
+      {
+        "name": "agent_id",
+        "id": 1,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "title",
+        "id": 2,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "description",
+        "id": 3,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "supported_modes",
+        "id": 4,
+        "type": "string",
+        "kind": "scalar",
+        "repeated": true
+      },
+      {
+        "name": "input_content_types",
+        "id": 5,
+        "type": "string",
+        "kind": "scalar",
+        "repeated": true
+      },
+      {
+        "name": "output_content_types",
+        "id": 6,
+        "type": "string",
+        "kind": "scalar",
+        "repeated": true
+      },
+      {
+        "name": "metadata",
+        "id": 7,
+        "type": "string",
+        "kind": "scalar",
+        "keyType": "string"
+      },
+      {
+        "name": "transport_endpoints",
+        "id": 8,
+        "type": "macp.v1.TransportEndpoint",
+        "kind": "message",
+        "repeated": true
+      }
+    ],
+    "macp.v1.CancelSessionRequest": [
+      {
+        "name": "session_id",
+        "id": 1,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "reason",
+        "id": 2,
+        "type": "string",
+        "kind": "scalar"
+      }
+    ],
+    "macp.v1.CancelSessionResponse": [
+      {
+        "name": "ack",
+        "id": 1,
+        "type": "macp.v1.Ack",
+        "kind": "message"
+      }
+    ],
+    "macp.v1.CancellationCapability": [
+      {
+        "name": "cancel_session",
+        "id": 1,
+        "type": "bool",
+        "kind": "scalar"
+      }
+    ],
+    "macp.v1.Capabilities": [
+      {
+        "name": "sessions",
+        "id": 1,
+        "type": "macp.v1.SessionsCapability",
+        "kind": "message"
+      },
+      {
+        "name": "cancellation",
+        "id": 2,
+        "type": "macp.v1.CancellationCapability",
+        "kind": "message"
+      },
+      {
+        "name": "progress",
+        "id": 3,
+        "type": "macp.v1.ProgressCapability",
+        "kind": "message"
+      },
+      {
+        "name": "manifest",
+        "id": 4,
+        "type": "macp.v1.ManifestCapability",
+        "kind": "message"
+      },
+      {
+        "name": "mode_registry",
+        "id": 5,
+        "type": "macp.v1.ModeRegistryCapability",
+        "kind": "message"
+      },
+      {
+        "name": "roots",
+        "id": 6,
+        "type": "macp.v1.RootsCapability",
+        "kind": "message"
+      },
+      {
+        "name": "policy_registry",
+        "id": 7,
+        "type": "macp.v1.PolicyRegistryCapability",
+        "kind": "message"
+      },
+      {
+        "name": "decision_receipt",
+        "id": 8,
+        "type": "macp.v1.DecisionReceiptCapability",
+        "kind": "message"
+      },
+      {
+        "name": "experimental",
+        "id": 100,
+        "type": "macp.v1.ExperimentalCapabilities",
+        "kind": "message"
+      }
+    ],
+    "macp.v1.ClientInfo": [
+      {
+        "name": "name",
+        "id": 1,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "title",
+        "id": 2,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "version",
+        "id": 3,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "description",
+        "id": 4,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "website_url",
+        "id": 5,
+        "type": "string",
+        "kind": "scalar"
+      }
+    ],
+    "macp.v1.CommitmentPayload": [
+      {
+        "name": "commitment_id",
+        "id": 1,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "action",
+        "id": 2,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "authority_scope",
+        "id": 3,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "reason",
+        "id": 4,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "mode_version",
+        "id": 5,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "policy_version",
+        "id": 6,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "configuration_version",
+        "id": 7,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "outcome_positive",
+        "id": 8,
+        "type": "bool",
+        "kind": "scalar"
+      },
+      {
+        "name": "supersedes",
+        "id": 9,
+        "type": "macp.v1.CommitmentRef",
+        "kind": "message"
+      }
+    ],
+    "macp.v1.CommitmentRef": [
+      {
+        "name": "session_id",
+        "id": 1,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "commitment_hash",
+        "id": 2,
+        "type": "string",
+        "kind": "scalar"
+      }
+    ],
+    "macp.v1.DecisionReceiptCapability": [
+      {
+        "name": "get_decision_receipt",
+        "id": 1,
+        "type": "bool",
+        "kind": "scalar"
+      },
+      {
+        "name": "signed",
+        "id": 2,
+        "type": "bool",
+        "kind": "scalar"
+      }
+    ],
+    "macp.v1.Envelope": [
+      {
+        "name": "macp_version",
+        "id": 1,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "mode",
+        "id": 2,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "message_type",
+        "id": 3,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "message_id",
+        "id": 4,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "session_id",
+        "id": 5,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "sender",
+        "id": 6,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "timestamp_unix_ms",
+        "id": 7,
+        "type": "int64",
+        "kind": "scalar"
+      },
+      {
+        "name": "payload",
+        "id": 8,
+        "type": "bytes",
+        "kind": "scalar"
+      }
+    ],
+    "macp.v1.ExperimentalCapabilities": [
+      {
+        "name": "features",
+        "id": 1,
+        "type": "string",
+        "kind": "scalar",
+        "keyType": "string"
+      }
+    ],
+    "macp.v1.GetDecisionReceiptRequest": [
+      {
+        "name": "session_id",
+        "id": 1,
+        "type": "string",
+        "kind": "scalar"
+      }
+    ],
+    "macp.v1.GetDecisionReceiptResponse": [
+      {
+        "name": "receipt_json",
+        "id": 1,
+        "type": "string",
+        "kind": "scalar"
+      }
+    ],
+    "macp.v1.GetManifestRequest": [
+      {
+        "name": "agent_id",
+        "id": 1,
+        "type": "string",
+        "kind": "scalar"
+      }
+    ],
+    "macp.v1.GetManifestResponse": [
+      {
+        "name": "manifest",
+        "id": 1,
+        "type": "macp.v1.AgentManifest",
+        "kind": "message"
+      }
+    ],
+    "macp.v1.GetPolicyRequest": [
+      {
+        "name": "policy_id",
+        "id": 1,
+        "type": "string",
+        "kind": "scalar"
+      }
+    ],
+    "macp.v1.GetPolicyResponse": [
+      {
+        "name": "policy_descriptor",
+        "id": 1,
+        "type": "macp.v1.PolicyDescriptor",
+        "kind": "message"
+      }
+    ],
+    "macp.v1.GetReceiptKeysRequest": [],
+    "macp.v1.GetReceiptKeysResponse": [
+      {
+        "name": "jwks_json",
+        "id": 1,
+        "type": "string",
+        "kind": "scalar"
+      }
+    ],
+    "macp.v1.GetSessionRequest": [
+      {
+        "name": "session_id",
+        "id": 1,
+        "type": "string",
+        "kind": "scalar"
+      }
+    ],
+    "macp.v1.GetSessionResponse": [
+      {
+        "name": "metadata",
+        "id": 1,
+        "type": "macp.v1.SessionMetadata",
+        "kind": "message"
+      }
+    ],
+    "macp.v1.InitializeRequest": [
+      {
+        "name": "supported_protocol_versions",
+        "id": 1,
+        "type": "string",
+        "kind": "scalar",
+        "repeated": true
+      },
+      {
+        "name": "client_info",
+        "id": 2,
+        "type": "macp.v1.ClientInfo",
+        "kind": "message"
+      },
+      {
+        "name": "capabilities",
+        "id": 3,
+        "type": "macp.v1.Capabilities",
+        "kind": "message"
+      }
+    ],
+    "macp.v1.InitializeResponse": [
+      {
+        "name": "selected_protocol_version",
+        "id": 1,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "runtime_info",
+        "id": 2,
+        "type": "macp.v1.RuntimeInfo",
+        "kind": "message"
+      },
+      {
+        "name": "capabilities",
+        "id": 3,
+        "type": "macp.v1.Capabilities",
+        "kind": "message"
+      },
+      {
+        "name": "supported_modes",
+        "id": 4,
+        "type": "string",
+        "kind": "scalar",
+        "repeated": true
+      },
+      {
+        "name": "instructions",
+        "id": 5,
+        "type": "string",
+        "kind": "scalar"
+      }
+    ],
+    "macp.v1.ListExtModesRequest": [],
+    "macp.v1.ListExtModesResponse": [
+      {
+        "name": "modes",
+        "id": 1,
+        "type": "macp.v1.ModeDescriptor",
+        "kind": "message",
+        "repeated": true
+      }
+    ],
+    "macp.v1.ListModesRequest": [],
+    "macp.v1.ListModesResponse": [
+      {
+        "name": "modes",
+        "id": 1,
+        "type": "macp.v1.ModeDescriptor",
+        "kind": "message",
+        "repeated": true
+      }
+    ],
+    "macp.v1.ListPoliciesRequest": [
+      {
+        "name": "mode",
+        "id": 1,
+        "type": "string",
+        "kind": "scalar"
+      }
+    ],
+    "macp.v1.ListPoliciesResponse": [
+      {
+        "name": "descriptors",
+        "id": 1,
+        "type": "macp.v1.PolicyDescriptor",
+        "kind": "message",
+        "repeated": true
+      }
+    ],
+    "macp.v1.ListRootsRequest": [],
+    "macp.v1.ListRootsResponse": [
+      {
+        "name": "roots",
+        "id": 1,
+        "type": "macp.v1.Root",
+        "kind": "message",
+        "repeated": true
+      }
+    ],
+    "macp.v1.ListSessionsRequest": [
+      {
+        "name": "page_size",
+        "id": 1,
+        "type": "int32",
+        "kind": "scalar"
+      },
+      {
+        "name": "page_token",
+        "id": 2,
+        "type": "string",
+        "kind": "scalar"
+      }
+    ],
+    "macp.v1.ListSessionsResponse": [
+      {
+        "name": "sessions",
+        "id": 1,
+        "type": "macp.v1.SessionMetadata",
+        "kind": "message",
+        "repeated": true
+      },
+      {
+        "name": "next_page_token",
+        "id": 2,
+        "type": "string",
+        "kind": "scalar"
+      }
+    ],
+    "macp.v1.MACPError": [
+      {
+        "name": "code",
+        "id": 1,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "message",
+        "id": 2,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "session_id",
+        "id": 3,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "message_id",
+        "id": 4,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "details",
+        "id": 5,
+        "type": "bytes",
+        "kind": "scalar"
+      }
+    ],
+    "macp.v1.ManifestCapability": [
+      {
+        "name": "get_manifest",
+        "id": 1,
+        "type": "bool",
+        "kind": "scalar"
+      }
+    ],
+    "macp.v1.ModeDescriptor": [
+      {
+        "name": "mode",
+        "id": 1,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "mode_version",
+        "id": 2,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "title",
+        "id": 3,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "description",
+        "id": 4,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "determinism_class",
+        "id": 5,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "participant_model",
+        "id": 6,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "message_types",
+        "id": 7,
+        "type": "string",
+        "kind": "scalar",
+        "repeated": true
+      },
+      {
+        "name": "terminal_message_types",
+        "id": 8,
+        "type": "string",
+        "kind": "scalar",
+        "repeated": true
+      },
+      {
+        "name": "schema_uris",
+        "id": 9,
+        "type": "string",
+        "kind": "scalar",
+        "keyType": "string"
+      }
+    ],
+    "macp.v1.ModeRegistryCapability": [
+      {
+        "name": "list_modes",
+        "id": 1,
+        "type": "bool",
+        "kind": "scalar"
+      },
+      {
+        "name": "list_changed",
+        "id": 2,
+        "type": "bool",
+        "kind": "scalar"
+      }
+    ],
+    "macp.v1.ParticipantActivity": [
+      {
+        "name": "participant_id",
+        "id": 1,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "last_message_at_unix_ms",
+        "id": 2,
+        "type": "int64",
+        "kind": "scalar"
+      },
+      {
+        "name": "message_count",
+        "id": 3,
+        "type": "uint32",
+        "kind": "scalar"
+      }
+    ],
+    "macp.v1.PolicyDescriptor": [
+      {
+        "name": "policy_id",
+        "id": 1,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "mode",
+        "id": 2,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "description",
+        "id": 3,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "rules",
+        "id": 4,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "schema_version",
+        "id": 5,
+        "type": "uint32",
+        "kind": "scalar"
+      },
+      {
+        "name": "registered_at_unix_ms",
+        "id": 6,
+        "type": "int64",
+        "kind": "scalar"
+      }
+    ],
+    "macp.v1.PolicyRegistryCapability": [
+      {
+        "name": "register_policy",
+        "id": 1,
+        "type": "bool",
+        "kind": "scalar"
+      },
+      {
+        "name": "list_policies",
+        "id": 2,
+        "type": "bool",
+        "kind": "scalar"
+      },
+      {
+        "name": "list_changed",
+        "id": 3,
+        "type": "bool",
+        "kind": "scalar"
+      },
+      {
+        "name": "rule_extensions",
+        "id": 4,
+        "type": "string",
+        "kind": "scalar",
+        "repeated": true
+      },
+      {
+        "name": "what_if_replay",
+        "id": 5,
+        "type": "bool",
+        "kind": "scalar"
+      }
+    ],
+    "macp.v1.ProgressCapability": [
+      {
+        "name": "progress",
+        "id": 1,
+        "type": "bool",
+        "kind": "scalar"
+      }
+    ],
+    "macp.v1.ProgressPayload": [
+      {
+        "name": "progress_token",
+        "id": 1,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "progress",
+        "id": 2,
+        "type": "double",
+        "kind": "scalar"
+      },
+      {
+        "name": "total",
+        "id": 3,
+        "type": "double",
+        "kind": "scalar"
+      },
+      {
+        "name": "message",
+        "id": 4,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "target_message_id",
+        "id": 5,
+        "type": "string",
+        "kind": "scalar"
+      }
+    ],
+    "macp.v1.PromoteModeRequest": [
+      {
+        "name": "mode",
+        "id": 1,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "promoted_mode_name",
+        "id": 2,
+        "type": "string",
+        "kind": "scalar"
+      }
+    ],
+    "macp.v1.PromoteModeResponse": [
+      {
+        "name": "ok",
+        "id": 1,
+        "type": "bool",
+        "kind": "scalar"
+      },
+      {
+        "name": "error",
+        "id": 2,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "mode",
+        "id": 3,
+        "type": "string",
+        "kind": "scalar"
+      }
+    ],
+    "macp.v1.RegisterExtModeRequest": [
+      {
+        "name": "mode_descriptor",
+        "id": 1,
+        "type": "macp.v1.ModeDescriptor",
+        "kind": "message"
+      }
+    ],
+    "macp.v1.RegisterExtModeResponse": [
+      {
+        "name": "ok",
+        "id": 1,
+        "type": "bool",
+        "kind": "scalar"
+      },
+      {
+        "name": "error",
+        "id": 2,
+        "type": "string",
+        "kind": "scalar"
+      }
+    ],
+    "macp.v1.RegisterPolicyRequest": [
+      {
+        "name": "policy_descriptor",
+        "id": 1,
+        "type": "macp.v1.PolicyDescriptor",
+        "kind": "message"
+      }
+    ],
+    "macp.v1.RegisterPolicyResponse": [
+      {
+        "name": "ok",
+        "id": 1,
+        "type": "bool",
+        "kind": "scalar"
+      },
+      {
+        "name": "error",
+        "id": 2,
+        "type": "string",
+        "kind": "scalar"
+      }
+    ],
+    "macp.v1.RegistryChanged": [
+      {
+        "name": "registry",
+        "id": 1,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "observed_at_unix_ms",
+        "id": 2,
+        "type": "int64",
+        "kind": "scalar"
+      }
+    ],
+    "macp.v1.ResumeSessionRequest": [
+      {
+        "name": "session_id",
+        "id": 1,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "reason",
+        "id": 2,
+        "type": "string",
+        "kind": "scalar"
+      }
+    ],
+    "macp.v1.ResumeSessionResponse": [
+      {
+        "name": "ack",
+        "id": 1,
+        "type": "macp.v1.Ack",
+        "kind": "message"
+      }
+    ],
+    "macp.v1.Root": [
+      {
+        "name": "uri",
+        "id": 1,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "name",
+        "id": 2,
+        "type": "string",
+        "kind": "scalar"
+      }
+    ],
+    "macp.v1.RootsCapability": [
+      {
+        "name": "list_roots",
+        "id": 1,
+        "type": "bool",
+        "kind": "scalar"
+      },
+      {
+        "name": "list_changed",
+        "id": 2,
+        "type": "bool",
+        "kind": "scalar"
+      }
+    ],
+    "macp.v1.RootsChanged": [
+      {
+        "name": "observed_at_unix_ms",
+        "id": 1,
+        "type": "int64",
+        "kind": "scalar"
+      }
+    ],
+    "macp.v1.RuntimeInfo": [
+      {
+        "name": "name",
+        "id": 1,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "title",
+        "id": 2,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "version",
+        "id": 3,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "description",
+        "id": 4,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "website_url",
+        "id": 5,
+        "type": "string",
+        "kind": "scalar"
+      }
+    ],
+    "macp.v1.SendRequest": [
+      {
+        "name": "envelope",
+        "id": 1,
+        "type": "macp.v1.Envelope",
+        "kind": "message"
+      }
+    ],
+    "macp.v1.SendResponse": [
+      {
+        "name": "ack",
+        "id": 1,
+        "type": "macp.v1.Ack",
+        "kind": "message"
+      }
+    ],
+    "macp.v1.SessionCancelPayload": [
+      {
+        "name": "reason",
+        "id": 1,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "cancelled_by",
+        "id": 2,
+        "type": "string",
+        "kind": "scalar"
+      }
+    ],
+    "macp.v1.SessionLifecycleEvent": [
+      {
+        "name": "event_type",
+        "id": 1,
+        "type": "macp.v1.SessionLifecycleEvent.EventType",
+        "kind": "enum"
+      },
+      {
+        "name": "session",
+        "id": 2,
+        "type": "macp.v1.SessionMetadata",
+        "kind": "message"
+      },
+      {
+        "name": "observed_at_unix_ms",
+        "id": 3,
+        "type": "int64",
+        "kind": "scalar"
+      }
+    ],
+    "macp.v1.SessionMetadata": [
+      {
+        "name": "session_id",
+        "id": 1,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "mode",
+        "id": 2,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "state",
+        "id": 3,
+        "type": "macp.v1.SessionState",
+        "kind": "enum"
+      },
+      {
+        "name": "started_at_unix_ms",
+        "id": 4,
+        "type": "int64",
+        "kind": "scalar"
+      },
+      {
+        "name": "expires_at_unix_ms",
+        "id": 5,
+        "type": "int64",
+        "kind": "scalar"
+      },
+      {
+        "name": "mode_version",
+        "id": 6,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "configuration_version",
+        "id": 7,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "policy_version",
+        "id": 8,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "participants",
+        "id": 9,
+        "type": "string",
+        "kind": "scalar",
+        "repeated": true
+      },
+      {
+        "name": "participant_activity",
+        "id": 10,
+        "type": "macp.v1.ParticipantActivity",
+        "kind": "message",
+        "repeated": true
+      },
+      {
+        "name": "initiator",
+        "id": 11,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "context_id",
+        "id": 12,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "extension_keys",
+        "id": 13,
+        "type": "string",
+        "kind": "scalar",
+        "repeated": true
+      }
+    ],
+    "macp.v1.SessionResumePayload": [
+      {
+        "name": "reason",
+        "id": 1,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "resumed_by",
+        "id": 2,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "banked_ms",
+        "id": 3,
+        "type": "int64",
+        "kind": "scalar"
+      }
+    ],
+    "macp.v1.SessionStartPayload": [
+      {
+        "name": "intent",
+        "id": 1,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "participants",
+        "id": 2,
+        "type": "string",
+        "kind": "scalar",
+        "repeated": true
+      },
+      {
+        "name": "mode_version",
+        "id": 3,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "configuration_version",
+        "id": 4,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "policy_version",
+        "id": 5,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "ttl_ms",
+        "id": 6,
+        "type": "int64",
+        "kind": "scalar"
+      },
+      {
+        "name": "roots",
+        "id": 7,
+        "type": "macp.v1.Root",
+        "kind": "message",
+        "repeated": true
+      },
+      {
+        "name": "context_id",
+        "id": 8,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "extensions",
+        "id": 9,
+        "type": "bytes",
+        "kind": "scalar",
+        "keyType": "string"
+      },
+      {
+        "name": "max_suspend_ms",
+        "id": 10,
+        "type": "int64",
+        "kind": "scalar"
+      }
+    ],
+    "macp.v1.SessionSuspendPayload": [
+      {
+        "name": "reason",
+        "id": 1,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "suspended_by",
+        "id": 2,
+        "type": "string",
+        "kind": "scalar"
+      }
+    ],
+    "macp.v1.SessionsCapability": [
+      {
+        "name": "stream",
+        "id": 1,
+        "type": "bool",
+        "kind": "scalar"
+      },
+      {
+        "name": "list_sessions",
+        "id": 2,
+        "type": "bool",
+        "kind": "scalar"
+      },
+      {
+        "name": "watch_sessions",
+        "id": 3,
+        "type": "bool",
+        "kind": "scalar"
+      }
+    ],
+    "macp.v1.SignalPayload": [
+      {
+        "name": "signal_type",
+        "id": 1,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "data",
+        "id": 2,
+        "type": "bytes",
+        "kind": "scalar"
+      },
+      {
+        "name": "confidence",
+        "id": 3,
+        "type": "double",
+        "kind": "scalar"
+      },
+      {
+        "name": "correlation_session_id",
+        "id": 4,
+        "type": "string",
+        "kind": "scalar"
+      }
+    ],
+    "macp.v1.StreamSessionRequest": [
+      {
+        "name": "envelope",
+        "id": 1,
+        "type": "macp.v1.Envelope",
+        "kind": "message"
+      },
+      {
+        "name": "subscribe_session_id",
+        "id": 2,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "after_sequence",
+        "id": 3,
+        "type": "uint64",
+        "kind": "scalar"
+      }
+    ],
+    "macp.v1.StreamSessionResponse": [
+      {
+        "name": "envelope",
+        "id": 1,
+        "type": "macp.v1.Envelope",
+        "kind": "message",
+        "presence": true
+      },
+      {
+        "name": "error",
+        "id": 2,
+        "type": "macp.v1.MACPError",
+        "kind": "message",
+        "presence": true
+      }
+    ],
+    "macp.v1.SuspendSessionRequest": [
+      {
+        "name": "session_id",
+        "id": 1,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "reason",
+        "id": 2,
+        "type": "string",
+        "kind": "scalar"
+      }
+    ],
+    "macp.v1.SuspendSessionResponse": [
+      {
+        "name": "ack",
+        "id": 1,
+        "type": "macp.v1.Ack",
+        "kind": "message"
+      }
+    ],
+    "macp.v1.TransportEndpoint": [
+      {
+        "name": "transport",
+        "id": 1,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "uri",
+        "id": 2,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "content_types",
+        "id": 3,
+        "type": "string",
+        "kind": "scalar",
+        "repeated": true
+      },
+      {
+        "name": "metadata",
+        "id": 4,
+        "type": "string",
+        "kind": "scalar",
+        "keyType": "string"
+      }
+    ],
+    "macp.v1.UnregisterExtModeRequest": [
+      {
+        "name": "mode",
+        "id": 1,
+        "type": "string",
+        "kind": "scalar"
+      }
+    ],
+    "macp.v1.UnregisterExtModeResponse": [
+      {
+        "name": "ok",
+        "id": 1,
+        "type": "bool",
+        "kind": "scalar"
+      },
+      {
+        "name": "error",
+        "id": 2,
+        "type": "string",
+        "kind": "scalar"
+      }
+    ],
+    "macp.v1.UnregisterPolicyRequest": [
+      {
+        "name": "policy_id",
+        "id": 1,
+        "type": "string",
+        "kind": "scalar"
+      }
+    ],
+    "macp.v1.UnregisterPolicyResponse": [
+      {
+        "name": "ok",
+        "id": 1,
+        "type": "bool",
+        "kind": "scalar"
+      },
+      {
+        "name": "error",
+        "id": 2,
+        "type": "string",
+        "kind": "scalar"
+      }
+    ],
+    "macp.v1.WatchModeRegistryRequest": [],
+    "macp.v1.WatchModeRegistryResponse": [
+      {
+        "name": "change",
+        "id": 1,
+        "type": "macp.v1.RegistryChanged",
+        "kind": "message"
+      }
+    ],
+    "macp.v1.WatchPoliciesRequest": [],
+    "macp.v1.WatchPoliciesResponse": [
+      {
+        "name": "descriptors",
+        "id": 1,
+        "type": "macp.v1.PolicyDescriptor",
+        "kind": "message",
+        "repeated": true
+      },
+      {
+        "name": "observed_at_unix_ms",
+        "id": 2,
+        "type": "int64",
+        "kind": "scalar"
+      }
+    ],
+    "macp.v1.WatchRootsRequest": [],
+    "macp.v1.WatchRootsResponse": [
+      {
+        "name": "change",
+        "id": 1,
+        "type": "macp.v1.RootsChanged",
+        "kind": "message"
+      }
+    ],
+    "macp.v1.WatchSessionsRequest": [],
+    "macp.v1.WatchSessionsResponse": [
+      {
+        "name": "event",
+        "id": 1,
+        "type": "macp.v1.SessionLifecycleEvent",
+        "kind": "message"
+      }
+    ],
+    "macp.v1.WatchSignalsRequest": [],
+    "macp.v1.WatchSignalsResponse": [
+      {
+        "name": "envelope",
+        "id": 1,
+        "type": "macp.v1.Envelope",
+        "kind": "message"
+      },
+      {
+        "name": "sender_authenticated",
+        "id": 2,
+        "type": "bool",
+        "kind": "scalar"
+      }
+    ],
+    "macp.v1.WhatIfDenial": [
+      {
+        "name": "history_index",
+        "id": 1,
+        "type": "uint64",
+        "kind": "scalar"
+      },
+      {
+        "name": "message_id",
+        "id": 2,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "details",
+        "id": 3,
+        "type": "bytes",
+        "kind": "scalar"
+      }
+    ],
+    "macp.v1.WhatIfEntry": [
+      {
+        "name": "history_index",
+        "id": 1,
+        "type": "uint64",
+        "kind": "scalar"
+      },
+      {
+        "name": "message_id",
+        "id": 2,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "message_type",
+        "id": 3,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "recorded",
+        "id": 4,
+        "type": "macp.v1.WhatIfEntryOutcome",
+        "kind": "message"
+      },
+      {
+        "name": "candidate",
+        "id": 5,
+        "type": "macp.v1.WhatIfEntryOutcome",
+        "kind": "message"
+      }
+    ],
+    "macp.v1.WhatIfEntryOutcome": [
+      {
+        "name": "kind",
+        "id": 1,
+        "type": "macp.v1.WhatIfEntryOutcome.Kind",
+        "kind": "enum"
+      },
+      {
+        "name": "state",
+        "id": 2,
+        "type": "macp.v1.SessionState",
+        "kind": "enum"
+      },
+      {
+        "name": "error_code",
+        "id": 3,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "details",
+        "id": 4,
+        "type": "bytes",
+        "kind": "scalar"
+      }
+    ],
+    "macp.v1.WhatIfOutcome": [
+      {
+        "name": "state",
+        "id": 1,
+        "type": "macp.v1.SessionState",
+        "kind": "enum"
+      },
+      {
+        "name": "resolution",
+        "id": 2,
+        "type": "bytes",
+        "kind": "scalar"
+      },
+      {
+        "name": "resolved_by_history_index",
+        "id": 3,
+        "type": "uint64",
+        "kind": "scalar"
+      },
+      {
+        "name": "resolved_by_message_id",
+        "id": 4,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "resolved_by_message_type",
+        "id": 5,
+        "type": "string",
+        "kind": "scalar"
+      }
+    ],
+    "macp.v1.WhatIfReplayRequest": [
+      {
+        "name": "session_id",
+        "id": 1,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "candidate",
+        "id": 2,
+        "type": "macp.v1.PolicyDescriptor",
+        "kind": "message"
+      }
+    ],
+    "macp.v1.WhatIfReplayResponse": [
+      {
+        "name": "candidate_policy_id",
+        "id": 1,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "recorded_policy_id",
+        "id": 2,
+        "type": "string",
+        "kind": "scalar"
+      },
+      {
+        "name": "recorded",
+        "id": 3,
+        "type": "macp.v1.WhatIfOutcome",
+        "kind": "message"
+      },
+      {
+        "name": "candidate",
+        "id": 4,
+        "type": "macp.v1.WhatIfOutcome",
+        "kind": "message"
+      },
+      {
+        "name": "first_divergence",
+        "id": 5,
+        "type": "uint64",
+        "kind": "scalar",
+        "presence": true
+      },
+      {
+        "name": "denials",
+        "id": 6,
+        "type": "macp.v1.WhatIfDenial",
+        "kind": "message",
+        "repeated": true
+      },
+      {
+        "name": "entries",
+        "id": 7,
+        "type": "macp.v1.WhatIfEntry",
+        "kind": "message",
+        "repeated": true
+      }
+    ]
+  },
+  "enums": {
+    "macp.v1.SessionLifecycleEvent.EventType": {
+      "EVENT_TYPE_UNSPECIFIED": 0,
+      "EVENT_TYPE_CREATED": 1,
+      "EVENT_TYPE_RESOLVED": 2,
+      "EVENT_TYPE_EXPIRED": 3,
+      "EVENT_TYPE_SUSPENDED": 4,
+      "EVENT_TYPE_RESUMED": 5,
+      "EVENT_TYPE_CANCELLED": 6
+    },
+    "macp.v1.SessionState": {
+      "SESSION_STATE_UNSPECIFIED": 0,
+      "SESSION_STATE_OPEN": 1,
+      "SESSION_STATE_RESOLVED": 2,
+      "SESSION_STATE_EXPIRED": 3,
+      "SESSION_STATE_SUSPENDED": 4,
+      "SESSION_STATE_CANCELLED": 5
+    },
+    "macp.v1.WhatIfEntryOutcome.Kind": {
+      "KIND_UNSPECIFIED": 0,
+      "KIND_APPLIED": 1,
+      "KIND_NOT_OPEN": 2,
+      "KIND_REFUSED": 3,
+      "KIND_NO_SESSION": 4
+    }
+  }
+}

@@ -15,6 +15,10 @@
       "types": "./dist/receipt.d.ts",
       "default": "./dist/receipt.js"
     },
+    "./canonical-json": {
+      "types": "./dist/canonical-json.d.ts",
+      "default": "./dist/canonical-json.js"
+    },
     "./package.json": "./package.json"
   },
   "sideEffects": false,
@@ -26,6 +30,7 @@
     "build": "tsc -p tsconfig.json",
     "check": "tsc -p tsconfig.json --noEmit && npm run check:examples",
     "check:examples": "tsc -p tsconfig.examples.json",
+    "gen:schema": "tsx scripts/gen-macp-schema.ts && prettier --write src/generated/macp-schema.json",
     "lint": "eslint src/",
     "lint:fix": "eslint src/ --fix",
     "format": "prettier --write 'src/**/*.ts' 'tests/**/*.ts' --ignore-unknown",

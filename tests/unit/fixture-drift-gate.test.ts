@@ -98,6 +98,7 @@ function writeFiles(dir: string, files: Record<string, string> | undefined): voi
  * with matching stand-in content, so cases about other fixture sets don't trip
  * this check. */
 const VENDORED: Record<string, string> = {
+  'examples/a2a-binding-session.json': 'tests/fixtures/a2a_binding_session.json',
   'examples/discovery/receipt_keys.json': 'tests/fixtures/receipt_keys.json',
   'schemas/otel/macp-semconv.json': 'tests/otel/macp-semconv.json',
 };
@@ -193,7 +194,7 @@ describe.skipIf(!makeAvailable)('fixture drift gate (Makefile verify-fixtures/sy
 
     expect(result.status).toBe(0);
     expect(result.stdout).toContain(
-      'All conformance fixtures, vectors (cmt-hash receipt) and vendored files (tests/fixtures/receipt_keys.json tests/otel/macp-semconv.json) match the canonical source.',
+      'All conformance fixtures, vectors (cmt-hash receipt) and vendored files (tests/fixtures/a2a_binding_session.json tests/fixtures/receipt_keys.json tests/otel/macp-semconv.json) match the canonical source.',
     );
     expect(result.stdout).not.toContain('DRIFT');
     expect(result.stdout).not.toContain('EXTRA');
@@ -396,9 +397,9 @@ describe.skipIf(!makeAvailable)('fixture drift gate (Makefile verify-fixtures/sy
     expect(verifyResult.status).toBe(0);
   });
 
-  // VENDORED_FILES: single spec documents (examples/discovery/receipt_keys.json,
-  // schemas/otel/macp-semconv.json) vendored under tests/, gated byte for byte
-  // like the vector directories.
+  // VENDORED_FILES: single spec documents (examples/a2a-binding-session.json,
+  // examples/discovery/receipt_keys.json, schemas/otel/macp-semconv.json)
+  // vendored under tests/, gated byte for byte like the vector directories.
   it.each(Object.entries(VENDORED))("flags drift when %s's vendored copy %s differs", (specPath, local) => {
     const root = mkTmp('macp-gate-vendored-drift-');
     const canon = makeCanon(root, { flat: { 'a.json': 'A' } });
