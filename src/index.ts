@@ -17,6 +17,40 @@ export {
   type CanonicalEnvelope,
   type CanonicalJsonOptions,
 } from './canonical-json';
+// RFC-MACP-0014 A2A extension binding codec: Envelopes and Acks as A2A Parts,
+// Messages and Artifacts. Plain JSON objects, no A2A SDK dependency; Node-free,
+// also published as the `./a2a` subpath.
+export {
+  A2A_VERSION,
+  MACP_A2A_EXTENSION_URI,
+  MEDIA_TYPE_ENVELOPE_JSON,
+  MEDIA_TYPE_ENVELOPE_PROTO,
+  MacpA2aError,
+  ackFromA2aMessage,
+  ackToA2aMessage,
+  envelopeFromA2aArtifact,
+  envelopeFromA2aMessage,
+  envelopeFromA2aPart,
+  envelopeToA2aArtifact,
+  envelopeToA2aMessage,
+  envelopeToA2aPart,
+  errorInfoFromA2a,
+  macpAgentExtension,
+  sessionStateFromA2a,
+  sessionStateToA2a,
+  type A2aAckMessageOptions,
+  type A2aAgentExtension,
+  type A2aArtifact,
+  type A2aDecodeOptions,
+  type A2aEncodeOptions,
+  type A2aMessage,
+  type A2aMessageOptions,
+  type A2aPart,
+  type A2aTask,
+  type A2aErrorInfo,
+  type MacpA2aErrorLayer,
+  type MacpAgentExtensionOptions,
+} from './a2a';
 // Commitment hash: export `commitmentHash`, `isCanonicalCommitmentHash`, and
 // the RFC-MACP-0013 §6.1 verifier `verifyCommitmentHash`.
 // `canonicalizeCommitmentPayload` is the projection/JCS half of the

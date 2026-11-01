@@ -3,7 +3,7 @@
 SPEC_CONFORMANCE_DIR := ../multiagentcoordinationprotocol/schemas/conformance
 SPEC_PARITY_DIR := ../multiagentcoordinationprotocol/schemas/parity
 # Spec vector subdirectories of SPEC_CONFORMANCE_DIR, vendored flat under tests/vectors/<dir>/.
-VECTOR_DIRS := cmt-hash receipt
+VECTOR_DIRS := cmt-hash receipt a2a
 # Single spec documents vendored byte-identical outside tests/conformance and
 # tests/vectors, as <path under SPEC_ROOT>:<local path> pairs. SPEC_ROOT is
 # overridable on its own; by default it follows SPEC_CONFORMANCE_DIR, so CI's

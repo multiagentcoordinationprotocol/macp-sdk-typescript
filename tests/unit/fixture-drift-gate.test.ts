@@ -115,8 +115,8 @@ function writeTree(base: string, files: Record<string, string>): void {
 }
 
 /** Build a throwaway canonical tree mirroring `$(SPEC_CONFORMANCE_DIR)`: a
- * flat top level plus an optional `cmt-hash/` subdirectory and a `receipt/`
- * one (the Makefile's `VECTOR_DIRS`). A sibling `specroot/` stands in for
+ * flat top level plus an optional `cmt-hash/` subdirectory, a `receipt/` one
+ * and an `a2a/` one (the Makefile's `VECTOR_DIRS`). A sibling `specroot/` stands in for
  * `$(SPEC_ROOT)`, which {@link runMake} passes explicitly, holding `specFiles`
  * (default: every `VENDORED_FILES` source). */
 function makeCanon(
@@ -125,6 +125,7 @@ function makeCanon(
     flat?: Record<string, string>;
     cmtHash?: Record<string, string>;
     receipt?: Record<string, string>;
+    a2a?: Record<string, string>;
     includeCmtHashDir?: boolean;
     specFiles?: Record<string, string>;
   } = {},
@@ -135,13 +136,14 @@ function makeCanon(
     writeFiles(path.join(canon, 'cmt-hash'), opts.cmtHash);
   }
   writeFiles(path.join(canon, 'receipt'), opts.receipt);
+  writeFiles(path.join(canon, 'a2a'), opts.a2a);
   fs.mkdirSync(path.join(root, 'specroot'), { recursive: true });
   writeTree(path.join(root, 'specroot'), opts.specFiles ?? DEFAULT_SPEC_FILES);
   return canon;
 }
 
 /** Build a throwaway repo tree holding just the directories the Makefile
- * checks: `tests/conformance`, `tests/vectors/{cmt-hash,receipt}`, and the
+ * checks: `tests/conformance`, `tests/vectors/{cmt-hash,receipt,a2a}`, and the
  * `VENDORED_FILES` copies (`localFiles`, default: all of them, matching). */
 function makeRepo(
   root: string,
@@ -149,6 +151,7 @@ function makeRepo(
     conformance?: Record<string, string>;
     cmtHash?: Record<string, string>;
     receipt?: Record<string, string>;
+    a2a?: Record<string, string>;
     createCmtHashDir?: boolean;
     localFiles?: Record<string, string>;
   } = {},
@@ -159,6 +162,7 @@ function makeRepo(
     writeFiles(path.join(repo, 'tests', 'vectors', 'cmt-hash'), opts.cmtHash);
   }
   writeFiles(path.join(repo, 'tests', 'vectors', 'receipt'), opts.receipt);
+  writeFiles(path.join(repo, 'tests', 'vectors', 'a2a'), opts.a2a);
   writeTree(repo, opts.localFiles ?? DEFAULT_LOCAL_FILES);
   return repo;
 }
@@ -194,7 +198,7 @@ describe.skipIf(!makeAvailable)('fixture drift gate (Makefile verify-fixtures/sy
 
     expect(result.status).toBe(0);
     expect(result.stdout).toContain(
-      'All conformance fixtures, vectors (cmt-hash receipt) and vendored files (tests/fixtures/a2a_binding_session.json tests/fixtures/receipt_keys.json tests/otel/macp-semconv.json) match the canonical source.',
+      'All conformance fixtures, vectors (cmt-hash receipt a2a) and vendored files (tests/fixtures/a2a_binding_session.json tests/fixtures/receipt_keys.json tests/otel/macp-semconv.json) match the canonical source.',
     );
     expect(result.stdout).not.toContain('DRIFT');
     expect(result.stdout).not.toContain('EXTRA');
@@ -288,6 +292,27 @@ describe.skipIf(!makeAvailable)('fixture drift gate (Makefile verify-fixtures/sy
     expect(result.stdout).toContain('DRIFT: tests/vectors/receipt/r1.json');
     expect(result.stdout).toContain('DRIFT: tests/vectors/receipt/r2.json');
     expect(result.stdout).toContain('EXTRA: tests/vectors/receipt/orphan.json');
+  });
+
+  it('checks the a2a vectors the same way: DRIFT, missing, and EXTRA', () => {
+    const root = mkTmp('macp-gate-a2a-');
+    const canon = makeCanon(root, {
+      flat: { 'a.json': 'A' },
+      cmtHash: { 'b.json': 'B' },
+      a2a: { 'v1.json': 'V1', 'v2.json': 'V2' },
+    });
+    const repo = makeRepo(root, {
+      conformance: { 'a.json': 'A' },
+      cmtHash: { 'b.json': 'B' },
+      a2a: { 'v1.json': 'changed', 'orphan.json': 'x' },
+    });
+
+    const result = runMake(repo, 'verify-fixtures', canon);
+
+    expect(result.status).not.toBe(0);
+    expect(result.stdout).toContain('DRIFT: tests/vectors/a2a/v1.json');
+    expect(result.stdout).toContain('DRIFT: tests/vectors/a2a/v2.json');
+    expect(result.stdout).toContain('EXTRA: tests/vectors/a2a/orphan.json');
   });
 
   it('fails with a named error when canonical receipt/ is missing', () => {
@@ -474,6 +499,7 @@ describe.skipIf(!makeAvailable)('fixture drift gate (Makefile verify-fixtures/sy
     writeFiles(canon, { 'a.json': 'A' });
     writeFiles(path.join(canon, 'cmt-hash'), {});
     writeFiles(path.join(canon, 'receipt'), {});
+    writeFiles(path.join(canon, 'a2a'), {});
     writeTree(path.join(root, 'spec'), DEFAULT_SPEC_FILES);
     const repo = makeRepo(root, { conformance: { 'a.json': 'A' } });
 

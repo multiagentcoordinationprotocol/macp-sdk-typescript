@@ -340,11 +340,11 @@ See [`docs/api/cancel-callback.md`](docs/api/cancel-callback.md) and
 Framework adapters live under [`integrations/`](integrations/). Each is a separate npm package
 with its own version and release tag.
 
-| Framework | Package | |
-| --- | --- | --- |
-| LangGraph | [`@multiagentcoordinationprotocol/langgraph`](integrations/langgraph/) | `MacpConsensusNode`: a graph node whose participants evaluate and vote through a Decision or Quorum session and write the commitment into graph state |
-| Claude Agent SDK | [`@multiagentcoordinationprotocol/claude-agent-sdk`](integrations/claude-agent-sdk/) | `claudeEvaluator` runs a Claude agent as a participant; `macpConsensusServer` gives a lead agent an `mcp__macp__consensus` tool whose subagents evaluate and vote, returning the commitment |
-| OpenAI Agents SDK | planned | |
+| Framework         | Package                                                                              |                                                                                                                                                                                             |
+| ----------------- | ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| LangGraph         | [`@multiagentcoordinationprotocol/langgraph`](integrations/langgraph/)               | `MacpConsensusNode`: a graph node whose participants evaluate and vote through a Decision or Quorum session and write the commitment into graph state                                       |
+| Claude Agent SDK  | [`@multiagentcoordinationprotocol/claude-agent-sdk`](integrations/claude-agent-sdk/) | `claudeEvaluator` runs a Claude agent as a participant; `macpConsensusServer` gives a lead agent an `mcp__macp__consensus` tool whose subagents evaluate and vote, returning the commitment |
+| OpenAI Agents SDK | planned                                                                              |                                                                                                                                                                                             |
 
 ## Authentication
 
@@ -512,6 +512,19 @@ const back = envelopeFromCanonicalJson(json); // payload as a Uint8Array, timest
 
 The payload schemas are generated from the installed `@multiagentcoordinationprotocol/proto` into `src/generated/macp-schema.json` (`npm run gen:schema`; a unit test fails while it is stale).
 
+## A2A Binding
+
+RFC-MACP-0014 carries MACP over [A2A](https://a2a-protocol.org) 1.0: an Envelope travels as a Part of an A2A Message, an Ack comes back as an agent Message, and observers see accepted Envelopes as Task Artifacts. The codec maps between the two as plain JSON objects. It has no A2A client, no transport and no dependency on an A2A SDK. Like `./canonical-json`, it is Node-free and has its own subpath:
+
+```typescript
+import { envelopeToA2aMessage, ackFromA2aMessage } from 'macp-sdk-typescript/a2a';
+
+const message = envelopeToA2aMessage(envelope, { contextId: 'ctx-1' }); // pass to your A2A client's SendMessage
+const ack = ackFromA2aMessage(reply); // the agent Message that came back
+```
+
+Decoders throw `MacpA2aError`, whose `layer` (`a2a`, `macp` or `codec`) and `code` say how to answer. See the [A2A binding guide](docs/guides/a2a-binding.md).
+
 `verifyReceipt` never throws. `buildReceipt` throws `MacpSdkError` on a missing field, and when `commitmentWire` is not the wire encoding of the commitment. Signing is deterministic: the same inputs always produce the same receipt.
 
 The `macp-sdk-typescript/receipt` subpath is browser-safe: it pulls in no gRPC, no `node:crypto` and no `Buffer`. The same functions are also exported from the package root. The tests replay the spec's `schemas/conformance/receipt/` vectors and rebuild the spec's example receipt byte for byte.
@@ -519,6 +532,7 @@ The `macp-sdk-typescript/receipt` subpath is browser-safe: it pulls in no gRPC, 
 ## OpenTelemetry
 
 Install the optional peer dependency `@opentelemetry/api` and register a tracer provider. The SDK then:
+
 - emits one CLIENT span per `send()`, named `send {macp.mode.id}`, with the MACP semantic-convention attributes;
 - puts W3C `traceparent`/`tracestate` in the gRPC metadata of every call made while a valid span context is active.
 
