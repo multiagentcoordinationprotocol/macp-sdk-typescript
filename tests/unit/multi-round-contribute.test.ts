@@ -172,4 +172,12 @@ describe('MultiRoundProjection stores what the runtime stores', () => {
     const p = contribute(hex('0a02fffe'));
     expect([p.round, p.contributions.size, p.transcript.length]).toEqual([0, 0, 1]);
   });
+
+  it('records a non-empty payload that decodes to an empty value, as the runtime does', () => {
+    for (const payload of [hex('0a00'), Buffer.from('{"value":""}'), hex('1000')]) {
+      expect(parseContributeValue(payload)).toBe('');
+      const p = contribute(payload);
+      expect([p.round, p.contributions.get('agent://alice')]).toEqual([1, '']);
+    }
+  });
 });

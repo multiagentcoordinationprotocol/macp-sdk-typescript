@@ -32,8 +32,8 @@ export interface MultiRoundProjectionOptions {
  * `transcript` but change no state):
  * - a `Contribute` from a sender who isn't a declared participant, once the
  *   participants are known;
- * - an empty or undecodable `Contribute` (the proto lets a history reader
- *   return "nothing decodable");
+ * - a `Contribute` the runtime would refuse: a zero-byte payload, or bytes
+ *   that neither its JSON nor its protobuf reading accepts;
  * - any `Contribute` after convergence.
  *
  * Convergence is evaluated only once the participants are known, either from
@@ -102,7 +102,9 @@ export class MultiRoundProjection extends BaseProjection {
     }
     // The runtime's own reading of the bytes, not ProtoRegistry's more lenient one.
     const value = parseContributeValue(envelope.payload);
-    if (value === undefined || value === '') return ignored(envelope, 'payload has no value the runtime would store');
+    // '' is a real value here: the runtime refuses only a zero-byte payload, and
+    // stores '' from one such as `0a00` or `{"value":""}`.
+    if (value === undefined) return ignored(envelope, 'payload has no value the runtime would store');
 
     if (this.contributions.get(envelope.sender) !== value) {
       this.round += 1;

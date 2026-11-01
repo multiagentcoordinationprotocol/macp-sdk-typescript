@@ -129,8 +129,10 @@ const projection = new MultiRoundProjection({ participants: ['alice', 'bob'], in
 
 Convergence is evaluated only once participants are known. These change no
 state (they stay in `transcript`): a `Contribute` from a non-participant once
-participants are known, an empty or undecodable `Contribute`, and any
-`Contribute` after convergence.
+participants are known, one the runtime would refuse (a zero-byte payload, or
+bytes it can't read as a value), and any `Contribute` after convergence. A
+non-empty payload that decodes to `""` (such as `0a00`) is a real
+contribution, as it is in the runtime.
 
 The projection reads a `Contribute` value exactly as the runtime's
 `parse_contribute_value` does. That's serde's legacy JSON `{"value": <string>}`
@@ -142,8 +144,10 @@ observational decoder.
 
 A SessionStart sent with an empty sender (bearer auth with no sender hint)
 doesn't overwrite a known initiator, because the runtime fills the sender in
-only on its own copy. For local tracking, pass `sender` or give the credential
-a sender hint.
+only on its own copy. Likewise, a `Contribute` sent with an empty sender is
+accepted by the runtime, but the session's own projection sees sender `""` and
+ignores it. For local tracking, pass `sender` or give the credential a sender
+hint.
 
 **Limitation.** The projection applies the JSON/protobuf tie-break the
 runtime uses from `semantics_rev` 3. A session the
