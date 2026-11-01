@@ -229,7 +229,7 @@ export function ackToCanonicalJson(ack: Ack): Record<string, unknown> {
     message_id: ack.messageId ?? '',
     session_id: ack.sessionId ?? '',
     accepted_at_unix_ms: int64ToJson(parseInt64Text(String(ack.acceptedAtUnixMs ?? '0'), 'acceptedAtUnixMs')),
-    session_state: ack.sessionState ?? 'SESSION_STATE_UNSPECIFIED',
+    session_state: sessionStateName(ack.sessionState),
   };
   if (ack.error) {
     out.error = {
@@ -270,6 +270,62 @@ export function ackFromCanonicalJson(json: unknown): Ack & { error?: MacpErrorSh
     } as MacpErrorShape;
   }
   return ack;
+}
+
+// ── Envelope: Protobuf (envelope.proto) ──────────────────────────────
+
+/**
+ * The Protobuf bytes of an Envelope: fields in number order, defaults
+ * omitted (§10.13). The `raw` arm of an A2A Envelope Part (RFC-MACP-0014
+ * §5.1). Internal to `./a2a`; not exported from the package root.
+ */
+export function envelopeToProtobuf(envelope: CanonicalEnvelope): Uint8Array {
+  return messageFromJson(
+    'macp.v1.Envelope',
+    {
+      macp_version: envelope.macpVersion ?? '',
+      mode: envelope.mode ?? '',
+      message_type: envelope.messageType ?? '',
+      message_id: envelope.messageId ?? '',
+      session_id: envelope.sessionId ?? '',
+      sender: envelope.sender ?? '',
+      timestamp_unix_ms: checkTimestampRange(
+        parseInt64Text(String(envelope.timestampUnixMs ?? '0'), 'timestampUnixMs').toString(),
+      ),
+      payload: encodeBase64(envelope.payload ?? new Uint8Array()),
+    },
+    'envelope',
+  );
+}
+
+/**
+ * Parses Protobuf Envelope bytes as strictly as the rest of the codec
+ * (truncation, a varint past 64 bits, field 0, invalid UTF-8 all throw
+ * {@link CanonicalJsonError}); unknown fields are dropped. Internal to
+ * `./a2a`; not exported from the package root.
+ */
+export function envelopeFromProtobuf(bytes: Uint8Array): CanonicalEnvelope {
+  const json = messageToJson('macp.v1.Envelope', bytes, 'envelope');
+  const text = (key: string) => (typeof json[key] === 'string' ? (json[key] as string) : '');
+  return {
+    macpVersion: text('macp_version'),
+    mode: text('mode'),
+    messageType: text('message_type'),
+    messageId: text('message_id'),
+    sessionId: text('session_id'),
+    sender: text('sender'),
+    // Range-checked like the JSON form's timestamp (years 0001-9999).
+    timestampUnixMs: checkTimestampRange(String(json.timestamp_unix_ms ?? '0')),
+    payload: decodeBase64(json.payload ?? '', 'payload'),
+  };
+}
+
+/** A SessionState name or number as its name; anything with no name is `SESSION_STATE_UNSPECIFIED`. */
+function sessionStateName(value: unknown): SessionState {
+  const values = SCHEMA.enums['macp.v1.SessionState']!;
+  if (typeof value === 'string' && Object.hasOwn(values, value)) return value as SessionState;
+  const name = Object.keys(values).find((key) => values[key] === value);
+  return (name ?? 'SESSION_STATE_UNSPECIFIED') as SessionState;
 }
 
 function sessionStateFromJson(value: unknown): SessionState {
@@ -920,6 +976,11 @@ function isWellFormed(text: string): boolean {
 const MIN_MS = -62135596800000; // 0001-01-01T00:00:00Z
 const MAX_MS = 253402300799999; // 9999-12-31T23:59:59.999Z
 
+function checkTimestampRange(ms: string): string {
+  formatTimestamp(BigInt(ms));
+  return ms;
+}
+
 /** `YYYY-MM-DDTHH:MM:SSZ`, or with exactly three fraction digits when ms ≠ 0. */
 function formatTimestamp(ms: bigint): string {
   if (ms < BigInt(MIN_MS) || ms > BigInt(MAX_MS)) {
@@ -984,8 +1045,8 @@ function isLeap(year: number): boolean {
 
 const B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
 
-/** Standard alphabet with padding (RFC 4648 §4). */
-function encodeBase64(bytes: Uint8Array): string {
+/** Standard alphabet with padding (RFC 4648 §4). Internal to `./a2a`; not exported from the package root. */
+export function encodeBase64(bytes: Uint8Array): string {
   let out = '';
   for (let i = 0; i < bytes.length; i += 3) {
     const n = (bytes[i]! << 16) | ((bytes[i + 1] ?? 0) << 8) | (bytes[i + 2] ?? 0);
@@ -995,8 +1056,17 @@ function encodeBase64(bytes: Uint8Array): string {
   return out;
 }
 
-/** Standard or URL-safe alphabet, padded or not. */
-function decodeBase64(value: unknown, where: string): Uint8Array {
+/**
+ * The number of bytes `value` decodes to, without decoding it; throws
+ * `CanonicalJsonError` when it isn't valid base64. Internal to `./a2a`; not
+ * exported from the package root.
+ */
+export function base64DecodedLength(value: unknown, where: string): number {
+  return Math.floor((base64Digits(value, where).length * 6) / 8);
+}
+
+/** The base64 digits of `value`, padding stripped, after checking its alphabet, padding and length. */
+function base64Digits(value: unknown, where: string): string {
   if (typeof value !== 'string') throw new CanonicalJsonError(`${where}: expected a base64 string`);
   const padded = /^([A-Za-z0-9+/_-]*)(={0,2})$/.exec(value);
   const digits = padded?.[1];
@@ -1008,6 +1078,15 @@ function decodeBase64(value: unknown, where: string): Uint8Array {
   ) {
     throw new CanonicalJsonError(`${where}: not valid base64`);
   }
+  return digits;
+}
+
+/**
+ * Standard or URL-safe alphabet, padded or not. Internal to `./a2a`; not
+ * exported from the package root.
+ */
+export function decodeBase64(value: unknown, where: string): Uint8Array {
+  const digits = base64Digits(value, where);
   const out = new Uint8Array(Math.floor((digits.length * 6) / 8));
   let acc = 0;
   let bits = 0;
