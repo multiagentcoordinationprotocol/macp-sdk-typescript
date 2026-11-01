@@ -301,7 +301,10 @@ describe('field kinds outside the current payload schemas', () => {
   });
 
   it('validates map keys against their key type', () => {
-    expectInvalid(() => toBytes({ by_int: { x: 'a' } }), /integer/);
+    expectInvalid(() => toBytes({ by_int: { x: 'a' } }), /bad map key/);
+    expectInvalid(() => toBytes({ by_int: { '007': 'a' } }), /bad map key/);
+    expectInvalid(() => toBytes({ by_int: { '-0': 'a' } }), /bad map key/);
+    expectInvalid(() => toBytes({ by_int: { '+1': 'a' } }), /bad map key/);
     expectInvalid(() => toBytes({ by_int: { '2147483648': 'a' } }), /range/);
     expectInvalid(() => toBytes({ by_bool: { yes: '' } }), /bad map key/);
     expectInvalid(() => toBytes({ children: { a: 5 } }), /JSON object/);
@@ -329,6 +332,14 @@ describe('field kinds outside the current payload schemas', () => {
     expect(toJson(new Uint8Array(bytes))).toMatchObject({ i32: 3 });
   });
 
+  it('refuses nesting deeper than 100 levels, in unknown groups and in messages, without overflowing the stack', () => {
+    const groups = (n: number) => new Uint8Array([...Array(n).fill(0x0b), ...Array(n).fill(0x0c)]);
+    // the payload message is level 1, so 99 nested groups fit and 100 don't
+    expect(toJson(groups(99))).toMatchObject({ i32: 0 });
+    expectInvalid(() => toJson(groups(100)), /nested deeper than 100/);
+    expectInvalid(() => toJson(new Uint8Array(200_000).fill(0x0b)), /nested deeper than 100/);
+  });
+
   it('accepts the largest 10-byte varint', () => {
     const bytes = [0x20, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x01];
     expect(toJson(new Uint8Array(bytes)).u64).toBe('18446744073709551615');
@@ -350,3 +361,51 @@ describe('field kinds outside the current payload schemas', () => {
     expectInvalid(() => toJson(new Uint8Array(bytes)), /malformed/);
   });
 });
+
+describe('message nesting depth', () => {
+  // a self-recursive payload: no MACP message is one, but the cap must hold if one appears
+  beforeAll(() =>
+    setSchemaForTesting({
+      ...generated,
+      messages: {
+        ...generated.messages,
+        'macp.v1.SignalPayload': [
+          scalar('n', 1, 'int32'),
+          { name: 'next', id: 2, type: 'macp.v1.SignalPayload', kind: 'message' },
+        ],
+      },
+    }),
+  );
+  afterAll(() => setSchemaForTesting(undefined));
+
+  const chain = (levels: number): Record<string, unknown> => {
+    let node: Record<string, unknown> = { n: levels };
+    for (let i = levels - 1; i >= 1; i--) node = { n: i, next: node };
+    return node;
+  };
+
+  it('accepts 100 levels and refuses 101, in JSON and on the wire', () => {
+    const bytes = toBytes(chain(100));
+    expect(toJson(bytes)).toMatchObject({ n: 1, next: { n: 2 } });
+    expectInvalid(() => toBytes(chain(101)), /nested deeper than 100/);
+    // 101 levels of bytes: wrap the 100-level encoding once more
+    const deeper = new Uint8Array([0x12, ...varint(bytes.length), ...bytes]);
+    expectInvalid(() => toJson(deeper), /nested deeper than 100/);
+  });
+
+  it('resets the depth after a refusal', () => {
+    expect(() => toBytes(chain(101))).toThrow(CanonicalJsonError);
+    expect(toJson(toBytes(chain(3)))).toMatchObject({ n: 1, next: { n: 2, next: { n: 3 } } });
+  });
+});
+
+function varint(value: number): number[] {
+  const out: number[] = [];
+  let v = value;
+  while (v >= 0x80) {
+    out.push((v & 0x7f) | 0x80);
+    v >>>= 7;
+  }
+  out.push(v);
+  return out;
+}
