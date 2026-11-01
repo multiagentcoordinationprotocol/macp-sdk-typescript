@@ -323,6 +323,17 @@ describe('field kinds outside the current payload schemas', () => {
     expect(toJson(new Uint8Array(bytes)).child).toEqual({ name: 'b' });
   });
 
+  it('skips groups as unknown fields, nested ones included', () => {
+    // field 127 group holding a varint, a string and a nested group 1, then i32 = 3
+    const bytes = [0xfb, 0x07, 0x08, 0x01, 0x12, 0x01, 0x61, 0x0b, 0x0c, 0xfc, 0x07, 0x08, 0x03];
+    expect(toJson(new Uint8Array(bytes))).toMatchObject({ i32: 3 });
+  });
+
+  it('accepts the largest 10-byte varint', () => {
+    const bytes = [0x20, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x01];
+    expect(toJson(new Uint8Array(bytes)).u64).toBe('18446744073709551615');
+  });
+
   it.each([
     ['a truncated varint', [0x08, 0x80]],
     ['a varint longer than 10 bytes', [0x08, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x01]],
@@ -330,7 +341,10 @@ describe('field kinds outside the current payload schemas', () => {
     ['a truncated fixed32', [0x3d, 0x00]],
     ['a length past the end', [0xca, 0x01, 0x05, 0x61]],
     ['field number 0', [0x00, 0x00]],
-    ['a group wire type', [0x0b]],
+    ['an unterminated group', [0x0b]],
+    ['a stray end group', [0x0c]],
+    ['a mismatched end group', [0x0b, 0x14]],
+    ['a 10-byte varint past 64 bits', [0x08, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x7f]],
     ['a malformed packed run', [0x7a, 0x01, 0x80]],
   ])('refuses %s', (_label, bytes) => {
     expectInvalid(() => toJson(new Uint8Array(bytes)), /malformed/);

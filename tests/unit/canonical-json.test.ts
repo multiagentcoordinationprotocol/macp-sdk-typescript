@@ -305,7 +305,7 @@ describe('payload form selection (§10.12)', () => {
       /malformed/,
     );
     expectInvalid(() => envelopeToCanonicalJson(envelope({ payload: new Uint8Array([0x0a, 0x01, 0xff]) })), /UTF-8/);
-    expectInvalid(() => envelopeToCanonicalJson(envelope({ payload: new Uint8Array([0x0b]) })), /wire type/);
+    expectInvalid(() => envelopeToCanonicalJson(envelope({ payload: new Uint8Array([0x0c]) })), /wire type 4/);
   });
 });
 
@@ -349,6 +349,9 @@ describe('envelope fields', () => {
     ['2026-10-25T05:00:02-04:00', '1792918802000'],
     ['2024-02-29T00:00:00Z', String(Date.parse('2024-02-29T00:00:00Z'))],
     ['0001-01-01T00:00:00Z', '-62135596800000'],
+    ['0001-01-01T01:00:00+01:00', '-62135596800000'],
+    ['9999-12-31T23:59:59.999Z', '253402300799999'],
+    ['2026-12-31T23:30:00-01:00', String(Date.parse('2027-01-01T00:30:00Z'))],
   ])('parses timestamp %s', (timestamp, ms) => {
     expect(envelopeFromCanonicalJson(json({ timestamp })).timestampUnixMs).toBe(ms);
   });
@@ -363,6 +366,9 @@ describe('envelope fields', () => {
     '2026-10-25T09:00:02+24:00',
     '2026-10-25T09:00:02.Z',
     '26-10-25T09:00:02Z',
+    '0000-01-01T00:00:00Z',
+    '0001-01-01T00:30:00+01:00',
+    '9999-12-31T23:30:00-01:00',
   ])('refuses timestamp %s', (timestamp) => {
     expectInvalid(() => envelopeFromCanonicalJson(json({ timestamp })), /timestamp/);
   });
@@ -499,6 +505,7 @@ describe('payload scalar mapping', () => {
     expectInvalid(() => start({ extensions: [] }), /JSON object/);
     expectInvalid(() => start({ roots: [5] }), /JSON object/);
     expectInvalid(() => start({ intent: '\ud800' }), /lone surrogate/);
+    expectInvalid(() => start({ extensions: { '\ud800': 'QQ==' } }), /lone surrogate/);
   });
 
   it('treats a null field as absent', () => {
@@ -536,6 +543,12 @@ describe('payload scalar mapping', () => {
         json({ mode: '', message_type: 'Signal', payload: { confidence: -0 } }),
       );
       expect(Buffer.from(negZero.payload).toString('hex')).toBe('190000000000000080');
+      // -0.0 is emitted as "-0", the one form JSON text can't turn into 0
+      const text = JSON.stringify(envelopeToCanonicalJson(negZero));
+      expect(JSON.parse(text).payload.confidence).toBe('-0');
+      expect(Buffer.from(envelopeFromCanonicalJson(JSON.parse(text)).payload).toString('hex')).toBe(
+        '190000000000000080',
+      );
       const zero = envelopeFromCanonicalJson(json({ mode: '', message_type: 'Signal', payload: { confidence: 0 } }));
       expect(zero.payload.length).toBe(0);
     });

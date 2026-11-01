@@ -472,6 +472,8 @@ function doubleToJson(value: number): number | string {
   if (Number.isNaN(value)) return 'NaN';
   if (value === Infinity) return 'Infinity';
   if (value === -Infinity) return '-Infinity';
+  // JSON.stringify(-0) writes 0, which would drop a field §10.13 rule 2 keeps.
+  if (Object.is(value, -0)) return '-0';
   return value;
 }
 
@@ -500,8 +502,10 @@ class WireReader {
     for (let shift = 0n; shift < 70n; shift += 7n) {
       if (this.pos >= this.bytes.length) throw this.malformed('truncated varint');
       const byte = this.bytes[this.pos++]!;
+      // the 10th byte holds bit 63 only; more would overflow 64 bits
+      if (shift === 63n && byte > 1) throw this.malformed('varint overflows 64 bits');
       result |= BigInt(byte & 0x7f) << shift;
-      if ((byte & 0x80) === 0) return BigInt.asUintN(64, result);
+      if ((byte & 0x80) === 0) return result;
     }
     throw this.malformed('varint longer than 10 bytes');
   }
@@ -525,7 +529,8 @@ function* readWire(bytes: Uint8Array, where: string): Generator<{ id: number; wi
     const id = Number(tag >> 3n);
     const wireType = Number(tag & 7n);
     if (id < 1 || id > 0x1fffffff) throw reader.malformed(`field number ${id}`);
-    if (wireType === 0) yield { id, wire: { wireType, value: reader.varint() } };
+    if (wireType === 3) skipGroup(reader, id);
+    else if (wireType === 0) yield { id, wire: { wireType, value: reader.varint() } };
     else if (wireType === 1) yield { id, wire: { wireType, value: reader.take(8) } };
     else if (wireType === 5) yield { id, wire: { wireType, value: reader.take(4) } };
     else if (wireType === 2) {
@@ -533,6 +538,34 @@ function* readWire(bytes: Uint8Array, where: string): Generator<{ id: number; wi
       if (length > BigInt(bytes.length)) throw reader.malformed('truncated field');
       yield { id, wire: { wireType, value: reader.take(Number(length)) } };
     } else throw reader.malformed(`wire type ${wireType}`);
+  }
+}
+
+/**
+ * Skips a (proto2) group up to its matching END_GROUP. No MACP field is a
+ * group, so a group is always an unknown field and is dropped, as protobuf-go
+ * and Python do.
+ */
+function skipGroup(reader: WireReader, groupId: number): void {
+  for (;;) {
+    if (reader.done()) throw reader.malformed('unterminated group');
+    const tag = reader.varint();
+    const id = Number(tag >> 3n);
+    const wireType = Number(tag & 7n);
+    if (id < 1 || id > 0x1fffffff) throw reader.malformed(`field number ${id}`);
+    if (wireType === 4) {
+      if (id !== groupId) throw reader.malformed('mismatched end group');
+      return;
+    }
+    if (wireType === 0) reader.varint();
+    else if (wireType === 1) reader.take(8);
+    else if (wireType === 5) reader.take(4);
+    else if (wireType === 2) {
+      const length = reader.varint();
+      if (length > 0x7fffffffn) throw reader.malformed('truncated field');
+      reader.take(Number(length));
+    } else if (wireType === 3) skipGroup(reader, id);
+    else throw reader.malformed(`wire type ${wireType}`);
   }
 }
 
@@ -682,7 +715,10 @@ function enumNumberFromJson(values: Record<string, number>, value: unknown, wher
 }
 
 function mapKeyFromJson(keyType: string, key: string, where: string): Scalar {
-  if (keyType === 'string') return key;
+  if (keyType === 'string') {
+    if (!isWellFormed(key)) throw new CanonicalJsonError(`${where}: map key has a lone surrogate`);
+    return key;
+  }
   if (keyType === 'bool') {
     if (key === 'true' || key === 'false') return key === 'true';
     throw new CanonicalJsonError(`${where}: bad map key ${JSON.stringify(key)}`);
@@ -901,7 +937,11 @@ function parseTimestamp(text: string): bigint {
   date.setUTCFullYear(year, month - 1, day);
   date.setUTCHours(hour, minute, second, millis);
   const offset = (offsetHours * 60 + offsetMinutes) * 60_000 * (m[9] === '-' ? -1 : 1);
-  return BigInt(date.getTime() - offset);
+  const ms = date.getTime() - offset;
+  if (ms < MIN_MS || ms > MAX_MS) {
+    throw new CanonicalJsonError(`timestamp ${JSON.stringify(text)} is outside years 0001-9999`);
+  }
+  return BigInt(ms);
 }
 
 function isLeap(year: number): boolean {
