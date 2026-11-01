@@ -19,7 +19,7 @@ import { envelopeToA2aMessage, ackFromA2aMessage } from 'macp-sdk-typescript/a2a
 ```
 
 The same functions exist in macp-sdk-python's `macp_sdk.a2a`, in snake_case (`envelope_to_a2a_message`),
-and both SDKs pass the spec's 106 codec vectors.
+and both SDKs pass the spec's 107 codec vectors.
 
 ```mermaid
 sequenceDiagram
