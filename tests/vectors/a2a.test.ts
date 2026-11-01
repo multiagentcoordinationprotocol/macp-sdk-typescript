@@ -100,8 +100,8 @@ const OPS: Record<string, (input: Record<string, unknown>, params: Record<string
 const asJson = (value: unknown): unknown => JSON.parse(JSON.stringify(value) ?? 'null');
 
 describe('RFC-MACP-0014 A2A binding vectors', () => {
-  it('vendors all 106 vectors: 68 positive, 38 reject, every op covered', () => {
-    expect(VECTORS).toHaveLength(106);
+  it('vendors all 107 vectors: 69 positive, 38 reject, every op covered', () => {
+    expect(VECTORS).toHaveLength(107);
     expect(VECTORS.filter((v) => v.expected_error).length).toBe(38);
     expect(new Set(VECTORS.map((v) => v.op))).toEqual(new Set(Object.keys(OPS)));
   });

@@ -7,10 +7,11 @@ schemas/conformance/a2a/
 ```
 
 from the spec repo (`multiagentcoordinationprotocol/multiagentcoordinationprotocol`),
-commit `88e01e8` ("rfc(0014): 1.1.2-draft — define Envelope Part mediaType comparison",
-spec PR #248), copied on 2026-11-01. Vectors 001–101 first came from `2e7d3ab` (spec PR
-#245) for W6 S6.2 (the A2A binding codec, `src/a2a.ts`); 102–106 pin the §5.1 media type
-comparison (issue #247). The spec's `README.md` there lists the conventions and what the
+commit `4dc2c75` ("schema(envelope): accept \"NaN\", \"Infinity\", \"-Infinity\", \"-0\" in float
+fields; a2a_107 \"-0\" vector", spec PR #253), copied on 2026-11-01. Vectors 001–101 first came
+from `2e7d3ab` (spec PR #245) for W6 S6.2 (the A2A binding codec, `src/a2a.ts`); 102–106 pin the
+§5.1 media type comparison (issue #247, `88e01e8`); 107 pins a `-0` float written as the JSON
+string `"-0"` passing through a Core payload unchanged (spec #246). The spec's `README.md` there lists the conventions and what the
 vectors do not pin. Never edit them here; refresh them with `make sync-fixtures`.
 
 `make verify-fixtures` and `make sync-fixtures` cover this directory bidirectionally
