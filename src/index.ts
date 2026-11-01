@@ -6,6 +6,16 @@
 export { Auth, type AuthConfig, type BearerAuthOptions } from './auth';
 export * from './base-session';
 export * from './client';
+// RFC-MACP-0001 §10 canonical JSON for Envelopes and Acks (A2A `data` Parts,
+// JSON transports). Node-free, like `./receipt`.
+export {
+  CanonicalJsonError,
+  ackFromCanonicalJson,
+  ackToCanonicalJson,
+  envelopeFromCanonicalJson,
+  envelopeToCanonicalJson,
+  type CanonicalEnvelope,
+} from './canonical-json';
 // Commitment hash: export `commitmentHash`, `isCanonicalCommitmentHash`, and
 // the RFC-MACP-0013 §6.1 verifier `verifyCommitmentHash`.
 // `canonicalizeCommitmentPayload` is the projection/JCS half of the

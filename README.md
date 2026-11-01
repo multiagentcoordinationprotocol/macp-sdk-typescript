@@ -492,6 +492,30 @@ If you hold the snake_case §3 projection (a receipt's `commitment`) instead of 
 
 The `macp-sdk-typescript/receipt` subpath is browser-safe: it pulls in no gRPC, no `node:crypto` and no `Buffer`. The same functions are also exported from the package root. The tests replay the spec's `schemas/conformance/receipt/` vectors and rebuild the spec's example receipt byte for byte.
 
+## Canonical JSON
+
+RFC-MACP-0001 §10 defines a JSON form of an Envelope and an Ack, the form an A2A `data` Part (RFC-MACP-0014) or another JSON transport carries. The codec is Node-free and has its own subpath:
+
+```typescript
+import { envelopeFromCanonicalJson, envelopeToCanonicalJson } from 'macp-sdk-typescript/canonical-json';
+
+const json = envelopeToCanonicalJson(envelope); // { macp_version, mode, …, timestamp: '2026-10-25T09:00:02Z', payload: { … } }
+const back = envelopeFromCanonicalJson(json); // payload as a Uint8Array, timestampUnixMs as a string
+```
+
+`ackToCanonicalJson`/`ackFromCanonicalJson` do the same for an Ack.
+
+- **Payload form.** A Core message (`Signal`, `Progress`, `SessionStart`, `SessionCancel`, `SessionSuspend`, `SessionResume`, `Commitment`) in any mode, or a message of one of the five standard modes, is a JSON `payload` object. Everything else, including every `ext.*` or reverse-domain mode, is `payload_b64` (standard base64) and keeps its exact bytes.
+- **Fields.** Keys are snake_case and lowerCamelCase spellings are ignored. Every non-presence field is emitted, defaults included. 64-bit integers are JSON numbers, quoted above 2^53−1.
+- **Re-encoding.** A JSON `payload` re-encodes to the deterministic bytes of §10.13. Unknown fields in the original bytes don't survive, so send `payload_b64` when the exact bytes matter.
+- **Errors.** Malformed input throws `CanonicalJsonError` (`code` `INVALID_ENVELOPE`). This includes a JSON `payload` for a message type with no known schema, both or neither of `payload` and `payload_b64`, a bad timestamp, an unquoted integer above 2^53−1, or payload bytes that don't parse as their schema.
+
+The payload schemas are generated from the installed `@multiagentcoordinationprotocol/proto` into `src/generated/macp-schema.json` (`npm run gen:schema`; a unit test fails while it is stale).
+
+`verifyReceipt` never throws. `buildReceipt` throws `MacpSdkError` on a missing field, and when `commitmentWire` is not the wire encoding of the commitment. Signing is deterministic: the same inputs always produce the same receipt.
+
+The `macp-sdk-typescript/receipt` subpath is browser-safe: it pulls in no gRPC, no `node:crypto` and no `Buffer`. The same functions are also exported from the package root. The tests replay the spec's `schemas/conformance/receipt/` vectors and rebuild the spec's example receipt byte for byte.
+
 ## OpenTelemetry
 
 Install the optional peer dependency `@opentelemetry/api` and register a tracer provider. The SDK then:

@@ -11,6 +11,7 @@ VECTOR_DIRS := cmt-hash receipt
 # land in: any other *.json found there is flagged EXTRA.
 SPEC_ROOT ?= $(SPEC_CONFORMANCE_DIR)/../..
 VENDORED_FILES := \
+	examples/a2a-binding-session.json:tests/fixtures/a2a_binding_session.json \
 	examples/discovery/receipt_keys.json:tests/fixtures/receipt_keys.json \
 	schemas/otel/macp-semconv.json:tests/otel/macp-semconv.json
 VENDORED_DIRS := tests/fixtures tests/otel
