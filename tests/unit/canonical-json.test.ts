@@ -647,6 +647,15 @@ describe('ack', () => {
     expectInvalid(() => ackFromCanonicalJson({ session_state: true }), /enum/);
   });
 
+  it('refuses a lone surrogate in an Envelope or Ack string field', () => {
+    const env = { mode: 'ext.x.v1', message_type: 'X', payload_b64: '' };
+    expectInvalid(() => envelopeFromCanonicalJson({ ...env, sender: '\ud800' }), /sender: string has a lone surrogate/);
+    expectInvalid(() => envelopeFromCanonicalJson({ ...env, mode: 'ext.\udc00' }), /lone surrogate/);
+    expect(envelopeFromCanonicalJson({ ...env, sender: '\ud83d\ude00' }).sender).toBe('\u{1f600}');
+    expectInvalid(() => ackFromCanonicalJson({ message_id: 'm\udfff' }), /message_id: string has a lone surrogate/);
+    expectInvalid(() => ackFromCanonicalJson({ error: { message: '\ud800x' } }), /lone surrogate/);
+  });
+
   it('refuses malformed acks', () => {
     expectInvalid(() => ackFromCanonicalJson('ack'), /JSON object/);
     expectInvalid(() => ackFromCanonicalJson({ ok: 'yes' }), /true or false/);

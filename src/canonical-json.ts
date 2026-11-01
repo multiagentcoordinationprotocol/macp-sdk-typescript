@@ -869,6 +869,7 @@ function readString(obj: Record<string, unknown>, key: string): string {
   const value = obj[key] ?? null;
   if (value === null) return '';
   if (typeof value !== 'string') throw new CanonicalJsonError(`${key}: expected a string`);
+  if (!isWellFormed(value)) throw new CanonicalJsonError(`${key}: string has a lone surrogate`);
   return value;
 }
 
