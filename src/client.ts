@@ -117,6 +117,21 @@ export function grpcStatusName(code: unknown): string | undefined {
   return typeof name === 'string' ? name : undefined;
 }
 
+/** Per-call options for the read RPCs (`initialize`, `getManifest`, `listModes`, `listExtModes`, `listRoots`). */
+export interface ReadOptions {
+  /** Overrides the client's credential for this call only. */
+  auth?: AuthConfig;
+  deadlineMs?: number;
+}
+
+function readOptions(options: number | ReadOptions | undefined): ReadOptions {
+  return typeof options === 'number' ? { deadlineMs: options } : (options ?? {});
+}
+
+function streamCallOptions(deadlineMs: number): grpc.CallOptions {
+  return { deadline: new Date(Date.now() + deadlineMs) };
+}
+
 /**
  * Per-RPC opt-in: maps a gRPC status *name* (e.g. `'FAILED_PRECONDITION'`) to
  * a MACP Ack error code. When {@link MacpClient}'s private `unary()` is given
@@ -464,7 +479,12 @@ export class MacpClient {
     });
   }
 
-  async initialize(deadlineMs?: number): Promise<InitializeResult> {
+  /**
+   * `options` is a deadline in ms (the original form) or `{ auth, deadlineMs }`.
+   * `auth` overrides the client's credential for this call only.
+   */
+  async initialize(options?: number | ReadOptions): Promise<InitializeResult> {
+    const { auth, deadlineMs } = readOptions(options);
     const result = await (this.unary(
       'Initialize',
       {
@@ -487,7 +507,7 @@ export class MacpClient {
           experimental: { features: {} },
         },
       },
-      undefined,
+      auth,
       deadlineMs,
     ) as Promise<InitializeResult>);
     this.initializeResult = result;
@@ -581,7 +601,7 @@ export class MacpClient {
    */
   async suspendSession(
     sessionId: string,
-    reason: string,
+    reason = '',
     options?: { auth?: AuthConfig; deadlineMs?: number; raiseOnNack?: boolean },
   ): Promise<Ack> {
     const auth = this.requireAuth(options?.auth);
@@ -606,7 +626,7 @@ export class MacpClient {
    */
   async resumeSession(
     sessionId: string,
-    reason: string,
+    reason = '',
     options?: { auth?: AuthConfig; deadlineMs?: number; raiseOnNack?: boolean },
   ): Promise<Ack> {
     const auth = this.requireAuth(options?.auth);
@@ -621,20 +641,26 @@ export class MacpClient {
     return ack;
   }
 
-  async getManifest(agentId = '', deadlineMs?: number): Promise<{ manifest: AgentManifest }> {
-    return this.unary('GetManifest', { agentId }, undefined, deadlineMs) as Promise<{ manifest: AgentManifest }>;
+  // Each read RPC takes a deadline in ms (the original form) or `{ auth, deadlineMs }`.
+
+  async getManifest(agentId = '', options?: number | ReadOptions): Promise<{ manifest: AgentManifest }> {
+    const { auth, deadlineMs } = readOptions(options);
+    return this.unary('GetManifest', { agentId }, auth, deadlineMs) as Promise<{ manifest: AgentManifest }>;
   }
 
-  async listModes(deadlineMs?: number): Promise<{ modes: ModeDescriptor[] }> {
-    return this.unary('ListModes', {}, undefined, deadlineMs) as Promise<{ modes: ModeDescriptor[] }>;
+  async listModes(options?: number | ReadOptions): Promise<{ modes: ModeDescriptor[] }> {
+    const { auth, deadlineMs } = readOptions(options);
+    return this.unary('ListModes', {}, auth, deadlineMs) as Promise<{ modes: ModeDescriptor[] }>;
   }
 
-  async listExtModes(deadlineMs?: number): Promise<{ modes: ModeDescriptor[] }> {
-    return this.unary('ListExtModes', {}, undefined, deadlineMs) as Promise<{ modes: ModeDescriptor[] }>;
+  async listExtModes(options?: number | ReadOptions): Promise<{ modes: ModeDescriptor[] }> {
+    const { auth, deadlineMs } = readOptions(options);
+    return this.unary('ListExtModes', {}, auth, deadlineMs) as Promise<{ modes: ModeDescriptor[] }>;
   }
 
-  async listRoots(deadlineMs?: number): Promise<{ roots: Root[] }> {
-    return this.unary('ListRoots', {}, undefined, deadlineMs) as Promise<{ roots: Root[] }>;
+  async listRoots(options?: number | ReadOptions): Promise<{ roots: Root[] }> {
+    const { auth, deadlineMs } = readOptions(options);
+    return this.unary('ListRoots', {}, auth, deadlineMs) as Promise<{ roots: Root[] }>;
   }
 
   /**
@@ -939,9 +965,20 @@ export class MacpClient {
     return all;
   }
 
-  watchSessions(auth?: AuthConfig): grpc.ClientReadableStream<any> {
-    const metadata = this.metadata(auth);
-    return metadata ? (this.client as any).WatchSessions({}, metadata) : (this.client as any).WatchSessions({});
+  /**
+   * Streams take an optional `deadlineMs` that ends the stream (DEADLINE_EXCEEDED)
+   * once it passes. Unlike unary calls they never fall back to the client's
+   * `defaultDeadlineMs`, which would cut off a long-lived watch.
+   */
+  watchSessions(auth?: AuthConfig, deadlineMs?: number): grpc.ClientReadableStream<any> {
+    return this.serverStream('WatchSessions', this.metadata(auth), deadlineMs);
+  }
+
+  private serverStream(method: string, metadata: grpc.Metadata | undefined, deadlineMs?: number): any {
+    const args: unknown[] = [{}];
+    if (metadata) args.push(metadata);
+    if (deadlineMs !== undefined) args.push(streamCallOptions(deadlineMs));
+    return (this.client as any)[method](...args);
   }
 
   /**
@@ -950,27 +987,27 @@ export class MacpClient {
    * `UNAUTHENTICATED` (macp-runtime#274), so a missing one fails here first,
    * client-side, as {@link watchSignals} does.
    */
-  watchPolicies(auth?: AuthConfig): grpc.ClientReadableStream<any> {
-    const selected = this.requireAuth(auth);
-    const metadata = this.metadata(selected) as grpc.Metadata;
-    return (this.client as any).WatchPolicies({}, metadata);
+  watchPolicies(auth?: AuthConfig, deadlineMs?: number): grpc.ClientReadableStream<any> {
+    return this.serverStream('WatchPolicies', this.metadata(this.requireAuth(auth)), deadlineMs);
   }
 
-  openStream(options?: { auth?: AuthConfig }): MacpStream {
+  openStream(options?: { auth?: AuthConfig; deadlineMs?: number }): MacpStream {
     const auth = this.requireAuth(options?.auth);
     const metadata = this.metadata(auth) as grpc.Metadata;
-    const call = (this.client as any).StreamSession(metadata);
+    const deadlineMs = options?.deadlineMs;
+    const call =
+      deadlineMs === undefined
+        ? (this.client as any).StreamSession(metadata)
+        : (this.client as any).StreamSession(metadata, streamCallOptions(deadlineMs));
     return new MacpStream(call);
   }
 
-  watchModeRegistry(auth?: AuthConfig): grpc.ClientReadableStream<any> {
-    const metadata = this.metadata(auth);
-    return metadata ? (this.client as any).WatchModeRegistry({}, metadata) : (this.client as any).WatchModeRegistry({});
+  watchModeRegistry(auth?: AuthConfig, deadlineMs?: number): grpc.ClientReadableStream<any> {
+    return this.serverStream('WatchModeRegistry', this.metadata(auth), deadlineMs);
   }
 
-  watchRoots(auth?: AuthConfig): grpc.ClientReadableStream<any> {
-    const metadata = this.metadata(auth);
-    return metadata ? (this.client as any).WatchRoots({}, metadata) : (this.client as any).WatchRoots({});
+  watchRoots(auth?: AuthConfig, deadlineMs?: number): grpc.ClientReadableStream<any> {
+    return this.serverStream('WatchRoots', this.metadata(auth), deadlineMs);
   }
 
   /**
@@ -978,10 +1015,8 @@ export class MacpClient {
    * routed through {@link requireAuth} so a missing credential fails fast with a
    * clear client-side error instead of a stream `UNAUTHENTICATED`.
    */
-  watchSignals(auth?: AuthConfig): grpc.ClientReadableStream<any> {
-    const selected = this.requireAuth(auth);
-    const metadata = this.metadata(selected) as grpc.Metadata;
-    return (this.client as any).WatchSignals({}, metadata);
+  watchSignals(auth?: AuthConfig, deadlineMs?: number): grpc.ClientReadableStream<any> {
+    return this.serverStream('WatchSignals', this.metadata(this.requireAuth(auth)), deadlineMs);
   }
 
   async sendSignal(options: {

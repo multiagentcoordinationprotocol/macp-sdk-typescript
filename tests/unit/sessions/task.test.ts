@@ -70,6 +70,30 @@ describe('TaskSession — projection roundtrip', () => {
     });
   });
 
+  it('requestTask() defaults instructions and accepts an empty title, as Python does (#193)', async () => {
+    const client = makeClient();
+    const session = new TaskSession(client);
+    const send = vi.spyOn(client, 'send').mockResolvedValue({ ok: true });
+
+    await session.requestTask({ taskId: 't1', title: '' });
+    const envelope = send.mock.calls[0]![0];
+    expect(client.protoRegistry.decodeKnownPayload(envelope.mode, 'TaskRequest', envelope.payload)).toMatchObject({
+      taskId: 't1',
+    });
+    expect(session.projection.getTask('t1')?.status).toBe('requested');
+  });
+
+  it('updateTask() defaults status and progress, as Python does (#193)', async () => {
+    const client = makeClient();
+    const session = new TaskSession(client);
+    const send = vi.spyOn(client, 'send').mockResolvedValue({ ok: true });
+
+    await session.updateTask({ taskId: 't1' });
+    const envelope = send.mock.calls[0]![0];
+    const decoded = client.protoRegistry.decodeKnownPayload(envelope.mode, 'TaskUpdate', envelope.payload);
+    expect([decoded?.status ?? '', decoded?.progress ?? 0]).toEqual(['', 0]);
+  });
+
   it('requestTask() records a requested task in activeTasks()', async () => {
     const client = makeClient();
     const session = new TaskSession(client);

@@ -45,9 +45,12 @@ const client = new MacpClient({
 
 ## Methods
 
-### `initialize(deadlineMs?)`
+### `initialize(options?)`
 
 Handshake with the runtime. Negotiates protocol version and exchanges capabilities.
+`options` is a deadline in ms or `{ auth?, deadlineMs? }` (`ReadOptions`); `auth`
+overrides the client's credential for this call only. The same applies to
+`getManifest`, `listModes`, `listExtModes` and `listRoots`.
 
 ```typescript
 const result: InitializeResult = await client.initialize();
@@ -110,19 +113,20 @@ const ack = await client.cancelSession('session-id', 'no longer needed', { auth 
 // ack.sessionState === 'SESSION_STATE_CANCELLED'
 ```
 
-### `suspendSession(sessionId, reason, options?)`
+### `suspendSession(sessionId, reason?, options?)`
 
 Pause an open session (proto 0.1.3+). Returns Ack. Suspension is **non-terminal**:
 the runtime banks the session's remaining TTL, rejects any messages sent while
 suspended, and surfaces `ack.sessionState === 'SESSION_STATE_SUSPENDED'`.
 Restricted to the initiator and policy-delegated roles, mirroring `cancelSession`.
+`reason` defaults to `''` here and on `resumeSession`.
 
 ```typescript
 const ack = await client.suspendSession('session-id', 'pausing work', { auth });
 // ack.sessionState === 'SESSION_STATE_SUSPENDED'
 ```
 
-### `resumeSession(sessionId, reason, options?)`
+### `resumeSession(sessionId, reason?, options?)`
 
 Resume a suspended session (proto 0.1.3+). Returns Ack. Restores
 `SESSION_STATE_OPEN` and adds the banked TTL back to the session's absolute
@@ -196,16 +200,17 @@ do {
 | `auth` | `AuthConfig` | client auth | Override the default identity. |
 | `deadlineMs` | `number` | client default | Deadline for the unary call. |
 
-### `getManifest(agentId?, deadlineMs?)`
+### `getManifest(agentId?, options?)`
 
 Retrieve an agent or runtime manifest.
 
 ```typescript
 const { manifest } = await client.getManifest();       // self manifest
 const { manifest } = await client.getManifest('other'); // another agent
+const { manifest } = await client.getManifest('', { auth: Auth.bearer(token), deadlineMs: 5_000 });
 ```
 
-### `listModes(deadlineMs?)`
+### `listModes(options?)`
 
 List standards-track modes.
 
@@ -214,7 +219,7 @@ const { modes } = await client.listModes();
 // modes: ModeDescriptor[]
 ```
 
-### `listExtModes(deadlineMs?)`
+### `listExtModes(options?)`
 
 List dynamically registered extension modes.
 
@@ -222,7 +227,7 @@ List dynamically registered extension modes.
 const { modes } = await client.listExtModes();
 ```
 
-### `listRoots(deadlineMs?)`
+### `listRoots(options?)`
 
 List coordination roots/boundaries.
 
@@ -368,7 +373,9 @@ that runtime is your decision.
 ### `openStream(options?)`
 
 Open a bidirectional session stream. Requires auth (throws `MacpSdkError` if
-neither `options.auth` nor the client default is set).
+neither `options.auth` nor the client default is set). `options.deadlineMs`
+ends the stream once it passes; with none the stream has no deadline, because
+streams never fall back to the client's `defaultDeadlineMs`.
 
 ```typescript
 const stream: MacpStream = client.openStream({ auth });
@@ -438,14 +445,18 @@ etc.) were **removed in 0.5.0** — use the names below.
 
 | Method | RPC | Auth |
 |--------|-----|------|
-| `watchModeRegistry(auth?)` | `WatchModeRegistry` | optional |
-| `watchRoots(auth?)` | `WatchRoots` | optional |
-| `watchSignals(auth?)` | `WatchSignals` | **required** (runtime ≥ 0.5.0) |
-| `watchSessions(auth?)` | `WatchSessions` | optional |
-| `watchPolicies(auth?)` | `WatchPolicies` | **required** (runtime ≥ 0.12.0) |
+| `watchModeRegistry(auth?, deadlineMs?)` | `WatchModeRegistry` | optional |
+| `watchRoots(auth?, deadlineMs?)` | `WatchRoots` | optional |
+| `watchSignals(auth?, deadlineMs?)` | `WatchSignals` | **required** (runtime ≥ 0.5.0) |
+| `watchSessions(auth?, deadlineMs?)` | `WatchSessions` | optional |
+| `watchPolicies(auth?, deadlineMs?)` | `WatchPolicies` | **required** (runtime ≥ 0.12.0) |
 
 `watchSignals` frames carry `senderAuthenticated` (runtime ≥ 0.9.0, RFC-MACP-0004
 §4.1) beside the envelope; `SignalWatcher.events()` surfaces it, `signals()` does not.
+
+`deadlineMs` ends the stream (`DEADLINE_EXCEEDED`) once it passes. Unlike unary
+calls, a stream never falls back to the client's `defaultDeadlineMs`, which would
+cut off a long-lived watch.
 
 `watchSignals` and `watchPolicies` throw `MacpSdkError` client-side when no auth is available
 (neither the argument nor `client.auth`), rather than failing later with a
@@ -591,3 +602,17 @@ import { grpcStatusName } from 'macp-sdk-typescript';
 
 grpcStatusName(9); // 'FAILED_PRECONDITION'
 ```
+
+## Mapping to macp-sdk-python
+
+The option shapes match macp-sdk-python's `MacpClient` and `AsyncMacpClient`
+(issue #193), with these idiomatic differences:
+
+| TypeScript | Python | Note |
+|------------|--------|------|
+| `deadlineMs` (ms) | `timeout` (seconds) | Same meaning on unary calls. |
+| A stream's `deadlineMs` omitted: no deadline | `timeout=None`: the client's `default_timeout` | Python falls back to the client default on streams too; a Python caller passes `UNBOUNDED` for no deadline. TypeScript never falls back on streams. |
+| `initialize(options?)` and the other read RPCs: `number \| { auth?, deadlineMs? }` | keyword-only `auth=`, `timeout=` | |
+| `requestTask({ input })` | `request_task(input_data=)` | Field name only. |
+| `MacpClient.senderHint` | — | TypeScript only. |
+| — | stream `cancel()`, `responses(timeout)` | Python only. |

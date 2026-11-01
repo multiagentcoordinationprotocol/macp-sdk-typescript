@@ -38,6 +38,15 @@ describe('QuorumSession — projection roundtrip', () => {
     });
   });
 
+  it('requestApproval() defaults summary, as Python does (#193)', async () => {
+    const client = makeClient();
+    const session = new QuorumSession(client);
+    vi.spyOn(client, 'send').mockResolvedValue({ ok: true });
+
+    await session.requestApproval({ requestId: 'r1', action: 'deploy', requiredApprovals: 1 });
+    expect(session.projection.phase).toBe('Voting');
+  });
+
   it('requestApproval() records the request and moves phase to Voting', async () => {
     const client = makeClient();
     const session = new QuorumSession(client);
