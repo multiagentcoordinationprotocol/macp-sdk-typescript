@@ -12,6 +12,7 @@ import { MultiRoundProjection } from '../../src/projections/multi-round';
 import { ProtoRegistry } from '../../src/proto-registry';
 import { buildEnvelope } from '../../src/envelope';
 import { MODE_MULTI_ROUND } from '../../src/constants';
+import corpus from '../vectors/multi-round-contribute/multi_round_contribute_decode.json';
 
 const hex = (h: string) => Buffer.from(h, 'hex');
 
@@ -124,6 +125,16 @@ describe('parseContributeValue matches the runtime', () => {
     ['an empty array', '[]'],
   ])('serde refuses %s', (_name, text) => {
     expect(parseContributeValue(Buffer.from(text))).toBeUndefined();
+  });
+});
+
+describe('the shared runtime-captured corpus (vendored from macp-sdk-python)', () => {
+  it('has the 460 cases it was copied with', () => {
+    expect(corpus.cases).toHaveLength(460);
+  });
+
+  it.each(corpus.cases.map((c) => [c.hex.slice(0, 40), c.hex, c.value] as const))('%s', (_label, payload, value) => {
+    expect(parseContributeValue(hex(payload))).toBe(value ?? undefined);
   });
 });
 

@@ -5,3 +5,4 @@ docs/
 *.proto
 tests/vectors/cmt-hash/
 tests/parity/contract.json
+tests/vectors/multi-round-contribute/*.json
