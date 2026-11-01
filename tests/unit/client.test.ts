@@ -394,6 +394,30 @@ describe('MacpClient.watchSignals', () => {
   });
 });
 
+// ── WatchPolicies auth requirement (runtime 0.12.0, issue #222) ──────
+
+describe('MacpClient.watchPolicies', () => {
+  it('throws a clear client-side error, without subscribing, when no auth is configured', () => {
+    const client = new MacpClient({ address: '127.0.0.1:50051', secure: false, allowInsecure: true });
+    const grpcClient = (client as unknown as { client: Record<string, unknown> }).client;
+    const watchSpy = vi.fn();
+    grpcClient.WatchPolicies = watchSpy;
+    expect(() => client.watchPolicies()).toThrow(MacpSdkError);
+    expect(() => client.watchPolicies()).toThrow(/requires auth/);
+    expect(watchSpy).not.toHaveBeenCalled();
+  });
+
+  it('sends the per-call auth when the client has none', () => {
+    const client = new MacpClient({ address: '127.0.0.1:50051', secure: false, allowInsecure: true });
+    const grpcClient = (client as unknown as { client: Record<string, unknown> }).client;
+    const watchSpy = vi.fn(() => ({}));
+    grpcClient.WatchPolicies = watchSpy;
+    client.watchPolicies(Auth.bearer('tok-observer'));
+    const metadata = (watchSpy.mock.calls[0] as unknown[])[1] as { get(key: string): unknown[] };
+    expect(metadata.get('authorization')).toEqual(['Bearer tok-observer']);
+  });
+});
+
 // ── Session lifecycle control RPCs (proto 0.1.3) ────────────────────
 //
 // CancelSession now terminates as CANCELLED (was EXPIRED); SuspendSession /

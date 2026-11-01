@@ -129,7 +129,10 @@ sending. See the [API reference](../api/policy.md#clientwhatifreplaysessionid-ca
 
 ## Watching for Policy Changes
 
-Use `PolicyWatcher` to react to policy registration/unregistration events:
+Use `PolicyWatcher` to react to policy registration/unregistration events.
+It needs auth (`{ auth }` or the client's own), like `listPolicies`: from
+runtime 0.12.0 the runtime refuses an unauthenticated `WatchPolicies`, so
+without a credential the SDK throws `MacpSdkError` before sending anything.
 
 ```typescript
 import { PolicyWatcher } from 'macp-sdk-typescript';
