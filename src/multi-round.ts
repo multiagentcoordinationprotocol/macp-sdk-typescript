@@ -74,7 +74,9 @@ export class MultiRoundSession extends BaseSession<MultiRoundProjection> {
     }
     const sender = this.senderFor(input.sender, input.auth);
     const { participants } = this.projection;
-    if (participants.length > 0 && !participants.includes(sender)) {
+    // An empty sender is filled in by the runtime from the authenticated
+    // identity, so it can't be judged here.
+    if (sender !== '' && participants.length > 0 && !participants.includes(sender)) {
       throw new MacpSessionError(`contribute: ${JSON.stringify(sender)} is not a declared participant`);
     }
     const envelope = buildEnvelope({
@@ -118,23 +120,25 @@ export class MultiRoundSession extends BaseSession<MultiRoundProjection> {
     if (input.commitmentId !== undefined && blank(input.commitmentId)) {
       throw new MacpSessionError('commit: commitmentId must be non-empty when given');
     }
-    const outcomePositive = input.outcomePositive ?? inferOutcomePositive(action);
-    if (NEGATIVE_SUFFIXES.some((s) => action.endsWith(s)) && outcomePositive) {
+    // Only an explicit outcomePositive can contradict a suffix; the inferred one never does.
+    const explicit = input.outcomePositive;
+    if (explicit === true && NEGATIVE_SUFFIXES.some((s) => action.endsWith(s))) {
       throw new MacpSessionError(
         `commit: action ${JSON.stringify(action)} has a negative suffix but outcomePositive is true`,
       );
     }
-    if (POSITIVE_SUFFIXES.some((s) => action.endsWith(s)) && !outcomePositive) {
+    if (explicit === false && POSITIVE_SUFFIXES.some((s) => action.endsWith(s))) {
       throw new MacpSessionError(
         `commit: action ${JSON.stringify(action)} has a positive suffix but outcomePositive is false`,
       );
     }
+    const outcomePositive = explicit ?? inferOutcomePositive(action);
     if (input.supersedes !== undefined && input.supersedes !== null && blank(input.supersedes.sessionId)) {
       throw new MacpSessionError('commit: supersedes.sessionId must be non-empty');
     }
     const sender = this.senderFor(input.sender, input.auth);
     const { initiator } = this.projection;
-    if (initiator !== undefined && sender !== initiator) {
+    if (initiator && sender !== '' && sender !== initiator) {
       throw new MacpSessionError(`commit: only the initiator ${JSON.stringify(initiator)} may commit`);
     }
     // BaseSession.commit builds the payload (and validates the supersedes hash).

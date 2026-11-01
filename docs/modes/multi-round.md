@@ -103,7 +103,9 @@ certain to refuse:
 A commit before convergence is sent anyway: the projection's convergence is
 advisory, and the runtime answers with `INVALID_ENVELOPE`. A session that never
 saw the SessionStart (constructed with an existing `sessionId`) knows neither
-participants nor initiator, so it skips those checks.
+participants nor initiator, so it skips those checks. So does a send with an
+empty sender (bearer auth with no sender hint): the runtime fills the sender in
+from the authenticated identity.
 
 ## Projection
 

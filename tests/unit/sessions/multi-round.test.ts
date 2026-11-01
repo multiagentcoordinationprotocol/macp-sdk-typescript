@@ -226,6 +226,37 @@ describe('MultiRoundSession', () => {
     expect(payload).toMatchObject({ commitmentId: 'cmt-1', supersedes: { sessionId: 'prior', commitmentHash: HASH } });
   });
 
+  it('leaves an empty sender to the runtime, which fills it from the credential', async () => {
+    const client = new MacpClient({
+      address: '127.0.0.1:50051',
+      secure: false,
+      allowInsecure: true,
+      auth: Auth.bearer('t'),
+    });
+    const send = vi.spyOn(client, 'send').mockResolvedValue({ ok: true });
+    const session = new MultiRoundSession(client);
+    await session.start({ intent: 'x', participants: ['alice', 'bob'], ttlMs: 60_000, sender: 'coordinator' });
+    await session.contribute({ value: 'v' });
+    await session.commit({ authorityScope: 's', reason: 'r' });
+    expect(send.mock.calls.map(([e]) => (e as Envelope).sender)).toEqual(['coordinator', '', '']);
+  });
+
+  it('skips the initiator check when the SessionStart carried an empty sender', async () => {
+    const client = new MacpClient({
+      address: '127.0.0.1:50051',
+      secure: false,
+      allowInsecure: true,
+      auth: Auth.bearer('t'),
+    });
+    vi.spyOn(client, 'send').mockResolvedValue({ ok: true });
+    const session = new MultiRoundSession(client);
+    await session.start({ intent: 'x', participants: ['alice'], ttlMs: 60_000 });
+    expect(session.projection.initiator).toBe('');
+    await expect(session.commit({ authorityScope: 's', reason: 'r', sender: 'coordinator' })).resolves.toEqual({
+      ok: true,
+    });
+  });
+
   it('guards the sender identity', async () => {
     const client = new MacpClient({
       address: '127.0.0.1:50051',

@@ -77,7 +77,6 @@ export class MultiRoundProjection extends BaseProjection {
         this.participants = [...(payload.participants ?? [])];
         this.initiator = envelope.sender;
         if (!this.converged) this.setPhase('Contributing');
-        this.checkConvergence();
         break;
       }
       case 'Contribute':
