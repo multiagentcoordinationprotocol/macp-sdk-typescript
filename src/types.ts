@@ -245,6 +245,15 @@ export interface CommitmentRef {
   commitmentHash: string;
 }
 
+/**
+ * `macp.modes.multi_round.v1.ContributePayload`. `value` is opaque, compared
+ * for equality only; an empty one encodes to zero bytes, which the runtime
+ * rejects.
+ */
+export interface ContributePayload {
+  value: string;
+}
+
 export interface CommitmentPayload {
   commitmentId: string;
   action: string;

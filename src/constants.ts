@@ -10,6 +10,10 @@ export const MODE_TASK = 'macp.mode.task.v1';
 export const MODE_HANDOFF = 'macp.mode.handoff.v1';
 export const MODE_QUORUM = 'macp.mode.quorum.v1';
 export const MODE_MULTI_ROUND = 'ext.multi_round.v1';
+/** The only `mode_version` the runtime accepts for {@link MODE_MULTI_ROUND} (spec #241). */
+export const MULTI_ROUND_MODE_VERSION = '1.0.0';
+/** The conventional multi_round Commitment action; it matches no outcome suffix. */
+export const MULTI_ROUND_CONVERGED_ACTION = 'multi_round.converged';
 
 /**
  * The five first-class coordination modes. Parity with

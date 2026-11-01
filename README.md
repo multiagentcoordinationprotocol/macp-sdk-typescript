@@ -229,6 +229,23 @@ session.projection.remainingVotesNeeded('r1'); // 0
 session.projection.votedSenders('r1'); // ['alice', 'bob']
 ```
 
+### Multi-Round Mode (`ext.multi_round.v1`)
+
+Iterative convergence: participants contribute until every latest value is equal, then the initiator commits.
+
+```typescript
+import { Auth, MultiRoundSession } from 'macp-sdk-typescript';
+
+const session = new MultiRoundSession(client);
+await session.start({ intent: '...', participants: ['alice', 'bob'], ttlMs: 60_000 });
+await session.contribute({ value: 'option_a', sender: 'alice', auth: Auth.devAgent('alice') });
+await session.contribute({ value: 'option_a', sender: 'bob', auth: Auth.devAgent('bob') });
+session.projection.converged; // true
+await session.commit({ authorityScope: 'ops', reason: 'converged' }); // action 'multi_round.converged'
+```
+
+See [docs/modes/multi-round.md](docs/modes/multi-round.md).
+
 ## Agent Framework
 
 The `agent` module provides event-driven abstractions for building MACP participants.

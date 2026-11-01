@@ -32,6 +32,7 @@ The MACP TypeScript SDK connects TypeScript/Node.js applications to the [Multi-A
 - [Task Mode](modes/task.md) — Bounded task delegation
 - [Handoff Mode](modes/handoff.md) — Responsibility transfer
 - [Quorum Mode](modes/quorum.md) — Threshold-based approval voting
+- [Multi-Round Mode](modes/multi-round.md) — Iterative convergence (`ext.multi_round.v1`)
 
 ### API Reference
 

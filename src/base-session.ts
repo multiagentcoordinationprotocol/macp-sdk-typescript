@@ -11,7 +11,7 @@ import {
 import { logger } from './logging';
 import type { BaseProjection } from './projections/base';
 import { validateSessionId, validateSessionStart } from './validation';
-import type { Ack, Envelope, Root, SessionMetadata } from './types';
+import type { Ack, CommitmentRef, Envelope, Root, SessionMetadata } from './types';
 
 export interface BaseSessionOptions {
   sessionId?: string;
@@ -130,6 +130,8 @@ export abstract class BaseSession<P extends BaseProjection> {
     reason: string;
     commitmentId?: string;
     outcomePositive?: boolean;
+    /** Cross-session supersession (RFC-MACP-0001 §7.3); see `buildCommitmentPayload`. */
+    supersedes?: CommitmentRef;
     sender?: string;
     auth?: AuthConfig;
   }): Promise<Ack> {
@@ -139,6 +141,7 @@ export abstract class BaseSession<P extends BaseProjection> {
       reason: input.reason,
       commitmentId: input.commitmentId,
       outcomePositive: input.outcomePositive,
+      supersedes: input.supersedes,
       modeVersion: this.modeVersion,
       configurationVersion: this.configurationVersion,
       policyVersion: this.policyVersion,
