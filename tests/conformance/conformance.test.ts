@@ -34,7 +34,8 @@ import {
   STREAM_LAGGED,
   AGENT_NOT_FOUND,
 } from '../../src/constants';
-import { BaseProjection, type ProjectionAnomaly } from '../../src/projections/base';
+import type { ProjectionAnomaly } from '../../src/projections/base';
+import { MultiRoundProjection } from '../../src/projections/multi-round';
 import { DecisionProjection } from '../../src/projections/decision';
 import { ProposalProjection, type ProposalRecord } from '../../src/projections/proposal';
 import { TaskProjection } from '../../src/projections/task';
@@ -116,29 +117,19 @@ type ProjectionLike = {
   anomalies?: readonly ProjectionAnomaly[];
 };
 
-/**
- * Replay projection for the `ext.multi_round.v1` extension mode. The mode has
- * no first-class projection class; fixtures assert only transcript length,
- * commitment presence, and resolution scalars — all handled generically by
- * {@link BaseProjection} — so a transcript-only subclass gives the multi_round
- * fixtures real assertions instead of a silent skip.
- */
-class MultiRoundReplayProjection extends BaseProjection {
-  protected readonly mode = MODE_MULTI_ROUND;
-
-  protected applyMode(): void {
-    // Transcript-only: the fixtures carry no expected_mode_state for
-    // multi_round, so there is no per-message state to track.
-  }
-}
-
-const MODE_PROJECTIONS: Record<string, () => ProjectionLike> = {
+// The harness never replays a SessionStart, so a projection that needs the
+// declared participants (multi_round's convergence) is seeded from the fixture.
+const MODE_PROJECTIONS: Record<string, (fixture: Fixture) => ProjectionLike> = {
   [MODE_DECISION]: () => new DecisionProjection() as unknown as ProjectionLike,
   [MODE_PROPOSAL]: () => new ProposalProjection() as unknown as ProjectionLike,
   [MODE_TASK]: () => new TaskProjection() as unknown as ProjectionLike,
   [MODE_HANDOFF]: () => new HandoffProjection() as unknown as ProjectionLike,
   [MODE_QUORUM]: () => new QuorumProjection() as unknown as ProjectionLike,
-  [MODE_MULTI_ROUND]: () => new MultiRoundReplayProjection() as unknown as ProjectionLike,
+  [MODE_MULTI_ROUND]: (fixture) =>
+    new MultiRoundProjection({
+      participants: fixture.participants,
+      initiator: fixture.initiator,
+    }) as unknown as ProjectionLike,
 };
 
 // Canonical NACK codes the runtime can emit (src/constants.ts, parity with
@@ -459,7 +450,7 @@ function replaySteps(fixture: Fixture, fixtureName: string): ReplayStep[] {
 function replayAndCheck(fixture: Fixture, fixtureName: string): ProjectionLike {
   const projectionFactory = MODE_PROJECTIONS[fixture.mode];
   expect(projectionFactory, `no projection registered for mode '${fixture.mode}'`).toBeDefined();
-  const projection = projectionFactory();
+  const projection = projectionFactory(fixture);
   const onAcceptanceClock = validateMessageClock(fixture, fixtureName);
   const steps = replaySteps(fixture, fixtureName);
 
@@ -918,4 +909,25 @@ describe('conformance: reject-path fixtures', () => {
       // and asserts each expected_error_code there.
     });
   }
+});
+
+// The multi_round fixtures carry no expected_mode_state, so the convergence
+// the real projection computes over each fixture's accepted Contributes is
+// pinned here, against the runtime semantics (spec #241): a first or changed
+// value advances the round, and all_equal over the declared participants
+// converges.
+describe('conformance: multi_round convergence', () => {
+  it.each([
+    ['multi_round_happy_path', { round: 3, converged: true, convergedValue: 'option_a', phase: 'Committed' }],
+    ['multi_round_reject_paths', { round: 2, converged: true, convergedValue: 'option_a', phase: 'Converged' }],
+  ])('%s', (name, expected) => {
+    const fixture: Fixture = JSON.parse(fs.readFileSync(path.join(FIXTURE_DIR, `${name}.json`), 'utf8'));
+    const projection = replayAndCheck(fixture, name) as unknown as MultiRoundProjection;
+    expect({
+      round: projection.round,
+      converged: projection.converged,
+      convergedValue: projection.convergedValue,
+      phase: projection.phase,
+    }).toEqual(expected);
+  });
 });

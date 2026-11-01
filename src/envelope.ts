@@ -5,6 +5,7 @@ import { validateCommitmentHash } from './validation';
 import type {
   CommitmentPayload,
   CommitmentRef,
+  ContributePayload,
   Envelope,
   ProgressPayload,
   Root,
@@ -143,6 +144,17 @@ export function buildCommitmentPayload(input: {
     payload.supersedes = input.supersedes;
   }
   return payload;
+}
+
+/**
+ * Build a `ContributePayload` for the `ext.multi_round.v1` mode, encoded as
+ * canonical protobuf on the wire. Parity with python-sdk
+ * `build_contribute_payload`. Not validated here: `value: ''` encodes to zero
+ * bytes, indistinguishable from an absent payload, which the runtime rejects
+ * (`MultiRoundSession.contribute` refuses it before sending).
+ */
+export function buildContributePayload(value: string): ContributePayload {
+  return { value };
 }
 
 export function buildRoot(uri: string, name = ''): Root {

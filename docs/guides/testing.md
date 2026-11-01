@@ -373,9 +373,10 @@ and
 
 Harness behaviours worth knowing:
 
-- **`ext.multi_round.v1` fixtures replay too.** The extension mode has no
-  mode-specific projection, so its fixtures run through a transcript-only
-  `BaseProjection` subclass — they are no longer silently skipped.
+- **`ext.multi_round.v1` fixtures replay through `MultiRoundProjection`.**
+  The harness never replays a SessionStart, so the projection is seeded with
+  the fixture's `participants` and `initiator`; a separate test pins each
+  fixture's round count and convergence.
 - **Unmapped modes fail loudly.** A newly synced fixture whose `mode` has no
   projection mapping fails the suite instead of being skipped, so fixture
   drift is caught at sync time.

@@ -78,6 +78,7 @@ export * from './proposal';
 export * from './proto-registry';
 export * from './retry';
 export * from './quorum';
+export * from './multi-round';
 // RFC-MACP-0013 Appendix A decision receipts. Also published as the
 // browser-safe `macp-sdk-typescript/receipt` subpath (no gRPC, no node:crypto).
 export {

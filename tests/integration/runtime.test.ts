@@ -28,6 +28,7 @@ import {
   TaskSession,
   HandoffSession,
   QuorumSession,
+  MultiRoundSession,
   SessionLifecycleWatcher,
   SignalWatcher,
   buildDecisionPolicy,
@@ -842,6 +843,58 @@ describe('Quorum mode — happy path', () => {
     expect(session.projection.isCommitted).toBe(true);
     expect(session.projection.hasQuorum('q1')).toBe(true);
     expect(session.projection.approvalCount('q1')).toBeGreaterThanOrEqual(1);
+  });
+});
+
+// ── ext.multi_round.v1 — the spec #241 example ──────────────────────
+
+describe('multi_round — converge, then the initiator commits', () => {
+  const agentCoordinator = Auth.devAgent('coordinator');
+  const coordinatorClient = makeClient(agentCoordinator);
+  let session: MultiRoundSession;
+
+  beforeAll(async () => {
+    await coordinatorClient.initialize();
+  });
+
+  afterAll(() => {
+    coordinatorClient.close();
+  });
+
+  it('refuses a commit before convergence (INVALID_ENVELOPE)', async () => {
+    session = new MultiRoundSession(coordinatorClient, { auth: agentCoordinator, configurationVersion: 'cfg-1' });
+    const start = await session.start({
+      intent: 'Converge on one option',
+      participants: ['alice', 'bob'],
+      ttlMs: 30_000,
+    });
+    expect(start.ok).toBe(true);
+    const early = session.commit({ authorityScope: 'rollout', reason: 'too early' });
+    await expect(early).rejects.toBeInstanceOf(MacpAckError);
+    await expect(early).rejects.toMatchObject({ failure: { code: 'INVALID_ENVELOPE' } });
+    expect(session.projection.isCommitted).toBe(false);
+  });
+
+  it('alice A, bob B, bob A converges in three rounds', async () => {
+    await session.contribute({ value: 'option_a', sender: 'alice', auth: agentAlice });
+    await session.contribute({ value: 'option_b', sender: 'bob', auth: agentBob });
+    expect(session.projection.converged).toBe(false);
+    await session.contribute({ value: 'option_a', sender: 'bob', auth: agentBob });
+    expect([session.projection.round, session.projection.converged, session.projection.convergedValue]).toEqual([
+      3,
+      true,
+      'option_a',
+    ]);
+    const { metadata } = await session.metadata();
+    expect(metadata.state).toBe('SESSION_STATE_OPEN'); // convergence does not resolve
+  });
+
+  it('the initiator commits and the session resolves', async () => {
+    const ack = await session.commit({ authorityScope: 'rollout', reason: 'All participants converged' });
+    expect(ack.ok).toBe(true);
+    expect(session.projection.phase).toBe('Committed');
+    const { metadata } = await session.metadata();
+    expect(metadata.state).toBe('SESSION_STATE_RESOLVED');
   });
 });
 
