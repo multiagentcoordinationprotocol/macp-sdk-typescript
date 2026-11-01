@@ -114,7 +114,8 @@ export type MacpA2aErrorLayer = 'a2a' | 'macp' | 'codec';
 
 /**
  * A refused A2A object. `layer` `a2a`: reject the request (JSON-RPC -32602,
- * §11.3). `macp`: answer in band with an Ack carrying `code`
+ * or ContentTypeNotSupportedError for an Envelope Part whose mediaType has
+ * parameters, §11.3). `macp`: answer in band with an Ack carrying `code`
  * (`INVALID_ENVELOPE`, `PAYLOAD_TOO_LARGE`). `codec`: local to this codec
  * (`NOT_A_MACP_MESSAGE`, `INVALID_ACK`, `INVALID_SEQUENCE`,
  * `INVALID_SESSION_STATE`).
@@ -187,15 +188,27 @@ export function envelopeToA2aPart(envelope: CanonicalEnvelope, options: A2aEncod
 
 /**
  * The Envelope in an Envelope Part. A Part of another mediaType is
- * `codec`/`NOT_A_MACP_MESSAGE`; a malformed Envelope, or an arm that doesn't
+ * `codec`/`NOT_A_MACP_MESSAGE`. `mediaType` is compared as RFC-MACP-0014
+ * §5.1 says (ASCII case-insensitive, so a case variant decodes); one that
+ * carries parameters is `a2a`/`INVALID_REQUEST` (ContentTypeNotSupportedError),
+ * before decoding. A malformed Envelope, or an arm that doesn't
  * match the mediaType, is `macp`/`INVALID_ENVELOPE`; a payload over
  * `maxPayloadBytes` is `macp`/`PAYLOAD_TOO_LARGE`.
  */
 export function envelopeFromA2aPart(part: A2aPart, options: A2aDecodeOptions = {}): CanonicalEnvelope {
   const limit = maxPayloadBytes(options);
-  if (!isEnvelopePart(part)) throw new MacpA2aError('codec', 'NOT_A_MACP_MESSAGE', 'not an Envelope Part');
+  const found = envelopeMediaType(part);
+  if (!found) throw new MacpA2aError('codec', 'NOT_A_MACP_MESSAGE', 'not an Envelope Part');
+  if (found.hasParameters) {
+    // ContentTypeNotSupportedError (§11.3), before decoding: never INVALID_ENVELOPE.
+    throw new MacpA2aError(
+      'a2a',
+      'INVALID_REQUEST',
+      'an Envelope Part mediaType with parameters (RFC-MACP-0014 §5.1): ContentTypeNotSupportedError',
+    );
+  }
   let envelope: CanonicalEnvelope;
-  if (part.mediaType === MEDIA_TYPE_ENVELOPE_JSON) {
+  if (found.mediaType === MEDIA_TYPE_ENVELOPE_JSON) {
     if (!isObject(part.data)) throw invalidEnvelope(`a ${MEDIA_TYPE_ENVELOPE_JSON} Part carries no data object`);
     const data = part.data;
     checkB64PayloadSize(data, limit);
@@ -232,7 +245,8 @@ export function envelopeToA2aMessage(envelope: CanonicalEnvelope, options: A2aMe
 
 /**
  * The Envelope in a Message. Parts of other mediaTypes are ignored; two
- * Envelope Parts are `a2a`/`INVALID_REQUEST`, none is
+ * Envelope Parts (compared as §5.1 says, whatever their parameters) are
+ * `a2a`/`INVALID_REQUEST`, none is
  * `codec`/`NOT_A_MACP_MESSAGE`, and a `taskId` naming another session is
  * `macp`/`INVALID_ENVELOPE` (§6.1). A `taskId` on a SessionStart or Signal is
  * the server's to judge from its Task state (§11.3) and isn't checked here.
@@ -425,15 +439,34 @@ function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function isEnvelopePart(part: unknown): part is A2aPart {
-  return (
-    isObject(part) && (part.mediaType === MEDIA_TYPE_ENVELOPE_JSON || part.mediaType === MEDIA_TYPE_ENVELOPE_PROTO)
-  );
+interface EnvelopeMediaType {
+  mediaType: typeof MEDIA_TYPE_ENVELOPE_JSON | typeof MEDIA_TYPE_ENVELOPE_PROTO;
+  hasParameters: boolean;
+}
+
+/**
+ * The §5.1 media type comparison (RFC-MACP-0014 1.1.2-draft): the Envelope
+ * media type a Part's `mediaType` names, or `undefined` when it isn't an
+ * Envelope Part. Type and subtype compare ASCII case-insensitively, as RFC
+ * 9110 §8.3.1 does, ignoring spaces and tabs around them and before a `;`;
+ * never with Unicode case folding, so a non-ASCII lookalike is not an
+ * Envelope Part. A `;` after the subtype marks parameters, even with nothing
+ * after it.
+ */
+function envelopeMediaType(part: unknown): EnvelopeMediaType | undefined {
+  if (!isObject(part) || typeof part.mediaType !== 'string') return undefined;
+  const semicolon = part.mediaType.indexOf(';');
+  const head = (semicolon === -1 ? part.mediaType : part.mediaType.slice(0, semicolon)).replace(/^[ \t]+|[ \t]+$/g, '');
+  if (!/^[\x00-\x7f]*$/.test(head)) return undefined;
+  const base = head.replace(/[A-Z]/g, (c) => c.toLowerCase());
+  if (base !== MEDIA_TYPE_ENVELOPE_JSON && base !== MEDIA_TYPE_ENVELOPE_PROTO) return undefined;
+  return { mediaType: base, hasParameters: semicolon !== -1 };
 }
 
 function singleEnvelopePart(parts: unknown): A2aPart {
   if (!Array.isArray(parts)) throw new MacpA2aError('codec', 'NOT_A_MACP_MESSAGE', 'no parts');
-  const found = parts.filter(isEnvelopePart);
+  // Every Envelope Part counts, parameters or not (§5.1), before any parameter check.
+  const found = parts.filter((part): part is A2aPart => envelopeMediaType(part) !== undefined);
   if (found.length > 1) {
     throw new MacpA2aError('a2a', 'INVALID_REQUEST', 'two or more Envelope Parts (RFC-MACP-0014 §5.1, §11.3)');
   }

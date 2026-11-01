@@ -19,7 +19,7 @@ import { envelopeToA2aMessage, ackFromA2aMessage } from 'macp-sdk-typescript/a2a
 ```
 
 The same functions exist in macp-sdk-python's `macp_sdk.a2a`, in snake_case (`envelope_to_a2a_message`),
-and both SDKs pass the spec's 101 codec vectors.
+and both SDKs pass the spec's 106 codec vectors.
 
 ```mermaid
 sequenceDiagram
@@ -135,6 +135,7 @@ is a `TypeError`.
 | `layer` | `code` | When | How a server answers |
 |---|---|---|---|
 | `a2a` | `INVALID_REQUEST` | A Message with two or more Envelope Parts | Rejects the request: JSON-RPC -32602 (§11.3) |
+| `a2a` | `INVALID_REQUEST` | An Envelope Part whose `mediaType` carries parameters (`; charset=utf-8`) | Rejects the request: `ContentTypeNotSupportedError` (§5.1, §11.3) |
 | `macp` | `INVALID_ENVELOPE` | The Envelope doesn't decode, the arm doesn't match the mediaType, the payload form is wrong, or `taskId` names another session | In band, in an Ack (§11.2) |
 | `macp` | `PAYLOAD_TOO_LARGE` | The decoded payload exceeds `maxPayloadBytes` | In band, in an Ack (§5.4) |
 | `codec` | `NOT_A_MACP_MESSAGE` | No Envelope Part, or no Ack Part | — |
@@ -144,6 +145,22 @@ is a `TypeError`.
 
 The `codec` codes are local to the SDKs; RFC-MACP-0014 gives them no wire code. Parts of other media
 types are ignored, so a Message may carry a text Part beside its Envelope.
+
+A Part's `mediaType` is compared as RFC-MACP-0014 1.1.2-draft §5.1 says:
+
+- The type and subtype compare ASCII case-insensitively, so `Application/MACP-Envelope+JSON` is an
+  Envelope Part and decodes. Spaces and tabs around them are ignored.
+- There is no Unicode case folding: a `mediaType` with a non-ASCII character in its type or subtype
+  is never an Envelope Part, and is ignored like any other Part.
+- Every Envelope Part counts toward the one-Envelope check first, whatever its case or parameters.
+  An exact Part beside a case variant or a parameter-bearing one is two Envelope Parts.
+- A lone Envelope Part with parameters is refused before its content is read, never as
+  `INVALID_ENVELOPE`.
+
+The error message says which A2A error applies; `layer` and `code` are the same for both rows.
+The codec doesn't check that the extension is activated (§4); that's the server's job. Without
+activation the server answers `ExtensionSupportRequiredError` before it looks at parameters.
+Encoders always write the exact lowercase type with no parameters.
 
 `maxPayloadBytes` (default 1048576, the runtime's `MACP_MAX_PAYLOAD_BYTES`) bounds the decoded payload
 bytes, not the base64 text or the whole Envelope. A JSON `payload` is measured after its Protobuf
