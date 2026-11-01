@@ -251,7 +251,7 @@ describe('MultiRoundSession', () => {
     vi.spyOn(client, 'send').mockResolvedValue({ ok: true });
     const session = new MultiRoundSession(client);
     await session.start({ intent: 'x', participants: ['alice'], ttlMs: 60_000 });
-    expect(session.projection.initiator).toBe('');
+    expect(session.projection.initiator).toBeUndefined();
     await expect(session.commit({ authorityScope: 's', reason: 'r', sender: 'coordinator' })).resolves.toEqual({
       ok: true,
     });

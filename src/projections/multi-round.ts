@@ -1,5 +1,6 @@
 import { MODE_MULTI_ROUND } from '../constants';
 import { logger } from '../logging';
+import { parseContributeValue } from '../multi-round-contribute';
 import { BaseProjection } from './base';
 import type { Envelope } from '../types';
 import type { ProtoRegistry } from '../proto-registry';
@@ -39,10 +40,15 @@ export interface MultiRoundProjectionOptions {
  * the accepted SessionStart or from the constructor options. A later
  * SessionStart overwrites both seeded values.
  *
- * One limitation: the payload decode always applies the JSON/protobuf
- * tie-break. A session the runtime recorded before `semantics_rev` 3 read
- * some legacy-JSON-looking protobuf values (byte lengths such as 13, 32 and
- * 123) as JSON, and the projection can't see `semantics_rev`.
+ * A `Contribute` value is read exactly as macp-runtime's
+ * `parse_contribute_value` reads it at `semantics_rev` 3: legacy JSON
+ * (serde's `{"value": <string>}`) unless the bytes are also canonical
+ * protobuf, otherwise protobuf. Bytes that are a value only to a lenient
+ * decoder count as nothing, so hostile payloads project what the runtime
+ * stored. One limitation: a session the runtime recorded before
+ * `semantics_rev` 3 read some legacy-JSON-looking protobuf values (byte
+ * lengths such as 13, 32 and 123) as JSON, and the projection can't see
+ * `semantics_rev`.
  */
 export class MultiRoundProjection extends BaseProjection {
   protected readonly mode = MODE_MULTI_ROUND;
@@ -75,30 +81,28 @@ export class MultiRoundProjection extends BaseProjection {
           participants?: string[];
         };
         this.participants = [...(payload.participants ?? [])];
-        this.initiator = envelope.sender;
+        // An empty sender (bearer auth with no sender hint) is filled in only on
+        // the runtime's copy, so it doesn't overwrite a known initiator.
+        this.initiator = envelope.sender || this.initiator;
         if (!this.converged) this.setPhase('Contributing');
         break;
       }
       case 'Contribute':
-        this.applyContribute(envelope, protoRegistry);
+        this.applyContribute(envelope);
         break;
       default:
         break;
     }
   }
 
-  private applyContribute(envelope: Envelope, protoRegistry: ProtoRegistry): void {
+  private applyContribute(envelope: Envelope): void {
     if (this.converged) return ignored(envelope, 'session already converged');
     if (this.participants.length > 0 && !this.participants.includes(envelope.sender)) {
       return ignored(envelope, 'sender is not a declared participant');
     }
-    let value: unknown;
-    try {
-      value = protoRegistry.decodeKnownPayload(envelope.mode, envelope.messageType, envelope.payload)?.value;
-    } catch {
-      return ignored(envelope, 'payload does not decode');
-    }
-    if (typeof value !== 'string' || value === '') return ignored(envelope, 'payload has no value');
+    // The runtime's own reading of the bytes, not ProtoRegistry's more lenient one.
+    const value = parseContributeValue(envelope.payload);
+    if (value === undefined || value === '') return ignored(envelope, 'payload has no value the runtime would store');
 
     if (this.contributions.get(envelope.sender) !== value) {
       this.round += 1;

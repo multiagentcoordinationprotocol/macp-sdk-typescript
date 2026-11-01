@@ -195,6 +195,12 @@ describe('MultiRoundProjection seeded without a SessionStart', () => {
     expect([p.round, p.converged, p.contributions.size]).toEqual([2, false, 2]);
   });
 
+  it('a SessionStart with an empty sender keeps a known initiator', () => {
+    const p = new MultiRoundProjection({ initiator: 'agent://coordinator' });
+    p.applyEnvelope(start(PARTICIPANTS, ''), registry);
+    expect([p.participants, p.initiator]).toEqual([PARTICIPANTS, 'agent://coordinator']);
+  });
+
   it('a later SessionStart overwrites the seed', () => {
     const p = new MultiRoundProjection({ participants: ['agent://x'], initiator: 'agent://y' });
     p.applyEnvelope(start(PARTICIPANTS, 'agent://coordinator'), registry);
