@@ -181,7 +181,7 @@ most often:
 | `INVALID_REQUEST` | Malformed control-plane request (runtime ≥ 0.9.0) |
 | `STREAM_LAGGED` | Stream/watch subscriber fell behind — resubscribe with `afterSequence` (runtime ≥ 0.9.0) |
 | `AGENT_NOT_FOUND` | `getManifest` for an agent this runtime doesn't host (runtime ≥ 0.9.0) |
-| `HISTORY_UNAVAILABLE` | `whatIfReplay` on a session whose history was compacted. Permanent: don't retry |
+| `HISTORY_UNAVAILABLE` | `whatIfReplay` on a session whose history was compacted, or a stream subscribe below the compacted base (runtime ≥ 0.12.0). Permanent: don't retry |
 | `RECEIPT_UNAVAILABLE` | `getDecisionReceipt` for a session the runtime can't issue a receipt for. Retry only if the session wasn't resolved yet; a session that resolved without a `CommitmentPayload` never gets one |
 
 The canonical, complete code list lives in the spec's

@@ -512,10 +512,13 @@ Redelivery); the agent framework's `GrpcTransportAdapter` exposes this as its
 `lastSequence` getter, computed exactly this way.
 Ordinals are **stable across log compaction and runtime restart**, and envelopes
 accepted during the subscribe window are never delivered twice. Resuming **below
-a compacted base** is refused rather than silently skipping history: on runtime
-≥ 0.9.0 as an inline `INVALID_ENVELOPE` error frame (see `onInlineError`) with
-the stream left open; on 0.5.0–0.8.x by ending the stream with
-`FAILED_PRECONDITION` (inspect via `MacpTransportError.code`).
+a compacted base** is refused rather than silently skipping history. On runtime
+≥ 0.12.0 the stream ends with `FAILED_PRECONDITION` and a `MacpTransportError`
+whose `macpErrorCode` is `HISTORY_UNAVAILABLE` (macp-runtime#269); the
+runtime's details carry `lowest_available_sequence`. On 0.9.x–0.11.x the refusal
+was an inline `INVALID_ENVELOPE` error frame (see `onInlineError`) with the stream
+left open. On 0.5.0–0.8.x it ended the stream with an uncoded
+`FAILED_PRECONDITION` (`MacpTransportError.code`).
 
 Rejects with `MacpSdkError` if the stream has already been closed. The agent
 framework's `GrpcTransportAdapter` calls this automatically after opening the
