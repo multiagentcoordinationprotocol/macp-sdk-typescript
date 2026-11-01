@@ -23,6 +23,19 @@ updates:
       # do that bump) once typescript-eslint widens the peer range.
       - dependency-name: 'typescript'
         update-types: ['version-update:semver-major']
+      # @noble/curves and @noble/hashes 2.x are ESM-only with `.js` subpaths.
+      # This SDK publishes CommonJS, so dist/ would require() ESM, which works
+      # only on Node >= 20.19 / 22.12, while `engines` promises >= 20. Taking
+      # them is a consumer-support decision (or an ESM build), not a routine
+      # bump. PR #221 was closed for this.
+      - dependency-name: '@noble/*'
+        update-types: ['version-update:semver-major']
+      # Dev pin only (the optional peer range is `>=1.3.0 <2`). The newest
+      # @opentelemetry/sdk-trace-base (2.12.0) still peers `api <1.10.0`, so
+      # api 1.10 fails `npm ci` with ERESOLVE (PR #220). Drop this once
+      # sdk-trace-base widens its peer range.
+      - dependency-name: '@opentelemetry/api'
+        versions: ['>=1.10.0']
 
   - package-ecosystem: github-actions
     directory: /
