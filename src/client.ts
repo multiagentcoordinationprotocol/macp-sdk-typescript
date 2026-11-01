@@ -117,14 +117,6 @@ export function grpcStatusName(code: unknown): string | undefined {
   return typeof name === 'string' ? name : undefined;
 }
 
-/**
- * Per-RPC opt-in: maps a gRPC status *name* (e.g. `'FAILED_PRECONDITION'`) to
- * a MACP Ack error code. When {@link MacpClient}'s private `unary()` is given
- * one of these for a call, a matching gRPC failure is raised as
- * {@link MacpAckError} instead of {@link MacpTransportError} — the same gRPC
- * status means different things on different RPCs (issue #107), so this is
- * scoped per call site rather than applied globally.
- */
 /** Per-call options for the read RPCs (`initialize`, `getManifest`, `listModes`, `listExtModes`, `listRoots`). */
 export interface ReadOptions {
   /** Overrides the client's credential for this call only. */
@@ -140,6 +132,14 @@ function streamCallOptions(deadlineMs: number): grpc.CallOptions {
   return { deadline: new Date(Date.now() + deadlineMs) };
 }
 
+/**
+ * Per-RPC opt-in: maps a gRPC status *name* (e.g. `'FAILED_PRECONDITION'`) to
+ * a MACP Ack error code. When {@link MacpClient}'s private `unary()` is given
+ * one of these for a call, a matching gRPC failure is raised as
+ * {@link MacpAckError} instead of {@link MacpTransportError} — the same gRPC
+ * status means different things on different RPCs (issue #107), so this is
+ * scoped per call site rather than applied globally.
+ */
 type AckStatusMap = Partial<Record<string, string>>;
 
 /**
