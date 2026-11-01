@@ -253,6 +253,33 @@ describe('payload form selection (§10.12)', () => {
     expect(envelopeFromCanonicalJson(out).payload).toEqual(bytes);
   });
 
+  it("payloadEncoding 'b64' forces payload_b64 for Core and standard-mode payloads, keeping exact bytes", () => {
+    const vote = envelope();
+    // a Commitment with an unknown field: 'auto' would drop it, 'b64' keeps it
+    const commitment = envelope({
+      messageType: 'Commitment',
+      payload: new Uint8Array([0x0a, 0x01, 0x63, 0xf8, 0x07, 0x01]),
+    });
+    for (const env of [vote, commitment, envelope({ mode: '', messageType: 'Signal', payload: coreBytes })]) {
+      const out = envelopeToCanonicalJson(env, { payloadEncoding: 'b64' });
+      expect(out).not.toHaveProperty('payload');
+      expect(envelopeFromCanonicalJson(out).payload).toEqual(env.payload);
+    }
+    expect(envelopeToCanonicalJson(vote, { payloadEncoding: 'auto' })).toEqual(envelopeToCanonicalJson(vote));
+    expect(envelopeToCanonicalJson(vote, {})).toHaveProperty('payload');
+  });
+
+  it("payloadEncoding 'b64' emits even undecodable known bytes", () => {
+    const bad = envelope({ payload: new Uint8Array([0x0a, 0x05, 0x61]) });
+    expect(envelopeToCanonicalJson(bad, { payloadEncoding: 'b64' }).payload_b64).toBe('CgVh');
+  });
+
+  it('refuses an unknown payloadEncoding', () => {
+    expect(() => envelopeToCanonicalJson(envelope(), { payloadEncoding: 'json' as unknown as 'auto' })).toThrow(
+      /payloadEncoding must be/,
+    );
+  });
+
   it('refuses a JSON payload with no known schema', () => {
     expectInvalid(
       () => envelopeFromCanonicalJson(json({ mode: 'ext.multi_round.v1', message_type: 'Contribute' })),

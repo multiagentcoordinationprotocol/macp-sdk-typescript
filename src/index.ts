@@ -15,6 +15,7 @@ export {
   envelopeFromCanonicalJson,
   envelopeToCanonicalJson,
   type CanonicalEnvelope,
+  type CanonicalJsonOptions,
 } from './canonical-json';
 // Commitment hash: export `commitmentHash`, `isCanonicalCommitmentHash`, and
 // the RFC-MACP-0013 §6.1 verifier `verifyCommitmentHash`.

@@ -17,8 +17,10 @@
  *
  * Exact bytes: re-encoding a JSON `payload` follows §10.13, but bytes the
  * encoder didn't produce (unknown fields, non-canonical order) do not survive
- * the trip through JSON. A caller that needs the exact bytes back must send
- * `payload_b64` (§10.13).
+ * the trip through JSON, and other Protobuf libraries need not produce the
+ * same bytes. A caller that needs the exact bytes back (to check a receipt's
+ * `commitment_wire_b64`, say) passes `payloadEncoding: 'b64'` (§10.13,
+ * RFC-MACP-0014 §5.3).
  */
 import { MacpSdkError } from './errors';
 import { MODE_DECISION, MODE_HANDOFF, MODE_PROPOSAL, MODE_QUORUM, MODE_TASK } from './constants';
@@ -56,6 +58,14 @@ export function setSchemaForTesting(schema: MacpSchema | undefined): void {
 
 /** An Envelope as the codec reads and returns it: the payload is plain bytes. */
 export type CanonicalEnvelope = Omit<Envelope, 'payload'> & { payload: Uint8Array };
+
+export interface CanonicalJsonOptions {
+  /**
+   * `'auto'` (default) follows §10.12; `'b64'` always emits `payload_b64`,
+   * Core and standard-mode payloads included, so the exact bytes survive.
+   */
+  payloadEncoding?: 'auto' | 'b64';
+}
 
 /** A malformed canonical JSON object, or bytes that can't be mapped to one. */
 export class CanonicalJsonError extends MacpSdkError {
@@ -129,11 +139,19 @@ function payloadTypeFor(mode: string, messageType: string): string | undefined {
 /**
  * The canonical JSON object for an Envelope: snake_case keys, `timestamp` as
  * an RFC 3339 UTC string, every string field present, and the payload as
- * `payload` or `payload_b64` (see the module comment). Throws
- * {@link CanonicalJsonError} when a `payload`-form payload doesn't parse as
- * its schema, or the timestamp is outside years 0001–9999.
+ * `payload` or `payload_b64` (see the module comment; `payloadEncoding:
+ * 'b64'` forces `payload_b64`). Throws {@link CanonicalJsonError} when a
+ * `payload`-form payload doesn't parse as its schema, or the timestamp is
+ * outside years 0001–9999.
  */
-export function envelopeToCanonicalJson(envelope: CanonicalEnvelope): Record<string, unknown> {
+export function envelopeToCanonicalJson(
+  envelope: CanonicalEnvelope,
+  options: CanonicalJsonOptions = {},
+): Record<string, unknown> {
+  const payloadEncoding = options.payloadEncoding ?? 'auto';
+  if (payloadEncoding !== 'auto' && payloadEncoding !== 'b64') {
+    throw new MacpSdkError(`payloadEncoding must be 'auto' or 'b64', not ${JSON.stringify(payloadEncoding)}`);
+  }
   const mode = envelope.mode ?? '';
   const messageType = envelope.messageType ?? '';
   const out: Record<string, unknown> = {
@@ -146,7 +164,7 @@ export function envelopeToCanonicalJson(envelope: CanonicalEnvelope): Record<str
     timestamp: formatTimestamp(parseInt64Text(String(envelope.timestampUnixMs ?? '0'), 'timestampUnixMs')),
   };
   const payload = envelope.payload ?? new Uint8Array();
-  const typeName = payloadTypeFor(mode, messageType);
+  const typeName = payloadEncoding === 'auto' ? payloadTypeFor(mode, messageType) : undefined;
   if (typeName) out.payload = messageToJson(typeName, payload, 'payload');
   else out.payload_b64 = encodeBase64(payload);
   return out;
