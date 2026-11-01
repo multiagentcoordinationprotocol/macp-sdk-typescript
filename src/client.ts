@@ -942,9 +942,16 @@ export class MacpClient {
     return metadata ? (this.client as any).WatchSessions({}, metadata) : (this.client as any).WatchSessions({});
   }
 
+  /**
+   * Subscribe to policy registry changes. Requires auth, like `ListPolicies`
+   * and `GetPolicy`: from runtime 0.12.0 a call with no credential gets
+   * `UNAUTHENTICATED` (macp-runtime#274), so a missing one fails here first,
+   * client-side, as {@link watchSignals} does.
+   */
   watchPolicies(auth?: AuthConfig): grpc.ClientReadableStream<any> {
-    const metadata = this.metadata(auth);
-    return metadata ? (this.client as any).WatchPolicies({}, metadata) : (this.client as any).WatchPolicies({});
+    const selected = this.requireAuth(auth);
+    const metadata = this.metadata(selected) as grpc.Metadata;
+    return (this.client as any).WatchPolicies({}, metadata);
   }
 
   openStream(options?: { auth?: AuthConfig }): MacpStream {
