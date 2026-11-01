@@ -4,6 +4,13 @@ All notable changes to `macp-sdk-typescript` are documented here. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the
 project uses [Semantic Versioning](https://semver.org/).
 
+## [0.23.0](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/compare/v0.22.0...v0.23.0) (2026-11-01)
+
+
+### Features
+
+* align session-helper and client options with macp-sdk-python ([#193](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/issues/193)) ([#238](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/issues/238)) ([f2c80da](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/commit/f2c80da53e9aea9a71c0c7632ac600923a62fad2))
+
 ## [0.22.0](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/compare/v0.21.0...v0.22.0) (2026-11-01)
 
 
