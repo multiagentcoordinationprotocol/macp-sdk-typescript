@@ -197,7 +197,14 @@ describe('interop with the official A2A 1.0 types (@a2a-js/sdk)', () => {
   it.each([
     ['a data Part, with contextId', envelopeToA2aMessage(vote(), { contextId: 'ctx-1' })],
     ['a raw Part', envelopeToA2aMessage(vote(), { encoding: 'proto' })],
-    ['a SessionStart (no taskId)', envelopeToA2aMessage(vote({ messageType: 'Signal', mode: '' }))],
+    [
+      'a SessionStart (no taskId)',
+      envelopeToA2aMessage({ ...vote({ messageType: 'SessionStart' }), payload: new Uint8Array() }),
+    ],
+    [
+      'a Signal (no taskId)',
+      envelopeToA2aMessage(vote({ messageType: 'Signal', mode: '', payload: new Uint8Array() })),
+    ],
     ['an accepted Ack', ackToA2aMessage({ ok: true, messageId: 'm-3', sessionId: 's-1' }, { taskId: 's-1' })],
     [
       'a rejected Ack',
@@ -344,8 +351,13 @@ describe('envelope Parts', () => {
     );
   });
 
-  it.each([-1, 1.5, Number.NaN, Number.POSITIVE_INFINITY])('refuses maxPayloadBytes %s', (limit) => {
-    const decode = () => envelopeFromA2aPart(envelopeToA2aPart(vote()), { maxPayloadBytes: limit });
+  it.each(['json', 'proto'] as const)('refuses to encode a %s Envelope dated after year 9999', (encoding) => {
+    const error = a2aError(() => envelopeToA2aPart(vote({ timestampUnixMs: '253402300800000' }), { encoding }));
+    expect([error.layer, error.code]).toEqual(['macp', 'INVALID_ENVELOPE']);
+  });
+
+  it.each([-1, 1.5, Number.NaN, Number.POSITIVE_INFINITY, null, '5'])('refuses maxPayloadBytes %s', (limit) => {
+    const decode = () => envelopeFromA2aPart(envelopeToA2aPart(vote()), { maxPayloadBytes: limit as number });
     expect(decode).toThrow(RangeError);
     expect(decode).toThrow(/maxPayloadBytes must be a non-negative integer/);
   });
@@ -375,7 +387,7 @@ describe('envelope Parts', () => {
 });
 
 describe('Messages', () => {
-  it('names the session as taskId except on SessionStart and Signal, and generates nothing', () => {
+  it('names the session as taskId except on SessionStart and Signal', () => {
     const message = envelopeToA2aMessage(vote());
     expect(message).toStrictEqual({
       messageId: 'm-3',
@@ -386,6 +398,8 @@ describe('Messages', () => {
     });
     expect(envelopeToA2aMessage(vote({ messageType: 'Signal', mode: '' })).taskId).toBeUndefined();
     expect(envelopeToA2aMessage(vote(), { messageId: 'retry-1' }).messageId).toBe('retry-1');
+    // an Envelope with no message_id still gets a non-empty A2A messageId
+    expect(envelopeToA2aMessage(vote({ messageId: '' })).messageId).toMatch(/^[0-9a-f-]{36}$/);
   });
 
   it('decodes a SessionStart or Signal whatever its taskId (the server judges it)', () => {
@@ -411,6 +425,32 @@ describe('Acks', () => {
     expect(a).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
     expect(ackToA2aMessage(ok).messageId).not.toBe(a);
     expect(ackToA2aMessage(ok).taskId).toBeUndefined();
+  });
+
+  it.each([
+    [2, 'SESSION_STATE_RESOLVED'],
+    [7, 'SESSION_STATE_UNSPECIFIED'],
+    ['SESSION_STATE_BOGUS', 'SESSION_STATE_UNSPECIFIED'],
+    ['toString', 'SESSION_STATE_UNSPECIFIED'],
+  ])('writes session_state %s by name', (state, name) => {
+    const part = ackToA2aMessage({ ...ok, sessionState: state as never }).parts[0]!;
+    expect((part.data as Record<string, unknown>).session_state).toBe(name);
+  });
+
+  it('refuses a non-boolean ok with a TypeError', () => {
+    expect(() => ackToA2aMessage({ ...ok, ok: 'yes' as never })).toThrow(TypeError);
+  });
+
+  it('generates a UUID without crypto.randomUUID (a non-secure browser context)', () => {
+    const randomUUID = globalThis.crypto.randomUUID;
+    Object.defineProperty(globalThis.crypto, 'randomUUID', { value: undefined, configurable: true });
+    try {
+      expect(ackToA2aMessage(ok).messageId).toMatch(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+      );
+    } finally {
+      Object.defineProperty(globalThis.crypto, 'randomUUID', { value: randomUUID, configurable: true });
+    }
   });
 
   it('refuses to encode an Ack whose error does not match ok', () => {
@@ -488,6 +528,15 @@ describe('AgentExtension and ErrorInfo', () => {
       required: false,
       params: { macpVersions: ['1.0'], modes: ['macp.mode.decision.v1'], transport: 'macp.transport.a2a.v1' },
     });
+  });
+
+  it.each([
+    ['a bare string for macpVersions', { macpVersions: '1.0', modes: [] }],
+    ['a bare string for modes', { macpVersions: ['1.0'], modes: 'macp.mode.decision.v1' }],
+    ['a non-string mode', { macpVersions: ['1.0'], modes: [1] }],
+    ['a non-boolean required', { macpVersions: ['1.0'], modes: [], required: 'yes' }],
+  ])('refuses %s with a TypeError', (_name, options) => {
+    expect(() => macpAgentExtension(options as never)).toThrow(TypeError);
   });
 
   const info = (extra: Record<string, unknown> = {}) => ({

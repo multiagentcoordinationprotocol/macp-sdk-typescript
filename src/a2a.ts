@@ -170,10 +170,17 @@ export interface MacpAgentExtensionOptions {
 
 /** An Envelope as an A2A Part: canonical JSON in `data`, or Protobuf in `raw`. */
 export function envelopeToA2aPart(envelope: CanonicalEnvelope, options: A2aEncodeOptions = {}): A2aPart {
+  // Either form refuses what its decoder would (e.g. a timestamp outside
+  // years 0001-9999) as macp/INVALID_ENVELOPE.
   const encoding = options.encoding ?? 'json';
-  if (encoding === 'json') return { mediaType: MEDIA_TYPE_ENVELOPE_JSON, data: envelopeToCanonicalJson(envelope) };
+  if (encoding === 'json') {
+    return { mediaType: MEDIA_TYPE_ENVELOPE_JSON, data: asInvalidEnvelope(() => envelopeToCanonicalJson(envelope)) };
+  }
   if (encoding === 'proto') {
-    return { mediaType: MEDIA_TYPE_ENVELOPE_PROTO, raw: encodeBase64(envelopeToProtobuf(envelope)) };
+    return {
+      mediaType: MEDIA_TYPE_ENVELOPE_PROTO,
+      raw: asInvalidEnvelope(() => encodeBase64(envelopeToProtobuf(envelope))),
+    };
   }
   throw new RangeError(`encoding must be 'json' or 'proto', not ${JSON.stringify(encoding)}`);
 }
@@ -212,7 +219,7 @@ export function envelopeFromA2aPart(part: A2aPart, options: A2aDecodeOptions = {
  */
 export function envelopeToA2aMessage(envelope: CanonicalEnvelope, options: A2aMessageOptions = {}): A2aMessage {
   const message: A2aMessage = {
-    messageId: options.messageId || (envelope.messageId ?? ''),
+    messageId: options.messageId || envelope.messageId || randomUuid(),
     role: 'ROLE_USER',
     parts: [envelopeToA2aPart(envelope, options)],
     extensions: [MACP_A2A_EXTENSION_URI],
@@ -244,9 +251,10 @@ export function envelopeFromA2aMessage(message: A2aMessage, options: A2aDecodeOp
 
 /** A ROLE_AGENT Message carrying the Ack as an `application/json` Part marked `kind: ack`. */
 export function ackToA2aMessage(ack: Ack, options: A2aAckMessageOptions = {}): A2aMessage {
-  checkAckShape(Boolean(ack.ok), ack.error != null);
+  if (ack.ok !== undefined && typeof ack.ok !== 'boolean') throw new TypeError('ack.ok must be a boolean');
+  checkAckShape(ack.ok === true, ack.error != null);
   const message: A2aMessage = {
-    messageId: options.messageId || globalThis.crypto.randomUUID(),
+    messageId: options.messageId || randomUuid(),
     role: 'ROLE_AGENT',
     extensions: [MACP_A2A_EXTENSION_URI],
     parts: [{ mediaType: 'application/json', data: ackToCanonicalJson(ack), metadata: { [KEY_KIND]: 'ack' } }],
@@ -367,9 +375,18 @@ export function sessionStateFromA2a(taskOrEvent: A2aTask | { metadata?: Record<s
 
 /** The AgentCard `capabilities.extensions` entry declaring MACP. */
 export function macpAgentExtension(options: MacpAgentExtensionOptions): A2aAgentExtension {
+  const strings = (value: unknown, name: string): string[] => {
+    if (!Array.isArray(value) || !value.every((v) => typeof v === 'string')) {
+      throw new TypeError(`${name} must be an array of strings`);
+    }
+    return [...value];
+  };
+  if (options.required !== undefined && typeof options.required !== 'boolean') {
+    throw new TypeError('required must be a boolean');
+  }
   const params: Record<string, unknown> = {
-    macpVersions: [...options.macpVersions],
-    modes: [...options.modes],
+    macpVersions: strings(options.macpVersions, 'macpVersions'),
+    modes: strings(options.modes, 'modes'),
     transport: TRANSPORT,
   };
   if (options.manifestUrl) params.manifestUrl = options.manifestUrl;
@@ -424,13 +441,25 @@ function singleEnvelopePart(parts: unknown): A2aPart {
   return found[0]!;
 }
 
+/**
+ * A random (v4) UUID. `crypto.getRandomValues` rather than
+ * `crypto.randomUUID`, which browsers expose only in secure contexts.
+ */
+function randomUuid(): string {
+  const bytes = globalThis.crypto.getRandomValues(new Uint8Array(16));
+  bytes[6] = (bytes[6]! & 0x0f) | 0x40;
+  bytes[8] = (bytes[8]! & 0x3f) | 0x80;
+  const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
 function expectedTaskId(envelope: CanonicalEnvelope): string {
   const type = envelope.messageType ?? '';
   return type === 'SessionStart' || type === 'Signal' ? '' : (envelope.sessionId ?? '');
 }
 
 function maxPayloadBytes(options: A2aDecodeOptions): number {
-  const limit = options.maxPayloadBytes ?? DEFAULT_MAX_PAYLOAD_BYTES;
+  const limit = options.maxPayloadBytes === undefined ? DEFAULT_MAX_PAYLOAD_BYTES : options.maxPayloadBytes;
   if (!Number.isSafeInteger(limit) || limit < 0) {
     throw new RangeError(`maxPayloadBytes must be a non-negative integer, not ${String(limit)}`);
   }

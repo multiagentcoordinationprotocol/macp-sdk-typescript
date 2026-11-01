@@ -125,7 +125,12 @@ metadata is an error. `SESSION_STATE_UNSPECIFIED` has no A2A form.
 
 ## Errors
 
-Every decoder throws `MacpA2aError`, a `MacpSdkError`, with `layer` and `code`:
+Every decoder throws `MacpA2aError`, a `MacpSdkError`, with `layer` and `code`. The encoders throw it
+too, as `macp`/`INVALID_ENVELOPE`, for an Envelope their decoder would refuse (a timestamp outside
+years 0001–9999, say), and `codec`/`INVALID_ACK` for an Ack whose `error` doesn't match `ok`. A bad
+argument (an unknown `encoding`, a `maxPayloadBytes` that isn't a non-negative integer) is a programming
+error, a `RangeError`; a wrongly typed one (`macpVersions` as a string, a non-boolean `ok` or `required`)
+is a `TypeError`.
 
 | `layer` | `code` | When | How a server answers |
 |---|---|---|---|
@@ -142,7 +147,8 @@ types are ignored, so a Message may carry a text Part beside its Envelope.
 
 `maxPayloadBytes` (default 1048576, the runtime's `MACP_MAX_PAYLOAD_BYTES`) bounds the decoded payload
 bytes, not the base64 text or the whole Envelope. A JSON `payload` is measured after its Protobuf
-conversion. An oversized `payload_b64` is refused before it is decoded.
+conversion. An oversized `payload_b64` is refused before it is decoded. A `raw` Part is decoded in full and then measured, so
+bound the size of the request body before it reaches the codec.
 
 A JSON-RPC error from the server, or the bare details array of the HTTP+JSON and gRPC bindings, carries
 the MACP code in a `google.rpc.ErrorInfo`:
@@ -155,6 +161,11 @@ if (info?.duplicate) {
 ```
 
 `duplicate` is true only for the string `"true"`, never the boolean.
+
+Pass the error's details, not the whole response: `response.error` for JSON-RPC, and the `details`
+array for HTTP+JSON (`body.error.details`) or gRPC. Given anything else — an HTTP+JSON error object,
+or the JSON-RPC response around `error` — it finds no ErrorInfo and returns `null`, which reads the same
+as "not a MACP error" and would hide a `duplicate`.
 
 ## Declaring the extension
 

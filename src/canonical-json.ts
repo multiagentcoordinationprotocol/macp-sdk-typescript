@@ -229,7 +229,7 @@ export function ackToCanonicalJson(ack: Ack): Record<string, unknown> {
     message_id: ack.messageId ?? '',
     session_id: ack.sessionId ?? '',
     accepted_at_unix_ms: int64ToJson(parseInt64Text(String(ack.acceptedAtUnixMs ?? '0'), 'acceptedAtUnixMs')),
-    session_state: ack.sessionState ?? 'SESSION_STATE_UNSPECIFIED',
+    session_state: sessionStateName(ack.sessionState),
   };
   if (ack.error) {
     out.error = {
@@ -289,7 +289,9 @@ export function envelopeToProtobuf(envelope: CanonicalEnvelope): Uint8Array {
       message_id: envelope.messageId ?? '',
       session_id: envelope.sessionId ?? '',
       sender: envelope.sender ?? '',
-      timestamp_unix_ms: parseInt64Text(String(envelope.timestampUnixMs ?? '0'), 'timestampUnixMs').toString(),
+      timestamp_unix_ms: checkTimestampRange(
+        parseInt64Text(String(envelope.timestampUnixMs ?? '0'), 'timestampUnixMs').toString(),
+      ),
       payload: encodeBase64(envelope.payload ?? new Uint8Array()),
     },
     'envelope',
@@ -316,6 +318,14 @@ export function envelopeFromProtobuf(bytes: Uint8Array): CanonicalEnvelope {
     timestampUnixMs: checkTimestampRange(String(json.timestamp_unix_ms ?? '0')),
     payload: decodeBase64(json.payload ?? '', 'payload'),
   };
+}
+
+/** A SessionState name or number as its name; anything with no name is `SESSION_STATE_UNSPECIFIED`. */
+function sessionStateName(value: unknown): SessionState {
+  const values = SCHEMA.enums['macp.v1.SessionState']!;
+  if (typeof value === 'string' && Object.hasOwn(values, value)) return value as SessionState;
+  const name = Object.keys(values).find((key) => values[key] === value);
+  return (name ?? 'SESSION_STATE_UNSPECIFIED') as SessionState;
 }
 
 function sessionStateFromJson(value: unknown): SessionState {
