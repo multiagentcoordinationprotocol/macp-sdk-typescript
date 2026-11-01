@@ -497,9 +497,27 @@ describe('Envelope Part media type comparison', () => {
     ['another subtype', 'application/macp-envelope+xml'],
     ['parameters on a type that is not MACP', 'application/json; charset=utf-8'],
     ['whitespace inside the type', 'application / macp-envelope+json'],
+    ['a bare semicolon', ';'],
+    ['a padded bare semicolon', ' ; '],
   ])('is not an Envelope Part: %s', (_name, mediaType) => {
     const error = a2aError(() => envelopeFromA2aPart(part(mediaType)));
     expect([error.layer, error.code]).toEqual(['codec', 'NOT_A_MACP_MESSAGE']);
+  });
+
+  it('media_type_parameter_part_counts_toward_single_envelope: two parameter-bearing Parts are two Envelope Parts', () => {
+    const withParams = part('application/macp-envelope+json; charset=utf-8');
+    const error = a2aError(() => envelopeFromA2aMessage(message(withParams, withParams)));
+    expect([error.layer, error.code]).toEqual(['a2a', 'INVALID_REQUEST']);
+    expect(error.message).toMatch(/two or more Envelope Parts/);
+  });
+
+  it('applies the same comparison to an Artifact', () => {
+    const artifact = envelopeToA2aArtifact(vote(), 3);
+    const variant = { ...artifact, parts: [part('Application/MACP-Envelope+JSON')] };
+    expect(envelopeFromA2aArtifact(variant).envelope.messageId).toBe('m-3');
+    const withParams = { ...artifact, parts: [part('application/macp-envelope+json; x=y')] };
+    const error = a2aError(() => envelopeFromA2aArtifact(withParams));
+    expect([error.layer, error.code]).toEqual(['a2a', 'INVALID_REQUEST']);
   });
 
   it('encoders still write the exact lowercase type with no parameters', () => {

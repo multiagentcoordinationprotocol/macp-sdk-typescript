@@ -158,6 +158,8 @@ A Part's `mediaType` is compared as RFC-MACP-0014 1.1.2-draft §5.1 says:
   `INVALID_ENVELOPE`.
 
 The error message says which A2A error applies; `layer` and `code` are the same for both rows.
+The codec doesn't check that the extension is activated (§4); that's the server's job. Without
+activation the server answers `ExtensionSupportRequiredError` before it looks at parameters.
 Encoders always write the exact lowercase type with no parameters.
 
 `maxPayloadBytes` (default 1048576, the runtime's `MACP_MAX_PAYLOAD_BYTES`) bounds the decoded payload
