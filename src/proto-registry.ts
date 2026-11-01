@@ -1,6 +1,7 @@
 import * as path from 'node:path';
 import protobuf from 'protobufjs';
 import { MODE_DECISION, MODE_HANDOFF, MODE_MULTI_ROUND, MODE_PROPOSAL, MODE_QUORUM, MODE_TASK } from './constants';
+import { parseContributeValue } from './multi-round-contribute';
 
 const CORE_MAP: Record<string, string> = {
   SessionStart: 'macp.v1.SessionStartPayload',
@@ -134,8 +135,17 @@ export class ProtoRegistry {
   }
 
   /**
-   * Decode an `ext.multi_round.v1` `Contribute` payload, accepting both wire
-   * formats: legacy JSON (`{"value":"..."}`, still replayed verbatim from
+   * Decode an `ext.multi_round.v1` `Contribute` payload.
+   *
+   * Bytes macp-runtime accepts decode to `{ value }` holding exactly the
+   * string it stored, via `parseContributeValue` (the `parse_contribute_value`
+   * mirror `MultiRoundProjection` also uses). That covers the cases where
+   * `JSON.parse` and serde disagree, such as a duplicate `value` key, a scalar
+   * JSON prefix over a valid proto, or the `["v"]` array form. Parity with
+   * macp-sdk-python. Everything below describes only the bytes the runtime
+   * refuses, which the method still reads leniently.
+   *
+   * It accepts both wire formats: legacy JSON (`{"value":"..."}`, still replayed verbatim from
    * pre-proto histories) and canonical protobuf (`ContributePayload`). Both
    * normalize to `{ value }`, but only the protobuf path's `value` is always
    * a `string` — the legacy-JSON path passes `parsed.value` through exactly
@@ -182,6 +192,11 @@ export class ProtoRegistry {
    * currently `macp-runtime`-only), not something this method decides.
    */
   private decodeMultiRoundContribute(payload: Buffer): Record<string, unknown> | undefined {
+    // Bytes the runtime accepts decode to exactly the value it stored, so agent
+    // handlers see what the projection sees. Only bytes it refuses fall
+    // through to the lenient, observational reading below.
+    const stored = parseContributeValue(payload);
+    if (stored !== undefined) return { value: stored };
     try {
       const parsed = JSON.parse(payload.toString('utf8')) as Record<string, unknown>;
       if (!this.isCanonicalProto(MULTI_ROUND_CONTRIBUTE, payload)) {
