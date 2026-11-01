@@ -7,9 +7,10 @@ schemas/conformance/a2a/
 ```
 
 from the spec repo (`multiagentcoordinationprotocol/multiagentcoordinationprotocol`),
-commit `2e7d3ab` ("conformance(a2a): RFC-MACP-0014 codec vectors + reference checker
-(W6 P6.3)", spec PR #245), copied on 2026-11-01 for W6 S6.2 (the A2A binding codec,
-`src/a2a.ts`). The spec's `README.md` there lists the conventions and what the
+commit `88e01e8` ("rfc(0014): 1.1.2-draft — define Envelope Part mediaType comparison",
+spec PR #248), copied on 2026-11-01. Vectors 001–101 first came from `2e7d3ab` (spec PR
+#245) for W6 S6.2 (the A2A binding codec, `src/a2a.ts`); 102–106 pin the §5.1 media type
+comparison (issue #247). The spec's `README.md` there lists the conventions and what the
 vectors do not pin. Never edit them here; refresh them with `make sync-fixtures`.
 
 `make verify-fixtures` and `make sync-fixtures` cover this directory bidirectionally

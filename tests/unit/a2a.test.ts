@@ -417,6 +417,97 @@ describe('Messages', () => {
   });
 });
 
+// RFC-MACP-0014 1.1.2-draft §5.1 media type comparison (issue #247). The
+// test names are shared with macp-sdk-python.
+describe('Envelope Part media type comparison', () => {
+  const part = (mediaType: unknown) => ({ ...envelopeToA2aPart(vote()), mediaType }) as A2aPart;
+  const message = (...parts: A2aPart[]): A2aMessage => ({ ...envelopeToA2aMessage(vote()), parts });
+
+  it.each(['Application/MACP-Envelope+JSON', 'APPLICATION/MACP-ENVELOPE+JSON'])(
+    'media_type_case_variant_is_envelope_part: %s',
+    (mediaType) => {
+      const exact = envelopeFromA2aPart(envelopeToA2aPart(vote()));
+      expect(envelopeFromA2aPart(part(mediaType))).toStrictEqual(exact);
+      expect(envelopeFromA2aMessage(message(part(mediaType)))).toStrictEqual(exact);
+    },
+  );
+
+  it('media_type_case_variant_is_envelope_part: the proto encoding too', () => {
+    const raw = envelopeToA2aPart(vote(), { encoding: 'proto' });
+    expect(envelopeFromA2aPart({ ...raw, mediaType: 'Application/Macp-Envelope+Proto' }).messageId).toBe('m-3');
+  });
+
+  it.each([
+    ' \tapplication/macp-envelope+json',
+    'application/macp-envelope+json\t ',
+    ' application/macp-envelope+json ',
+  ])('media_type_whitespace_ignored: %j', (mediaType) => {
+    expect(envelopeFromA2aPart(part(mediaType)).messageId).toBe('m-3');
+  });
+
+  it.each([
+    'application/macp-envelope+json; charset=utf-8',
+    'application/macp-envelope+json;charset=utf-8',
+    'application/macp-envelope+json ;',
+    'application/macp-envelope+json;',
+    'Application/MACP-Envelope+Proto; x=y',
+  ])('media_type_parameters_rejected_before_decode: %j', (mediaType) => {
+    const error = a2aError(() => envelopeFromA2aPart(part(mediaType)));
+    expect([error.layer, error.code]).toEqual(['a2a', 'INVALID_REQUEST']);
+    expect(error.message).toMatch(/ContentTypeNotSupportedError/);
+    // a Part whose content doesn't decode is still refused as a content type, never INVALID_ENVELOPE
+    const broken = a2aError(() =>
+      envelopeFromA2aPart({ mediaType, data: 'not an object', raw: 'not base64!' } as A2aPart),
+    );
+    expect([broken.layer, broken.code]).toEqual(['a2a', 'INVALID_REQUEST']);
+    // a lone parameter-bearing Part in a Message is refused the same way
+    const inMessage = a2aError(() => envelopeFromA2aMessage(message(part(mediaType))));
+    expect([inMessage.layer, inMessage.code]).toEqual(['a2a', 'INVALID_REQUEST']);
+  });
+
+  it.each([
+    ['a parameter-bearing Part', 'application/macp-envelope+json; charset=utf-8'],
+    ['a case-variant Part', 'APPLICATION/macp-envelope+json'],
+    ['a whitespace-padded Part', ' application/macp-envelope+proto'],
+  ])('media_type_parameter_part_counts_toward_single_envelope: %s', (_name, mediaType) => {
+    const error = a2aError(() =>
+      envelopeFromA2aMessage(message(part('application/macp-envelope+json'), part(mediaType))),
+    );
+    expect([error.layer, error.code]).toEqual(['a2a', 'INVALID_REQUEST']);
+    expect(error.message).toMatch(/two or more Envelope Parts/);
+  });
+
+  it.each([
+    ['a long s (U+017F)', 'application/macp-envelope+j\u017fon'],
+    ['a dotless i (U+0131)', 'appl\u0131cation/macp-envelope+json'],
+    ['a dotted capital I (U+0130)', 'applicat\u0130on/macp-envelope+json'],
+    ['a non-breaking space', '\u00a0application/macp-envelope+json'],
+  ])('media_type_non_ascii_lookalike_ignored: %s', (_name, mediaType) => {
+    const error = a2aError(() => envelopeFromA2aPart(part(mediaType)));
+    expect([error.layer, error.code]).toEqual(['codec', 'NOT_A_MACP_MESSAGE']);
+    // skipped as a Part that isn't MACP, so the exact Part beside it decodes alone
+    expect(envelopeFromA2aMessage(message(part(mediaType), part('application/macp-envelope+json'))).messageId).toBe(
+      'm-3',
+    );
+  });
+
+  it.each([
+    ['a non-string mediaType', 5],
+    ['no mediaType', undefined],
+    ['another subtype', 'application/macp-envelope+xml'],
+    ['parameters on a type that is not MACP', 'application/json; charset=utf-8'],
+    ['whitespace inside the type', 'application / macp-envelope+json'],
+  ])('is not an Envelope Part: %s', (_name, mediaType) => {
+    const error = a2aError(() => envelopeFromA2aPart(part(mediaType)));
+    expect([error.layer, error.code]).toEqual(['codec', 'NOT_A_MACP_MESSAGE']);
+  });
+
+  it('encoders still write the exact lowercase type with no parameters', () => {
+    expect(envelopeToA2aPart(vote()).mediaType).toBe('application/macp-envelope+json');
+    expect(envelopeToA2aPart(vote(), { encoding: 'proto' }).mediaType).toBe('application/macp-envelope+proto');
+  });
+});
+
 describe('Acks', () => {
   const ok = { ok: true, messageId: 'm-1', sessionId: 's-1', sessionState: 'SESSION_STATE_OPEN' as const };
 
