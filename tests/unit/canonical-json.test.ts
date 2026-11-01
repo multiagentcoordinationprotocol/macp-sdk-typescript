@@ -533,6 +533,8 @@ describe('payload scalar mapping', () => {
       expect(signal({ confidence: 0 }).confidence).toBe(0);
       expectInvalid(() => signal({ confidence: 'nan' }), /expected a number/);
       expectInvalid(() => signal({ confidence: '1e999' }), /out of range/);
+      expectInvalid(() => signal(JSON.parse('{"confidence":1e400}')), /out of range/);
+      expectInvalid(() => signal({ confidence: -Infinity }), /out of range/);
       expectInvalid(() => signal({ confidence: true }), /expected a number/);
     });
 
