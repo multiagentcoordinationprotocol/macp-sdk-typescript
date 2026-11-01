@@ -10,8 +10,8 @@ name: Integration
 # macp-runtime` image (built + pushed by the runtime repo's docker.yml). The
 # image is public, so no registry login is needed to pull it. Two jobs:
 #
-# - `integration` (required check) pins the immutable 0.9.0 release tag, the
-#   minimum runtime this SDK supports (README "Runtime compatibility"). Same
+# - `integration` (required check) pins the immutable 0.12.0 release tag, the
+#   runtime this SDK is gated on (README "Runtime compatibility"). Same
 #   pin as macp-sdk-python's gate, so both SDKs are held to byte-identical
 #   runtime behavior. Bump it deliberately, in the PR that absorbs a release.
 # - `integration-canary` runs the same suite against `:latest` (the runtime's
@@ -47,7 +47,7 @@ jobs:
       packages: read
     services:
       macp-runtime:
-        image: ghcr.io/multiagentcoordinationprotocol/macp-runtime:0.9.0
+        image: ghcr.io/multiagentcoordinationprotocol/macp-runtime:0.12.0
         ports:
           - 50123:50123
         env:
@@ -114,15 +114,15 @@ jobs:
 
   integration-receipts:
     # Runtime-issued decision receipts (RFC-MACP-0013 §13), which need a
-    # runtime that advertises `decision_receipt` (0.11.0+). The pinned 0.9.0
-    # job and the canary skip the receipt tests' signed or unsigned half, so
+    # runtime that advertises `decision_receipt` (0.11.0+). The pinned
+    # `integration` job and the canary skip the receipt tests' signed or unsigned half, so
     # each leg here runs one runtime configuration with MACP_EXPECT_RECEIPTS
     # set: a missing capability or a wrong `signed` flag fails the leg instead
     # of skipping it. The signed leg's key is generated per run and never
     # leaves the runner. The runtime is started with `docker run` rather than
     # `services:` because the key only exists once a step has made it.
     #
-    # Pinned to 0.11.0, the first runtime release that issues receipts.
+    # Pinned to 0.12.0, the same release as the `integration` gate.
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -134,7 +134,7 @@ jobs:
     env:
       MACP_RUNTIME_ADDRESS: localhost:50123
       MACP_EXPECT_RECEIPTS: ${{ matrix.receipts }}
-      RUNTIME_IMAGE: ghcr.io/multiagentcoordinationprotocol/macp-runtime:0.11.0
+      RUNTIME_IMAGE: ghcr.io/multiagentcoordinationprotocol/macp-runtime:0.12.0
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0

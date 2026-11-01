@@ -25,21 +25,20 @@ Actions service container (dev mode, in-memory, scratch port 50123), in
 three jobs (`integration-receipts` starts it with `docker run` instead, so a
 signing key generated in the job can be passed in):
 
-- `integration`: the required gate, pinned to `:0.9.0`, the minimum
-  supported runtime.
+- `integration`: the required gate, pinned to `:0.12.0`.
 - `integration-canary`: non-blocking, against `:latest`.
 - `integration-receipts`: the decision-receipt tests (`-t receipt_`), in one
   `signed` and one `unsigned` leg against a runtime that issues receipts
   (0.11.0+), with `MACP_EXPECT_RECEIPTS` set per leg. See
   [Decision receipt tests](#decision-receipt-tests).
 
-To reproduce the gate locally, run that same `:0.9.0` image.
+To reproduce the gate locally, run that same `:0.12.0` image.
 `scripts/wait-for-runtime.ts` polls the `Initialize` RPC before the suite
 runs. The steps below are for reproducing that locally.
 
 ## Runtime setup
 
-Start the published runtime image (the same `0.9.0` pin CI uses) in insecure dev mode. As of runtime 0.5.0 the
+Start the published runtime image (the same `0.12.0` pin CI uses) in insecure dev mode. As of runtime 0.5.0 the
 published image no longer bakes in `MACP_ALLOW_INSECURE=1`, and the runtime
 refuses to start with no auth configured unless it is passed explicitly — so it
 is now mandatory. The dev fallback authenticates any `Authorization: Bearer
@@ -49,7 +48,7 @@ sends; the legacy `MACP_ALLOW_DEV_SENDER_HEADER` is gone.
 ```bash
 docker run -d --name macp-runtime-test -p 50051:50051 \
   -e MACP_ALLOW_INSECURE=1 -e MACP_MEMORY_ONLY=1 \
-  ghcr.io/multiagentcoordinationprotocol/macp-runtime:0.9.0
+  ghcr.io/multiagentcoordinationprotocol/macp-runtime:0.12.0
 ```
 
 ## Variables
@@ -71,7 +70,7 @@ still works against an insecure dev-mode runtime.
 `receipt_open_session_unavailable` (names shared with `macp-sdk-python`) fetch
 real receipts (RFC-MACP-0013 §13). They need a runtime that advertises
 `decisionReceipt.getDecisionReceipt`, and the first two need its `signed` flag
-to match, so against `0.9.0` all three skip with the reason, and against one
+to match, so against a runtime older than 0.11.0 all three skip with the reason, and against one
 runtime only one of the first two runs. An unsigned runtime needs no extra
 configuration. A signed one needs a key, its `kid` and a runtime id (the
 runtime refuses to start on a signing key without `MACP_RUNTIME_ID`):
@@ -105,7 +104,7 @@ docker run -d --name macp-runtime-test -p 50051:50051 \
   -e MACP_ALLOW_INSECURE=1 \
   -e MACP_MEMORY_ONLY=1 \
   -e MACP_AUTH_TOKENS_JSON="$MACP_AUTH_TOKENS_JSON" \
-  ghcr.io/multiagentcoordinationprotocol/macp-runtime:0.9.0
+  ghcr.io/multiagentcoordinationprotocol/macp-runtime:0.12.0
 
 export MACP_TEST_BEARER_ALICE=alice-test-token
 export MACP_TEST_BEARER_BOB=bob-test-token

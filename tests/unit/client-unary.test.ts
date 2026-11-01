@@ -1143,24 +1143,26 @@ describe('MacpClient watch* stream factories', () => {
     ['watchModeRegistry', 'WatchModeRegistry'],
     ['watchRoots', 'WatchRoots'],
     ['watchSessions', 'WatchSessions'],
-    ['watchPolicies', 'WatchPolicies'],
   ] as const;
 
-  it.each(WATCHES)('%s subscribes with metadata when auth is present', (method, rpc) => {
-    const client = makeClient();
-    const grpcClient = (client as unknown as { client: Record<string, unknown> }).client;
-    const sentinel = {};
-    const watchSpy = vi.fn(() => sentinel);
-    grpcClient[rpc] = watchSpy;
+  it.each([...WATCHES, ['watchPolicies', 'WatchPolicies'] as const])(
+    '%s subscribes with metadata when auth is present',
+    (method, rpc) => {
+      const client = makeClient();
+      const grpcClient = (client as unknown as { client: Record<string, unknown> }).client;
+      const sentinel = {};
+      const watchSpy = vi.fn(() => sentinel);
+      grpcClient[rpc] = watchSpy;
 
-    const stream = (client[method] as () => unknown)();
+      const stream = (client[method] as () => unknown)();
 
-    expect(stream).toBe(sentinel);
-    expect(watchSpy).toHaveBeenCalledTimes(1);
-    expect(watchSpy.mock.calls[0]).toHaveLength(2);
-    expect((watchSpy.mock.calls[0] as unknown[])[0]).toEqual({});
-    expect((watchSpy.mock.calls[0] as unknown[])[1]).toBeInstanceOf(grpc.Metadata);
-  });
+      expect(stream).toBe(sentinel);
+      expect(watchSpy).toHaveBeenCalledTimes(1);
+      expect(watchSpy.mock.calls[0]).toHaveLength(2);
+      expect((watchSpy.mock.calls[0] as unknown[])[0]).toEqual({});
+      expect((watchSpy.mock.calls[0] as unknown[])[1]).toBeInstanceOf(grpc.Metadata);
+    },
+  );
 
   it.each(WATCHES)('%s subscribes without metadata when no auth is configured', (method, rpc) => {
     const client = makeBareClient();

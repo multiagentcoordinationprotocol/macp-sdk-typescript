@@ -12,6 +12,7 @@
  * Run:
  *   npm run test:integration
  */
+import * as grpc from '@grpc/grpc-js';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import {
   Auth,
@@ -1448,6 +1449,37 @@ describe('Policy lifecycle', () => {
       abort.abort();
       await client.unregisterPolicy(watchedId, { auth: agentAlice }).catch(() => undefined);
     }
+  });
+});
+
+// ── WatchPolicies auth (runtime 0.12.0, issue #222) ──────────────────
+
+describe('WatchPolicies auth', () => {
+  it('refuses a watch with no credential before sending anything', async () => {
+    const bare = new MacpClient({ address: RUNTIME_ADDRESS, secure: false, allowInsecure: true });
+    try {
+      expect(() => bare.watchPolicies()).toThrow(MacpSdkError);
+      await expect(new PolicyWatcher(bare).changes().next()).rejects.toThrow(/requires auth/);
+    } finally {
+      bare.close();
+    }
+  });
+
+  it('runtime refuses an unauthenticated WatchPolicies stream (0.12.0+)', async (ctx) => {
+    const { runtimeInfo } = await client.initialize(5000);
+    const [major, minor] = (runtimeInfo?.version ?? '0.0').split('.').map(Number);
+    if (major! === 0 && minor! < 12) ctx.skip(`runtime ${runtimeInfo?.version} predates the WatchPolicies auth fix`);
+    // the raw gRPC stub, since the SDK itself won't send without auth
+    const raw = (client as unknown as { client: { WatchPolicies(req: object): grpc.ClientReadableStream<unknown> } })
+      .client;
+    const stream = raw.WatchPolicies({});
+    const status = await new Promise<number | string>((resolve) => {
+      stream.on('error', (err: grpc.ServiceError) => resolve(err.code));
+      stream.on('data', () => resolve('data'));
+      setTimeout(() => resolve('no response in 5s'), 5000);
+    });
+    stream.cancel();
+    expect(status).toBe(grpc.status.UNAUTHENTICATED);
   });
 });
 

@@ -345,7 +345,7 @@ if (result.firstDivergence !== undefined) {
 ```typescript
 import { PolicyWatcher } from 'macp-sdk-typescript';
 
-const watcher = new PolicyWatcher(client, { auth });
+const watcher = new PolicyWatcher(client, { auth }); // auth required (or client.auth), runtime ≥ 0.12.0
 
 // Async generator
 for await (const change of watcher.changes(abortSignal?)) {

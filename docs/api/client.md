@@ -442,12 +442,12 @@ etc.) were **removed in 0.5.0** — use the names below.
 | `watchRoots(auth?)` | `WatchRoots` | optional |
 | `watchSignals(auth?)` | `WatchSignals` | **required** (runtime ≥ 0.5.0) |
 | `watchSessions(auth?)` | `WatchSessions` | optional |
-| `watchPolicies(auth?)` | `WatchPolicies` | optional |
+| `watchPolicies(auth?)` | `WatchPolicies` | **required** (runtime ≥ 0.12.0) |
 
 `watchSignals` frames carry `senderAuthenticated` (runtime ≥ 0.9.0, RFC-MACP-0004
 §4.1) beside the envelope; `SignalWatcher.events()` surfaces it, `signals()` does not.
 
-`watchSignals` throws `MacpSdkError` client-side when no auth is available
+`watchSignals` and `watchPolicies` throw `MacpSdkError` client-side when no auth is available
 (neither the argument nor `client.auth`), rather than failing later with a
 stream `UNAUTHENTICATED`.
 
