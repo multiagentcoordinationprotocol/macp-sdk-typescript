@@ -45,6 +45,11 @@ await session.start({ intent: '...', participants: ['worker'], ttlMs: 120_000 })
 | `failTask(input)` | `TaskFail` | Mark task as failed |
 | `commit(input)` | `Commitment` | Finalize the session |
 
+`requestTask` needs only `taskId` and `title`: `instructions` defaults to `''`,
+and an empty `title` is sent, since the runtime doesn't validate it. `updateTask`
+defaults `status` to `''` and `progress` to `0`. Both match macp-sdk-python;
+TypeScript's `input` is Python's `input_data`.
+
 Like every mode session, `TaskSession` also exposes the shared lifecycle
 helpers — `metadata()`, `cancel(reason)`, `suspend(reason)`, `resume(reason)`,
 and `openStream()`. `suspend()` (proto 0.1.3+) is a non-terminal pause: the

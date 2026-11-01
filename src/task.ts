@@ -102,11 +102,14 @@ export class TaskSession {
     return this.sendAndTrack(envelope, input.auth ?? this.auth);
   }
 
-  async requestTask(input: TaskRequestPayload & { sender?: string; auth?: AuthConfig }): Promise<Ack> {
+  /** `instructions` defaults to `''`, as in macp-sdk-python's `request_task`. */
+  async requestTask(
+    input: Omit<TaskRequestPayload, 'instructions'> & { instructions?: string; sender?: string; auth?: AuthConfig },
+  ): Promise<Ack> {
     validateRequiredField('taskId', input.taskId);
-    validateRequiredField('title', input.title);
-    // `instructions` is a proto3 singular string field (implicit presence) --
-    // no client-side non-empty check here (issue #124 item 3).
+    // `title` and `instructions` are proto3 singular string fields (implicit
+    // presence) that the runtime's task mode never validates, so there's no
+    // client-side non-empty check (issue #124 item 3, issue #193). Parity with Python.
     const envelope = buildEnvelope({
       mode: MODE_TASK,
       messageType: 'TaskRequest',
@@ -157,7 +160,15 @@ export class TaskSession {
     return this.sendAndTrack(envelope, input.auth);
   }
 
-  async updateTask(input: TaskUpdatePayload & { sender?: string; auth?: AuthConfig }): Promise<Ack> {
+  /** `status` defaults to `''` and `progress` to `0`, as in macp-sdk-python's `update_task`. */
+  async updateTask(
+    input: Omit<TaskUpdatePayload, 'status' | 'progress'> & {
+      status?: string;
+      progress?: number;
+      sender?: string;
+      auth?: AuthConfig;
+    },
+  ): Promise<Ack> {
     validateRequiredField('taskId', input.taskId);
     const envelope = buildEnvelope({
       mode: MODE_TASK,

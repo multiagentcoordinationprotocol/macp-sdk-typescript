@@ -41,6 +41,8 @@ await session.start({
 | `abstain(input)` | `Abstain` | Abstain from voting |
 | `commit(input)` | `Commitment` | Finalize once quorum is reached |
 
+`requestApproval`'s `summary` defaults to `''`, as in macp-sdk-python.
+
 Like every mode session, `QuorumSession` also exposes the shared lifecycle
 helpers — `metadata()`, `cancel(reason)`, `suspend(reason)`, `resume(reason)`,
 and `openStream()`. `suspend()` (proto 0.1.3+) is a non-terminal pause: the

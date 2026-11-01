@@ -131,6 +131,35 @@ describe('MacpClient.openStream', () => {
   });
 });
 
+describe('MacpClient.openStream deadline (#193)', () => {
+  it('applies an explicit deadline as call options', () => {
+    const client = makeClient();
+    const grpcClient = (client as unknown as { client: Record<string, unknown> }).client;
+    const streamSpy = vi.fn(() => new FakeDuplex());
+    grpcClient.StreamSession = streamSpy;
+    const before = Date.now();
+    client.openStream({ deadlineMs: 30_000 });
+    const args = streamSpy.mock.calls[0] as unknown[];
+    expect(args[0]).toBeInstanceOf(grpc.Metadata);
+    expect((args[1] as { deadline: Date }).deadline.getTime()).toBeGreaterThanOrEqual(before + 30_000);
+  });
+
+  it("never falls back to the client's defaultDeadlineMs", () => {
+    const client = new MacpClient({
+      address: '127.0.0.1:50051',
+      secure: false,
+      allowInsecure: true,
+      auth: Auth.bearer('alice-token'),
+      defaultDeadlineMs: 1_000,
+    });
+    const grpcClient = (client as unknown as { client: Record<string, unknown> }).client;
+    const streamSpy = vi.fn(() => new FakeDuplex());
+    grpcClient.StreamSession = streamSpy;
+    client.openStream();
+    expect(streamSpy.mock.calls[0]).toHaveLength(1);
+  });
+});
+
 describe('MacpStream — data delivery', () => {
   it("delivers a real decoded envelope frame (chunk.envelope; chunk.response === 'envelope' as the oneof arm name)", async () => {
     const duplex = new FakeDuplex();

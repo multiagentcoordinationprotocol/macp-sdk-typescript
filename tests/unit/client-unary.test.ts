@@ -1178,3 +1178,98 @@ describe('MacpClient watch* stream factories', () => {
     expect((watchSpy.mock.calls[0] as unknown[])[0]).toEqual({});
   });
 });
+
+// Issue #193: options aligned with macp-sdk-python (all non-breaking widenings).
+describe('MacpClient options parity with macp-sdk-python (#193)', () => {
+  const READS = [
+    ['initialize', 'Initialize', (c: MacpClient, o?: unknown) => c.initialize(o as never)],
+    ['getManifest', 'GetManifest', (c: MacpClient, o?: unknown) => c.getManifest('', o as never)],
+    ['listModes', 'ListModes', (c: MacpClient, o?: unknown) => c.listModes(o as never)],
+    ['listExtModes', 'ListExtModes', (c: MacpClient, o?: unknown) => c.listExtModes(o as never)],
+    ['listRoots', 'ListRoots', (c: MacpClient, o?: unknown) => c.listRoots(o as never)],
+  ] as const;
+
+  it.each(READS)('%s takes per-call auth that overrides the client credential', async (_m, rpc, call) => {
+    const client = makeClient();
+    const calls = stubUnary(client, rpc, {});
+    await call(client, { auth: Auth.bearer('bob-token') });
+    const metadata = calls[0]!.extras[0] as grpc.Metadata;
+    expect(metadata.get('authorization')).toEqual(['Bearer bob-token']);
+  });
+
+  it.each(READS)('%s sends per-call auth from a client with none configured', async (_m, rpc, call) => {
+    const client = makeBareClient();
+    const calls = stubUnary(client, rpc, {});
+    await call(client);
+    expect(calls[0]!.extras).toEqual([]);
+    await call(client, { auth: Auth.bearer('bob-token'), deadlineMs: 5_000 });
+    expect((calls[1]!.extras[0] as grpc.Metadata).get('authorization')).toEqual(['Bearer bob-token']);
+    expect((calls[1]!.extras[1] as { deadline: Date }).deadline).toBeInstanceOf(Date);
+  });
+
+  it.each(READS)('%s still takes a bare deadline in ms', async (_m, rpc, call) => {
+    const client = makeBareClient();
+    const calls = stubUnary(client, rpc, {});
+    const before = Date.now();
+    await call(client, 5_000);
+    const { deadline } = calls[0]!.extras[0] as { deadline: Date };
+    expect(deadline.getTime()).toBeGreaterThanOrEqual(before + 5_000);
+  });
+
+  it.each([
+    ['suspendSession', 'SuspendSession'],
+    ['resumeSession', 'ResumeSession'],
+  ] as const)('%s defaults reason to the empty string', async (method, rpc) => {
+    const client = makeClient();
+    const calls = stubUnary(client, rpc, { ack: { ok: true } });
+    await client[method]('s1');
+    expect(calls[0]!.request).toEqual({ sessionId: 's1', reason: '' });
+  });
+
+  const STREAMS = [
+    ['watchModeRegistry', 'WatchModeRegistry'],
+    ['watchRoots', 'WatchRoots'],
+    ['watchSessions', 'WatchSessions'],
+    ['watchSignals', 'WatchSignals'],
+    ['watchPolicies', 'WatchPolicies'],
+  ] as const;
+
+  it.each(STREAMS)('%s applies an explicit deadline', (method, rpc) => {
+    const client = makeClient();
+    const grpcClient = (client as unknown as { client: Record<string, unknown> }).client;
+    const watchSpy = vi.fn(() => ({}));
+    grpcClient[rpc] = watchSpy;
+    const before = Date.now();
+    (client[method] as (auth?: unknown, deadlineMs?: number) => unknown)(undefined, 30_000);
+    const args = watchSpy.mock.calls[0] as unknown[];
+    expect(args).toHaveLength(3);
+    expect(args[1]).toBeInstanceOf(grpc.Metadata);
+    expect((args[2] as { deadline: Date }).deadline.getTime()).toBeGreaterThanOrEqual(before + 30_000);
+  });
+
+  it.each(STREAMS)("%s never falls back to the client's defaultDeadlineMs", (method, rpc) => {
+    const client = new MacpClient({
+      address: '127.0.0.1:50051',
+      secure: false,
+      allowInsecure: true,
+      auth: Auth.bearer('alice-token'),
+      defaultDeadlineMs: 1_000,
+    });
+    const grpcClient = (client as unknown as { client: Record<string, unknown> }).client;
+    const watchSpy = vi.fn(() => ({}));
+    grpcClient[rpc] = watchSpy;
+    (client[method] as () => unknown)();
+    expect(watchSpy.mock.calls[0]).toHaveLength(2);
+  });
+
+  it('a stream deadline needs no metadata', () => {
+    const client = makeBareClient();
+    const grpcClient = (client as unknown as { client: Record<string, unknown> }).client;
+    const watchSpy = vi.fn(() => ({}));
+    grpcClient.WatchRoots = watchSpy;
+    client.watchRoots(undefined, 30_000);
+    const args = watchSpy.mock.calls[0] as unknown[];
+    expect(args).toHaveLength(2);
+    expect((args[1] as { deadline: Date }).deadline).toBeInstanceOf(Date);
+  });
+});

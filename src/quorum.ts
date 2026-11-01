@@ -100,7 +100,10 @@ export class QuorumSession {
     return this.sendAndTrack(envelope, input.auth ?? this.auth);
   }
 
-  async requestApproval(input: ApprovalRequestPayload & { sender?: string; auth?: AuthConfig }): Promise<Ack> {
+  /** `summary` defaults to `''`, as in macp-sdk-python's `request_approval`. */
+  async requestApproval(
+    input: Omit<ApprovalRequestPayload, 'summary'> & { summary?: string; sender?: string; auth?: AuthConfig },
+  ): Promise<Ack> {
     validateRequiredField('requestId', input.requestId);
     // `action`/`summary` are proto3 singular string fields (implicit
     // presence) -- no client-side non-empty check here (issue #124 item 3).
