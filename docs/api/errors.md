@@ -69,7 +69,8 @@ Since 0.9.0 the control-plane RPCs set it too — e.g. `SESSION_NOT_FOUND` /
 `FORBIDDEN` from `getSession`/`cancelSession`/`suspendSession`/`resumeSession`,
 `UNKNOWN_POLICY_VERSION` from `getPolicy`, `INVALID_REQUEST` from a bad
 `listSessions` page token, `AGENT_NOT_FOUND` from `getManifest`,
-`HISTORY_UNAVAILABLE` from `whatIfReplay`, `RECEIPT_UNAVAILABLE` from
+`HISTORY_UNAVAILABLE` from `whatIfReplay` (and, from runtime 0.12.0, from a
+stream subscribe below the compacted base), `RECEIPT_UNAVAILABLE` from
 `getDecisionReceipt`, and
 `STREAM_LAGGED` (status `RESOURCE_EXHAUSTED`) when a stream or watch
 subscriber falls behind — resubscribe with `afterSequence`. Treat an
@@ -218,5 +219,5 @@ bearer) — pre-0.2 code continues to work unchanged.
 | `INVALID_REQUEST` | Malformed control-plane request — bad `page_size`/`page_token`, missing descriptor (runtime ≥ 0.9.0, `INVALID_ARGUMENT`) |
 | `STREAM_LAGGED` | Stream/watch subscriber fell behind; resubscribe with `afterSequence` (runtime ≥ 0.9.0, `RESOURCE_EXHAUSTED`) |
 | `AGENT_NOT_FOUND` | `getManifest` for an agent this runtime doesn't host (runtime ≥ 0.9.0, `NOT_FOUND`) |
-| `HISTORY_UNAVAILABLE` | `whatIfReplay` on a session whose accepted history the runtime no longer holds (RFC-MACP-0012 §8.1, `FAILED_PRECONDITION`) |
+| `HISTORY_UNAVAILABLE` | `whatIfReplay` on a session whose accepted history the runtime no longer holds (RFC-MACP-0012 §8.1, `FAILED_PRECONDITION`), or a stream subscribe below the compacted base (RFC-MACP-0006 §3.2, runtime ≥ 0.12.0; ends the stream) |
 | `RECEIPT_UNAVAILABLE` | `getDecisionReceipt` for a session no receipt can be issued for: not resolved yet, resolved without a `CommitmentPayload`, or any other reason (RFC-MACP-0013 §13, `FAILED_PRECONDITION`) |

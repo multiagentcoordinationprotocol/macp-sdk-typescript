@@ -48,6 +48,8 @@ export const AGENT_NOT_FOUND = 'AGENT_NOT_FOUND';
 /**
  * WhatIfReplay on a session whose full accepted history the runtime no longer
  * holds (e.g. compacted when it ended) — FAILED_PRECONDITION. RFC-MACP-0012 §8.1.
+ * From runtime 0.12.0 also a stream subscribe below the compacted base, which
+ * ends the stream (RFC-MACP-0006 §3.2).
  */
 export const HISTORY_UNAVAILABLE = 'HISTORY_UNAVAILABLE';
 /**

@@ -246,9 +246,11 @@ export class MacpStream {
    * Ordinals are stable across log compaction and runtime restart. Resuming
    * below a compacted base is refused rather than silently skipping history
    * (runtime ≥ 0.5.0; older runtimes compared inclusively against a raw log
-   * index): since runtime 0.9.0 as an inline `INVALID_ENVELOPE` error frame
-   * (see `onInlineError`) with the stream left open; on 0.5.0–0.8.x it ended
-   * the stream with `FAILED_PRECONDITION` (`MacpTransportError.code`).
+   * index). Since runtime 0.12.0 the stream ends with `FAILED_PRECONDITION`,
+   * and the `MacpTransportError`'s `macpErrorCode` is `HISTORY_UNAVAILABLE`.
+   * On 0.9.x–0.11.x it was an inline `INVALID_ENVELOPE` error frame (see
+   * `onInlineError`) with the stream left open. On 0.5.0–0.8.x it ended the
+   * stream with an uncoded `FAILED_PRECONDITION` (`MacpTransportError.code`).
    */
   sendSubscribe(sessionId: string, afterSequence = 0): Promise<void> {
     if (this.closed) return Promise.reject(new MacpSdkError('stream is already closed'));
