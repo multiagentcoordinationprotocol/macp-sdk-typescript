@@ -138,6 +138,31 @@ describe('the shared runtime-captured corpus (vendored from macp-sdk-python)', (
   });
 });
 
+// ProtoRegistry fills agent handlers' IncomingMessage.payload (participant.ts,
+// transports.ts), so for bytes the runtime accepts it must agree with the projection.
+describe('ProtoRegistry.decodeKnownPayload gives the runtime value for bytes it accepts', () => {
+  const registry = new ProtoRegistry();
+  const decode = (payload: string) =>
+    registry.decodeKnownPayload(MODE_MULTI_ROUND, 'Contribute', hex(payload)) as { value?: unknown } | undefined;
+
+  it.each(corpus.cases.filter((c) => c.value !== null).map((c) => [c.hex.slice(0, 40), c.hex, c.value!] as const))(
+    '%s',
+    (_label, payload, value) => {
+      expect(decode(payload)).toEqual({ value });
+    },
+  );
+
+  it('decodes a duplicate value key over a valid proto as the whole proto value', () => {
+    expect(decode('0a207b2276616c7565223a2261222c2276616c7565223a226262626262626262227d2020')).toEqual({
+      value: '{"value":"a","value":"bbbbbbbb"}',
+    });
+  });
+
+  it('still reads bytes the runtime refuses leniently (issue #124)', () => {
+    expect(decode(Buffer.from('{"value": 5}').toString('hex'))).toEqual({ value: 5 });
+  });
+});
+
 describe('MultiRoundProjection stores what the runtime stores', () => {
   const registry = new ProtoRegistry();
   const contribute = (payload: Buffer) => {

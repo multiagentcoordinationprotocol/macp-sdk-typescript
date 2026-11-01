@@ -139,8 +139,9 @@ The projection reads a `Contribute` value exactly as the runtime's
 (or `["<string>"]`), unless the bytes are also canonical protobuf, and
 otherwise prost's protobuf decode. Bytes that only a lenient decoder would
 read as a value count as nothing, so a hostile payload projects the value the
-runtime stored. `ProtoRegistry.decodeKnownPayload` stays a more lenient,
-observational decoder.
+runtime stored. `ProtoRegistry.decodeKnownPayload`, which fills agent
+handlers' `IncomingMessage.payload`, returns the same value for any bytes the
+runtime accepts. It reads leniently only the bytes the runtime refuses.
 
 A SessionStart sent with an empty sender (bearer auth with no sender hint)
 doesn't overwrite a known initiator, because the runtime fills the sender in

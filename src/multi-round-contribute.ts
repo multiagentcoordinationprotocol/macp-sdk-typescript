@@ -1,8 +1,8 @@
 /**
  * Mirror of macp-runtime's `parse_contribute_value` (`multi_round.rs`) at
  * `semantics_rev` 3, so a projection stores the value the runtime stored.
- * Internal: `MultiRoundProjection` reads `Contribute` with it, while
- * `ProtoRegistry.decodeKnownPayload` stays the lenient, observational decoder.
+ * Internal: `MultiRoundProjection` reads `Contribute` with it, and so does
+ * `ProtoRegistry.decodeKnownPayload` for any bytes the runtime accepts.
  * Parity with macp-sdk-python.
  *
  * The runtime reads the bytes two ways:
