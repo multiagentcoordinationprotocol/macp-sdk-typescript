@@ -4,6 +4,30 @@ All notable changes to `macp-sdk-typescript` are documented here. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the
 project uses [Semantic Versioning](https://semver.org/).
 
+## [0.22.0](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/compare/v0.21.0...v0.22.0) (2026-11-01)
+
+
+### ⚠ BREAKING CHANGES
+
+* watchPolicies() and PolicyWatcher without auth now throw MacpSdkError instead of subscribing. Clients that configure auth are unaffected; against runtime 0.12.0+ an unauthenticated watch fails anyway.
+
+### Features
+
+* A2A binding codec (RFC-MACP-0014, W6 S6.2) ([#231](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/issues/231)) ([3a6cd03](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/commit/3a6cd03e97cb88c44c52d21f10414ee50753af85))
+* canonical JSON codec for Envelopes and Acks (RFC-MACP-0001 §10, W6 S6.1) ([#223](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/issues/223)) ([b66dcfb](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/commit/b66dcfb81840982fc45b7652cd7d262fb3cb10af))
+* MultiRoundSession and MultiRoundProjection for ext.multi_round.v1 (W6 S6.3) ([#232](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/issues/232)) ([8362b66](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/commit/8362b669cfed72e77edf98ce5b05adbc655e545a))
+
+
+### Bug Fixes
+
+* A2A codec compares Envelope Part mediaType per RFC-MACP-0014 1.1.2-draft §5.1 ([#233](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/issues/233)) ([3a947ba](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/commit/3a947babf0e88675d7b294102e5cd3523f6f562e))
+* canonical JSON caps nesting at 100 levels and requires canonical integer map keys ([#226](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/issues/226)) ([4b1cf0e](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/commit/4b1cf0e015183e44b7fc611dd1b6964d2f77c4d5))
+* canonical JSON refuses a lone surrogate in an Envelope or Ack string ([#230](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/issues/230)) ([23decc6](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/commit/23decc613e1d3ee0c94f0c21265d6fc631afdcda))
+* canonical JSON refuses an overflowing JSON number for a double ([#225](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/issues/225)) ([e98c76d](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/commit/e98c76d654daddcb42b9852a66ba1c9cd05970da))
+* MultiRoundProjection reads Contribute exactly as the runtime does ([#234](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/issues/234)) ([6f0a238](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/commit/6f0a2388d67346984013b6d97e6eb0ed10f2eec9))
+* ProtoRegistry decodes runtime-accepted Contribute bytes as the runtime does ([#236](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/issues/236)) ([fee1699](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/commit/fee16996924628d2aafc195c860eeb305d858420))
+* watchPolicies requires auth; gate integration on runtime 0.12.0 ([#227](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/issues/227)) ([fd735c4](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/commit/fd735c4354ced620a7a1998f45797c52df8474d8))
+
 ## [0.21.0](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/compare/v0.20.0...v0.21.0) (2026-10-26)
 
 
