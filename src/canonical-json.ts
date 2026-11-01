@@ -293,6 +293,10 @@ type Wire =
 
 /** Decodes Protobuf bytes of `typeName` into its canonical JSON object. */
 function messageToJson(typeName: string, bytes: Uint8Array, where: string): Record<string, unknown> {
+  return nested(where, () => messageToJsonAt(typeName, bytes, where));
+}
+
+function messageToJsonAt(typeName: string, bytes: Uint8Array, where: string): Record<string, unknown> {
   const fields = messageFields(typeName);
   const byId = new Map(fields.map((field) => [field.id, field]));
   const singles = new Map<number, unknown>();
@@ -547,15 +551,18 @@ function* readWire(bytes: Uint8Array, where: string): Generator<{ id: number; wi
  * and Python do.
  */
 function skipGroup(reader: WireReader, groupId: number): void {
-  for (;;) {
+  // iterative, so a deep run of nested groups can't overflow the call stack
+  const open = [groupId];
+  while (open.length > 0) {
+    if (depth + open.length > MAX_DEPTH) throw reader.malformed(`nested deeper than ${MAX_DEPTH} levels`);
     if (reader.done()) throw reader.malformed('unterminated group');
     const tag = reader.varint();
     const id = Number(tag >> 3n);
     const wireType = Number(tag & 7n);
     if (id < 1 || id > 0x1fffffff) throw reader.malformed(`field number ${id}`);
     if (wireType === 4) {
-      if (id !== groupId) throw reader.malformed('mismatched end group');
-      return;
+      if (id !== open.pop()) throw reader.malformed('mismatched end group');
+      continue;
     }
     if (wireType === 0) reader.varint();
     else if (wireType === 1) reader.take(8);
@@ -564,8 +571,23 @@ function skipGroup(reader: WireReader, groupId: number): void {
       const length = reader.varint();
       if (length > 0x7fffffffn) throw reader.malformed('truncated field');
       reader.take(Number(length));
-    } else if (wireType === 3) skipGroup(reader, id);
+    } else if (wireType === 3) open.push(id);
     else throw reader.malformed(`wire type ${wireType}`);
+  }
+}
+
+/** upb's limit, which macp-sdk-python also applies: deeper input is refused. */
+const MAX_DEPTH = 100;
+/** Message nesting of the conversion in progress (the codec is synchronous). */
+let depth = 0;
+
+function nested<T>(where: string, convert: () => T): T {
+  if (depth >= MAX_DEPTH) throw new CanonicalJsonError(`${where}: nested deeper than ${MAX_DEPTH} levels`);
+  depth++;
+  try {
+    return convert();
+  } finally {
+    depth--;
   }
 }
 
@@ -573,6 +595,10 @@ function skipGroup(reader: WireReader, groupId: number): void {
 
 /** Encodes the canonical JSON object `json` of `typeName` as §10.13 bytes. */
 function messageFromJson(typeName: string, json: unknown, where: string): Uint8Array {
+  return nested(where, () => messageFromJsonAt(typeName, json, where));
+}
+
+function messageFromJsonAt(typeName: string, json: unknown, where: string): Uint8Array {
   const obj = asObject(json, where);
   const writer = new WireWriter();
   for (const field of messageFields(typeName)) {
@@ -726,6 +752,8 @@ function mapKeyFromJson(keyType: string, key: string, where: string): Scalar {
     if (key === 'true' || key === 'false') return key === 'true';
     throw new CanonicalJsonError(`${where}: bad map key ${JSON.stringify(key)}`);
   }
+  // the key's string form is its canonical decimal, so "007" and "-0" name no key
+  if (!/^(0|-?[1-9][0-9]*)$/.test(key)) throw new CanonicalJsonError(`${where}: bad map key ${JSON.stringify(key)}`);
   const big = readInt64(key, keyType, where);
   return SIXTY_FOUR.has(keyType) ? big : Number(big);
 }
