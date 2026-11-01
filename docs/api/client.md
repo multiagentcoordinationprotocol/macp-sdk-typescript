@@ -611,7 +611,7 @@ The option shapes match macp-sdk-python's `MacpClient` and `AsyncMacpClient`
 | TypeScript | Python | Note |
 |------------|--------|------|
 | `deadlineMs` (ms) | `timeout` (seconds) | Same meaning on unary calls. |
-| A stream's `deadlineMs` omitted: no deadline | `timeout=None`: the client's `default_timeout` | Python falls back to the client default on streams too; a Python caller passes `UNBOUNDED` for no deadline. TypeScript never falls back on streams. |
+| A stream's `deadlineMs` (`watch*`, `openStream`) | `timeout=` on `watch_*`, `open_stream` | Applied only when passed, on both sides; neither falls back to the client default (macp-sdk-python #221). |
 | `initialize(options?)` and the other read RPCs: `number \| { auth?, deadlineMs? }` | keyword-only `auth=`, `timeout=` | |
 | `requestTask({ input })` | `request_task(input_data=)` | Field name only. |
 | `MacpClient.senderHint` | — | TypeScript only. |
