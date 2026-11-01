@@ -666,8 +666,11 @@ function scalarFromJson(field: SchemaField, value: unknown, where: string): Scal
   }
   if (type === 'double' || type === 'float') {
     let number: number;
-    if (typeof value === 'number') number = value;
-    else if (value === 'NaN') number = NaN;
+    if (typeof value === 'number') {
+      // JSON has no infinity literal; JSON.parse turns an overflowing number (1e400) into one
+      if (!Number.isFinite(value)) throw new CanonicalJsonError(`${where}: number out of range`);
+      number = value;
+    } else if (value === 'NaN') number = NaN;
     else if (value === 'Infinity') number = Infinity;
     else if (value === '-Infinity') number = -Infinity;
     else if (typeof value === 'string' && /^-?(0|[1-9][0-9]*)(\.[0-9]+)?([eE][+-]?[0-9]+)?$/.test(value)) {
