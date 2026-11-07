@@ -612,6 +612,8 @@ docker rm -f macp-runtime-test
 
 Agents working in this repo can query the MACP knowledge base through the `macp-kb` MCP server. Setup instructions are in the private `macp-docs` repo (README, "MCP server"). Answers cite the source repo and commit, so check freshness with `kb_status` before relying on one. Outside contributors can ignore this section; the server is limited to org members.
 
+The real-LLM examples and the live integration test in `integrations/` need `ANTHROPIC_API_KEY`. Org members get it from the shared Doppler project `macp-shared` (config `dev`) without a local `.env`, for example `doppler run -p macp-shared -c dev -- npx tsx integrations/claude-agent-sdk/examples/review-board.ts`. Everyone else exports their own key.
+
 ## Runtime Compatibility
 
 This SDK is gated on **macp-runtime 0.12.0**: CI runs the integration suite
