@@ -20,6 +20,21 @@ describe('ProtoRegistry', () => {
       expect(registry.getKnownTypeName('', 'Progress')).toBe('macp.v1.ProgressPayload');
     });
 
+    it('resolves runtime-emitted lifecycle annotations', () => {
+      expect(registry.getKnownTypeName('', 'SessionCancel')).toBe('macp.v1.SessionCancelPayload');
+      expect(registry.getKnownTypeName('', 'SessionSuspend')).toBe('macp.v1.SessionSuspendPayload');
+      expect(registry.getKnownTypeName('', 'SessionResume')).toBe('macp.v1.SessionResumePayload');
+    });
+
+    it('decodes a runtime-emitted SessionCancel instead of treating it as text', () => {
+      const bytes = registry.encodeMessage('macp.v1.SessionCancelPayload', {
+        reason: 'operator abort',
+        cancelledBy: 'agent://initiator',
+      });
+      const decoded = registry.decodeKnownPayload(MODE_DECISION, 'SessionCancel', bytes);
+      expect(decoded).toMatchObject({ reason: 'operator abort', cancelledBy: 'agent://initiator' });
+    });
+
     it('resolves decision mode types', () => {
       expect(registry.getKnownTypeName(MODE_DECISION, 'Proposal')).toBe('macp.modes.decision.v1.ProposalPayload');
       expect(registry.getKnownTypeName(MODE_DECISION, 'Vote')).toBe('macp.modes.decision.v1.VotePayload');
