@@ -470,8 +470,10 @@ reference runtime's single `TaskState.active_assignee`.
   reassignment is gated on the policy flag `allow_reassignment_on_reject`
   ([RFC-MACP-0012](https://github.com/multiagentcoordinationprotocol/multiagentcoordinationprotocol/blob/main/rfcs/RFC-MACP-0012-policy.md)
   `:135`), and the runtime enforces that gate twice — it denies the active
-  assignee's `TaskReject` and the follow-up `TaskAccept` with `POLICY_DENIED`
-  when the flag is false. A projection replays history the runtime **already
+  assignee's `TaskReject` and the follow-up `TaskAccept` with
+  `INVALID_ENVELOPE` when the flag is false (runtime 0.13.2 and later;
+  earlier runtimes returned `POLICY_DENIED`, which RFC-MACP-0002 §6.1
+  reserves for `Commitment`). A projection replays history the runtime **already
   accepted** (see [the accepted-only input contract](#input-contract)),
   so a reassignment the runtime denied never reaches the transcript. Tracking
   the reject unconditionally therefore cannot diverge from the runtime on any
