@@ -8,6 +8,11 @@ const CORE_MAP: Record<string, string> = {
   Commitment: 'macp.v1.CommitmentPayload',
   Signal: 'macp.v1.SignalPayload',
   Progress: 'macp.v1.ProgressPayload',
+  // Runtime-emitted lifecycle annotations (RFC-MACP-0001 §7.3, §7.5). Clients
+  // never send these, but they arrive on streams and in replayed history.
+  SessionCancel: 'macp.v1.SessionCancelPayload',
+  SessionSuspend: 'macp.v1.SessionSuspendPayload',
+  SessionResume: 'macp.v1.SessionResumePayload',
 };
 
 // The one mapping whose historical payloads may be legacy JSON. Runtime replays
