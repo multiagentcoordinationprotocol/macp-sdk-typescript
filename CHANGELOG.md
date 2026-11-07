@@ -4,6 +4,13 @@ All notable changes to `macp-sdk-typescript` are documented here. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the
 project uses [Semantic Versioning](https://semver.org/).
 
+## [0.23.1](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/compare/v0.23.0...v0.23.1) (2026-11-07)
+
+
+### Bug Fixes
+
+* **proto-registry:** decode runtime-emitted SessionCancel/Suspend/Resume payloads ([#247](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/issues/247)) ([12fcbb8](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/commit/12fcbb88d9e29597e255a103d7f3caa7261408ba))
+
 ## [0.23.0](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/compare/v0.22.0...v0.23.0) (2026-11-01)
 
 
