@@ -479,9 +479,13 @@ function replayAndCheck(fixture: Fixture, fixtureName: string): ProjectionLike {
     projection.applyEnvelope(envelope, registry);
   }
 
-  // Every applied step lands in the transcript, synthetic ones included.
+  // Every applied session step lands in the transcript, synthetic ones
+  // included. An ambient step (envelope `mode` overridden to '', i.e. a
+  // Signal, RFC-MACP-0001 §5.1) MUST NOT affect session state, so the
+  // projection's mode guard drops it and it is not counted here.
   const transcript = (projection as unknown as { transcript: unknown[] }).transcript;
-  expect(transcript.length).toBe(steps.length);
+  const sessionSteps = steps.filter((step) => (step.envelope?.mode ?? fixture.mode) === fixture.mode);
+  expect(transcript.length).toBe(sessionSteps.length);
 
   // Commitment presence is driven solely by the terminal state:
   // RESOLVED ⇒ committed. Identical rule to the python harness.
