@@ -620,7 +620,7 @@ The real-LLM examples and the live integration test in `integrations/` need `ANT
 |---|---|---|
 | 0.23.x | 0.14.x (`semantics_rev` 5) | 0.1.13 |
 
-This SDK is gated on **macp-runtime 0.14.0**: CI runs the integration suite
+This SDK is gated on **macp-runtime 0.14.1**: CI runs the integration suite
 against `macp-runtime:0.14.1` on every PR, the same pin as `macp-sdk-python`,
 and a non-blocking canary against `:latest`. Older runtimes are no longer
 tested. Through SDK 0.23.1 the gate was 0.12.0, and through SDK 0.21.0 it was 0.9.0, the oldest runtime whose

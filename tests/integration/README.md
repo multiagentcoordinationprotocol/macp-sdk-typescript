@@ -32,20 +32,20 @@ Actions service container (dev mode, in-memory, scratch port 50123), in
 three jobs (`integration-receipts` starts it with `docker run` instead, so a
 signing key generated in the job can be passed in):
 
-- `integration`: the required gate, pinned to `:0.14.0`.
+- `integration`: the required gate, pinned to `:0.14.1`.
 - `integration-canary`: non-blocking, against `:latest`.
 - `integration-receipts`: the decision-receipt tests (`-t receipt_`), in one
   `signed` and one `unsigned` leg against a runtime that issues receipts
   (0.11.0+), with `MACP_EXPECT_RECEIPTS` set per leg. See
   [Decision receipt tests](#decision-receipt-tests).
 
-To reproduce the gate locally, run that same `:0.14.0` image.
+To reproduce the gate locally, run that same `:0.14.1` image.
 `scripts/wait-for-runtime.ts` polls the `Initialize` RPC before the suite
 runs. The steps below are for reproducing that locally.
 
 ## Runtime setup
 
-Start the published runtime image (the same `0.14.0` pin CI uses) in insecure dev mode. As of runtime 0.5.0 the
+Start the published runtime image (the same `0.14.1` pin CI uses) in insecure dev mode. As of runtime 0.5.0 the
 published image no longer bakes in `MACP_ALLOW_INSECURE=1`, and the runtime
 refuses to start with no auth configured unless it is passed explicitly — so it
 is now mandatory. The dev fallback authenticates any `Authorization: Bearer
