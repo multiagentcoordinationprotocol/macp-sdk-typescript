@@ -1,5 +1,5 @@
 /**
- * End-to-end against a live macp-runtime (CI: ghcr.io/…/macp-runtime:0.9.0 as
+ * End-to-end against a live macp-runtime (CI: ghcr.io/…/macp-runtime:0.14.0 as
  * a service; locally see the README). Address from MACP_RUNTIME_ADDRESS.
  *
  * Claude is replaced by a stub `query` that replays a scripted result message,
