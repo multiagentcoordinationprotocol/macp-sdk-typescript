@@ -7,7 +7,7 @@ name: Integrations
 # npmjs: no GitHub Packages auth needed here.
 #
 # Integration tests run against the same pinned runtime as integration.yml
-# (ghcr macp-runtime:0.12.0 on scratch port 50123), and the deterministic
+# (ghcr macp-runtime:0.14.0 on scratch port 50123), and the deterministic
 # example runs end to end against it too, so it can't rot. The Claude Agent SDK
 # examples need ANTHROPIC_API_KEY, so CI type-checks them (npm run check) and
 # its integration tests stand a scripted `query` in for Claude.
@@ -39,7 +39,7 @@ jobs:
         working-directory: integrations/langgraph
     services:
       macp-runtime:
-        image: ghcr.io/multiagentcoordinationprotocol/macp-runtime:0.12.0
+        image: ghcr.io/multiagentcoordinationprotocol/macp-runtime:0.14.0
         ports:
           - 50123:50123
         env:
@@ -79,7 +79,7 @@ jobs:
         working-directory: integrations/claude-agent-sdk
     services:
       macp-runtime:
-        image: ghcr.io/multiagentcoordinationprotocol/macp-runtime:0.12.0
+        image: ghcr.io/multiagentcoordinationprotocol/macp-runtime:0.14.0
         ports:
           - 50123:50123
         env:

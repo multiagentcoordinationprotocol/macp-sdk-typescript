@@ -21,7 +21,7 @@ Everything installs from npmjs, including the `@multiagentcoordinationprotocol/p
 Start a local runtime (the same image CI pins):
 
 ```bash
-docker run -p 50051:50051 -e MACP_ALLOW_INSECURE=1 -e MACP_MEMORY_ONLY=1 ghcr.io/multiagentcoordinationprotocol/macp-runtime:0.12.0
+docker run -p 50051:50051 -e MACP_ALLOW_INSECURE=1 -e MACP_MEMORY_ONLY=1 ghcr.io/multiagentcoordinationprotocol/macp-runtime:0.14.0
 ```
 
 `MACP_ALLOW_INSECURE=1` permits plaintext and dev-agent auth (local development only —
@@ -599,7 +599,7 @@ Run the full SDK against a live MACP runtime:
 # Start the runtime (CI's pinned image)
 docker run -d --name macp-runtime-test -p 50051:50051 \
   -e MACP_ALLOW_INSECURE=1 -e MACP_MEMORY_ONLY=1 \
-  ghcr.io/multiagentcoordinationprotocol/macp-runtime:0.12.0
+  ghcr.io/multiagentcoordinationprotocol/macp-runtime:0.14.0
 
 # Run tests
 npm run test:integration
@@ -616,10 +616,14 @@ The real-LLM examples and the live integration test in `integrations/` need `ANT
 
 ## Runtime Compatibility
 
-This SDK is gated on **macp-runtime 0.12.0**: CI runs the integration suite
-against `macp-runtime:0.12.0` on every PR, the same pin as `macp-sdk-python`,
+| SDK | Runtime | `@multiagentcoordinationprotocol/proto` |
+|---|---|---|
+| 0.23.x | 0.14.x (`semantics_rev` 5) | 0.1.13 |
+
+This SDK is gated on **macp-runtime 0.14.0**: CI runs the integration suite
+against `macp-runtime:0.14.0` on every PR, the same pin as `macp-sdk-python`,
 and a non-blocking canary against `:latest`. Older runtimes are no longer
-tested. Through SDK 0.21.0 the gate was 0.9.0, the oldest runtime whose
+tested. Through SDK 0.23.1 the gate was 0.12.0, and through SDK 0.21.0 it was 0.9.0, the oldest runtime whose
 behaviors the SDK models; against anything older, these won't match:
 
 - the quorum policy-threshold override (`effectiveQuorumThreshold`);
