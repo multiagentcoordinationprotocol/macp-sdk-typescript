@@ -3,10 +3,17 @@
 These tests drive the TypeScript SDK against a real MACP runtime. They are
 excluded from `npm test` and run via `npm run test:integration`.
 
-Two files make up the suite:
+The suite's files:
 
 - `runtime.test.ts` — exercises the SDK's client/session API directly against
   the runtime.
+- `runtime-0140.test.ts` — the client-visible runtime 0.14.0 rules (Handoff
+  Commitment readiness at `semantics_rev` 5, and `FORBIDDEN` for lifecycle
+  annotations submitted through `Send`), matching macp-sdk-python's
+  `test_runtime_0140.py`.
+- `otel.test.ts` — OpenTelemetry send spans and `traceparent` propagation over
+  the real wire, in its own file so its global tracer provider stays out of the
+  others.
 - `examples.test.ts` — spawns every `examples/*.ts` file as a real `tsx`
   subprocess (via `spawnSync`, 25s timeout each) and asserts a clean exit, to
   close the gap `npm run check:examples` leaves open (that only type-checks
@@ -25,20 +32,20 @@ Actions service container (dev mode, in-memory, scratch port 50123), in
 three jobs (`integration-receipts` starts it with `docker run` instead, so a
 signing key generated in the job can be passed in):
 
-- `integration`: the required gate, pinned to `:0.12.0`.
+- `integration`: the required gate, pinned to `:0.14.0`.
 - `integration-canary`: non-blocking, against `:latest`.
 - `integration-receipts`: the decision-receipt tests (`-t receipt_`), in one
   `signed` and one `unsigned` leg against a runtime that issues receipts
   (0.11.0+), with `MACP_EXPECT_RECEIPTS` set per leg. See
   [Decision receipt tests](#decision-receipt-tests).
 
-To reproduce the gate locally, run that same `:0.12.0` image.
+To reproduce the gate locally, run that same `:0.14.0` image.
 `scripts/wait-for-runtime.ts` polls the `Initialize` RPC before the suite
 runs. The steps below are for reproducing that locally.
 
 ## Runtime setup
 
-Start the published runtime image (the same `0.12.0` pin CI uses) in insecure dev mode. As of runtime 0.5.0 the
+Start the published runtime image (the same `0.14.0` pin CI uses) in insecure dev mode. As of runtime 0.5.0 the
 published image no longer bakes in `MACP_ALLOW_INSECURE=1`, and the runtime
 refuses to start with no auth configured unless it is passed explicitly — so it
 is now mandatory. The dev fallback authenticates any `Authorization: Bearer
@@ -48,7 +55,7 @@ sends; the legacy `MACP_ALLOW_DEV_SENDER_HEADER` is gone.
 ```bash
 docker run -d --name macp-runtime-test -p 50051:50051 \
   -e MACP_ALLOW_INSECURE=1 -e MACP_MEMORY_ONLY=1 \
-  ghcr.io/multiagentcoordinationprotocol/macp-runtime:0.12.0
+  ghcr.io/multiagentcoordinationprotocol/macp-runtime:0.14.0
 ```
 
 ## Variables
@@ -104,13 +111,19 @@ docker run -d --name macp-runtime-test -p 50051:50051 \
   -e MACP_ALLOW_INSECURE=1 \
   -e MACP_MEMORY_ONLY=1 \
   -e MACP_AUTH_TOKENS_JSON="$MACP_AUTH_TOKENS_JSON" \
-  ghcr.io/multiagentcoordinationprotocol/macp-runtime:0.12.0
+  ghcr.io/multiagentcoordinationprotocol/macp-runtime:0.14.0
 
 export MACP_TEST_BEARER_ALICE=alice-test-token
 export MACP_TEST_BEARER_BOB=bob-test-token
 
-npm run test:integration
+npm run test:integration -- tests/integration/runtime.test.ts \
+  -t "SDK-TS-1|Session enumeration|Direct-agent auth"
 ```
+
+Run only the bearer blocks against this runtime. Once `MACP_AUTH_TOKENS_JSON`
+is set, the runtime authenticates only the listed tokens, so the rest of the
+suite's `Auth.devAgent(...)` callers get `UNAUTHENTICATED`; run them against the
+plain dev-mode runtime above.
 
 ## Running
 
