@@ -4,6 +4,13 @@ All notable changes to `macp-sdk-typescript` are documented here. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the
 project uses [Semantic Versioning](https://semver.org/).
 
+## [0.23.2](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/compare/v0.23.1...v0.23.2) (2026-11-08)
+
+
+### Bug Fixes
+
+* runtime gate reads 0.14.1; adapters depend on macp-sdk-typescript ^0.23.1 ([#254](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/issues/254)) ([52b0647](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/commit/52b06478ae4a5863707455ea20d551151f29b069))
+
 ## [0.23.1](https://github.com/multiagentcoordinationprotocol/macp-sdk-typescript/compare/v0.23.0...v0.23.1) (2026-11-07)
 
 
