@@ -1689,7 +1689,10 @@ describe.skipIf(!ALICE_TOKEN || !BOB_TOKEN)('Direct-agent auth — pre-allocated
       });
       expect(startAck.ok).toBe(true);
 
+      // A bidi stream binds to a session only on its first frame; without
+      // one the runtime has nothing to deliver, so subscribe explicitly.
       const stream = aliceSession.openStream();
+      await stream.sendSubscribe(sessionId);
       const received: unknown[] = [];
       const consumer = (async () => {
         for await (const envelope of stream.responses()) {
@@ -1737,7 +1740,7 @@ describe.skipIf(!ALICE_TOKEN || !BOB_TOKEN)('Direct-agent auth — pre-allocated
     }
   });
 
-  it('rejects explicit sender that conflicts with expectedSender', () => {
+  it('rejects explicit sender that conflicts with expectedSender', async () => {
     const aliceAuth = Auth.bearer(ALICE_TOKEN!, { expectedSender: 'alice' });
     const aliceClient = new MacpClient({
       address: RUNTIME_ADDRESS,
@@ -1747,13 +1750,15 @@ describe.skipIf(!ALICE_TOKEN || !BOB_TOKEN)('Direct-agent auth — pre-allocated
     });
     try {
       const session = new DecisionSession(aliceClient);
-      expect(() =>
+      // propose() is async, so the client-side identity check surfaces as a
+      // rejection, not a synchronous throw.
+      await expect(
         session.propose({
           proposalId: 'rogue',
           option: 'x',
           sender: 'mallory',
         }),
-      ).toThrow(MacpIdentityMismatchError);
+      ).rejects.toThrow(MacpIdentityMismatchError);
     } finally {
       aliceClient.close();
     }
