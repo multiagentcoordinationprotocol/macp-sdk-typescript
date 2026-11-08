@@ -47,7 +47,7 @@ jobs:
       packages: read
     services:
       macp-runtime:
-        image: ghcr.io/multiagentcoordinationprotocol/macp-runtime:0.14.0
+        image: ghcr.io/multiagentcoordinationprotocol/macp-runtime:0.14.1
         ports:
           - 50123:50123
         env:
@@ -134,7 +134,7 @@ jobs:
     env:
       MACP_RUNTIME_ADDRESS: localhost:50123
       MACP_EXPECT_RECEIPTS: ${{ matrix.receipts }}
-      RUNTIME_IMAGE: ghcr.io/multiagentcoordinationprotocol/macp-runtime:0.14.0
+      RUNTIME_IMAGE: ghcr.io/multiagentcoordinationprotocol/macp-runtime:0.14.1
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0

@@ -55,7 +55,7 @@ sends; the legacy `MACP_ALLOW_DEV_SENDER_HEADER` is gone.
 ```bash
 docker run -d --name macp-runtime-test -p 50051:50051 \
   -e MACP_ALLOW_INSECURE=1 -e MACP_MEMORY_ONLY=1 \
-  ghcr.io/multiagentcoordinationprotocol/macp-runtime:0.14.0
+  ghcr.io/multiagentcoordinationprotocol/macp-runtime:0.14.1
 ```
 
 ## Variables
@@ -111,7 +111,7 @@ docker run -d --name macp-runtime-test -p 50051:50051 \
   -e MACP_ALLOW_INSECURE=1 \
   -e MACP_MEMORY_ONLY=1 \
   -e MACP_AUTH_TOKENS_JSON="$MACP_AUTH_TOKENS_JSON" \
-  ghcr.io/multiagentcoordinationprotocol/macp-runtime:0.14.0
+  ghcr.io/multiagentcoordinationprotocol/macp-runtime:0.14.1
 
 export MACP_TEST_BEARER_ALICE=alice-test-token
 export MACP_TEST_BEARER_BOB=bob-test-token
